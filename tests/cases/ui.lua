@@ -54,8 +54,16 @@ H.after_startup(function()
   H.eq(package.loaded['cinch.features.ui.plugins'], nil, 'the drawing code waits for the first open')
   H.commit(beta_dir, 'feat: from ui')
 
+  -- The backdrop blends, which needs 'termguicolors'.
+  vim.o.termguicolors = true
   vim.cmd('Cinch')
   local w = ui.windows()
+  local bd = api.nvim_win_get_config(w.backdrop)
+  H.eq(
+    { bd.width, bd.height, bd.zindex < api.nvim_win_get_config(w.frame).zindex, vim.wo[w.backdrop].winblend },
+    { vim.o.columns, vim.o.lines - vim.o.cmdheight, true, 60 },
+    'a backdrop over the editor, under the window'
+  )
   local lines_h = vim.o.lines - vim.o.cmdheight
   local frame = api.nvim_win_get_config(w.frame)
   H.eq(
@@ -123,6 +131,17 @@ H.after_startup(function()
   H.eq(line_of(w.pane, "require%('alpha'%)%.setup%(opts%)") ~= nil, true, 'with what config called')
   H.eq(line_of(w.pane, 'style = "night"') ~= nil, true, 'and the opts it got')
   H.eq(line_of(w.pane, 'ui%.lua:%d+') ~= nil, true, 'and where its spec is')
+  local function top()
+    return vim.fn.getwininfo(w.pane)[1].topline
+  end
+  H.press('<C-d>')
+  H.eq(top() > 1, true, '<C-d> scrolls the pane')
+  H.press('<C-u>')
+  H.eq(top(), 1, '<C-u> back up')
+  H.press('<C-d>')
+  go(w.list, ' beta%.nvim ')
+  H.eq(top(), 1, 'another plugin starts at its top')
+  go(w.list, ' alpha%.nvim ')
   -- Long paths wrap under themselves; read them whole.
   local pane = table.concat(lines(w.pane), '\n'):gsub('\n' .. (' '):rep(11), '')
   H.eq(pane:find('dir +/[^\n]*/pack/core/opt/alpha%.nvim\n') ~= nil, true, 'its folder')
@@ -189,6 +208,9 @@ H.after_startup(function()
   vim.wait(30)
   H.eq(ui.is_open(), true, 'an input prompt in a float leaves the window open')
   api.nvim_set_current_win(w.list)
+  api.nvim_set_current_win(editor)
+  vim.wait(30)
+  H.eq(api.nvim_get_current_win(), w.list, 'the cursor cannot leave for an editor window')
 
   go(w.list, ' beta%.nvim ')
   H.press('u')
@@ -216,8 +238,8 @@ H.after_startup(function()
   H.eq(api.nvim_get_current_line():find('alpha.nvim', 1, true) ~= nil, true, 'at the plugin')
 
   vim.cmd('Cinch open stats')
-  H.eq(floats(), 3, 'frame, list and pane')
+  H.eq(floats(), 4, 'backdrop, frame, list and pane')
   H.press('q')
   vim.wait(30)
-  H.eq(floats(), 0, 'q closes all three')
+  H.eq(floats(), 0, 'q closes all four')
 end)

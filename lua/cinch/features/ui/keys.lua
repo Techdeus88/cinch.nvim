@@ -16,6 +16,7 @@ local M = {}
 ---@field redraw fun()
 ---@field fetch_info fun()
 ---@field read_orphans fun()
+---@field scroll_pane fun(down: boolean)
 ---@field find_spec_line fun(p: cinch.Plugin)
 ---@field newest fun() put the cursor on the last line
 ---@field open fun(view?: string)
@@ -29,7 +30,7 @@ local M = {}
 
 --- The keys of each view, for the frame's bottom border.
 M.hints = {
-  plugins = ' / filter  l load  b build  u update  d delete  gf spec  gx url  ? keys  q close ',
+  plugins = ' / filter  l load  b build  u update  d delete  <C-d> <C-u> details  ? keys  q close ',
   stats = ' <Tab> next view  = size  ? keys  q close ',
   log = ' / filter  G newest  <Tab> next view  ? keys  q close ',
   help = ' ? goes back  q close ',
@@ -188,6 +189,20 @@ function M.make(w)
       'check for updates in the background',
     },
     { { 'd' }, delete, 'delete the plugin from disk, once you confirm' },
+    {
+      { '<C-d>' },
+      function()
+        w.scroll_pane(true)
+      end,
+      'scroll the details pane down',
+    },
+    {
+      { '<C-u>' },
+      function()
+        w.scroll_pane(false)
+      end,
+      'scroll the details pane up',
+    },
     { { 'gf' }, goto_spec, 'open the spec file at the plugin' },
     {
       { 'gx' },

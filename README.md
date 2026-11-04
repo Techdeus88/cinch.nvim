@@ -135,6 +135,7 @@ require('cinch').setup({
     border = nil,                -- default: your 'winborder', or rounded
     open_on_install = true,      -- open the window when plugins install
     colorscheme = nil,           -- e.g. 'tokyonight': applied as soon as its plugin is on disk
+    backdrop = 60,               -- how much the editor shows through the dark backdrop, 0-100; false for none
     icons = {},                  -- your own for any of: now, later, event, ft, cmd, keys, dep, trigger
   },
 })
@@ -176,7 +177,7 @@ An error in one of these functions is reported with the file and line where you 
 
 ## The window
 
-A frame at 75% of the editor. Its top border holds the plugin count, startup time, and the three views: plugins, stats and log. The bottom border holds the keys for the view you're in.
+A frame at 75% of the editor, over a dark backdrop that dims the editor behind it. The cursor stays in the window: moving to an editor window, with a click or `<C-w>`, comes back to the list, while a prompt or picker a plugin opens keeps focus. Its top border holds the plugin count, startup time, and the three views: plugins, stats and log. The bottom border holds the keys for the view you're in.
 
 The **Plugins** view is two panes. The list on the left groups plugins into working, failed, loaded, waiting and disabled, with what is happening now on top. Each row puts its parts one after the other: a status light (lit once loaded, a spinner while it works), the name, its load time and a load-time bar once it has loaded, then how it loads: a Nerd Font icon and its name for `now` and `later`, and for a trigger plugin each trigger type with its icon and values, the value that loaded it on a chip. A plugin that is only a dependency shows the plugins that need it. Pending commits and a message come last, and only when there is something to say: an error, the newest line a build is printing, why it is off. The pane on the right follows the cursor and shows that plugin in full: how and when it loaded, its folder and url, the branch it follows or the version you pinned, the commit on disk, its readme, pending commits, its dependencies and what needs it, the config and opts it received, the last lines of its build output, live while it builds, and where its spec is. `gx` opens the url. Plugins still on disk that no spec names any more sit last, under "not in your specs", where `d` deletes them. In a frame narrower than 130 columns, where the list could not fit a whole row beside the pane, the pane sits under the list instead.
 
@@ -193,6 +194,7 @@ The **Plugins** view is two panes. The list on the left groups plugins into work
 | `U` | Apply every pending update |
 | `c` | Check for updates |
 | `d` | Delete the plugin under the cursor from disk, once you confirm |
+| `<C-d>`, `<C-u>` | Scroll the details pane; the mouse wheel scrolls it too |
 | `gf` | Open the plugin's spec file at its line |
 | `r` | Read what `vim.pack` knows again |
 | `G` | Jump to the newest log entry |

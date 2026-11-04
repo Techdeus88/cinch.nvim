@@ -31,6 +31,7 @@ M.highlights = {
   CinchTriggerValue = 'Normal',
   CinchLink = 'Underlined',
   CinchCommit = 'Constant',
+  CinchBackdrop = 'CinchBackdropDefault',
 }
 
 -- Colors and rounded shapes ------------------------------------------------------
@@ -74,6 +75,7 @@ local chip_sources = { CinchNow = 'DiagnosticOk', CinchLater = 'DiagnosticInfo',
 ---@param rounded boolean
 function M.define_colors(rounded)
   local set = vim.api.nvim_set_hl
+  set(0, 'CinchBackdropDefault', { bg = 0 })
   for group, link in pairs(M.highlights) do
     set(0, group, { link = link, default = true })
   end

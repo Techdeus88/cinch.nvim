@@ -21,14 +21,18 @@ local M = {}
 ---@field colorscheme? string applied the moment a plugin that ships it is on disk, on a first start
 ---@field rounded? boolean rounded ends on chips and bars, drawn with Nerd Font glyphs; default true
 ---@field icons? table<string, string> your own Nerd Font icons: now, later, event, ft, cmd, keys, dep, trigger
+---@field backdrop? integer|false how much the editor shows through the dark backdrop, 0-100; default 60, false: none
 
 ---@type cinch.ui.Opts
-M.opts = { size = 0.75, wide = 0.95, split = 0.58, side_by_side = 130 }
+M.opts = { size = 0.75, wide = 0.95, split = 0.58, side_by_side = 130, backdrop = 60 }
 
 M.views = { 'plugins', 'stats', 'log' }
 
 local ui = {
+  backdrop = nil, ---@type integer? window
   frame = nil, ---@type integer? window
+  pane_of = nil, ---@type string? the plugin the pane shows, to scroll it back up for another
+  released = false, -- focus may stay in an editor window: plugins load there on a first start
   list = nil, ---@type integer? window
   pane = nil, ---@type integer? window
   view = 'plugins',
@@ -80,10 +84,10 @@ function M.in_editor(fn)
   end
 end
 
---- The window ids of the frame, the list and the pane, while open.
----@return { frame?: integer, list?: integer, pane?: integer }
+--- The window ids of the backdrop, the frame, the list and the pane, while open.
+---@return { backdrop?: integer, frame?: integer, list?: integer, pane?: integer }
 function M.windows()
-  return { frame = ui.frame, list = ui.list, pane = ui.pane }
+  return { backdrop = ui.backdrop, frame = ui.frame, list = ui.list, pane = ui.pane }
 end
 
 -- Layout ------------------------------------------------------------------------
@@ -145,7 +149,8 @@ local function layout()
     frame.footer, frame.footer_pos = footer(w), 'left'
   end
   local list = { relative = 'editor', row = row + 1, col = col + 1, width = w, height = h, zindex = 51 }
-  local pane = { relative = 'editor', zindex = 51, focusable = false, hide = not split }
+  -- Focusable, so the mouse wheel scrolls it.
+  local pane = { relative = 'editor', zindex = 51, hide = not split }
   if w >= M.opts.side_by_side then
     -- Wide enough: the pane beside the list, a rule between them.
     list.width = split and math.floor(w * M.opts.split) or w
@@ -159,7 +164,17 @@ local function layout()
     pane.width, pane.height = w, math.max(1, h - list.height - 1)
     pane.border = { '', { '─', 'CinchRule' }, '', '', '', '', '', '' }
   end
-  return { frame = frame, list = list, pane = pane }
+  -- Under the frame, over everything else: the editor dimmed behind the window.
+  local backdrop = {
+    relative = 'editor',
+    row = 0,
+    col = 0,
+    width = vim.o.columns,
+    height = lines,
+    zindex = 49,
+    focusable = false,
+  }
+  return { backdrop = backdrop, frame = frame, list = list, pane = pane }
 end
 
 -- Drawing -----------------------------------------------------------------------
@@ -209,6 +224,21 @@ local function draw_pane()
     find_spec_line(p)
   end
   paint(ui.pane, part('plugins').pane(ui.selected, api.nvim_win_get_width(ui.pane), ui.ctx))
+  -- Another plugin starts at its top; the same one keeps where you scrolled it.
+  if ui.pane_of ~= ui.selected then
+    ui.pane_of = ui.selected
+    api.nvim_win_set_cursor(ui.pane, { 1, 0 })
+  end
+end
+
+--- Scroll the pane by half its height, down or up, from the list.
+---@param down boolean
+local function scroll_pane(down)
+  if valid(ui.pane) and not api.nvim_win_get_config(ui.pane).hide then
+    api.nvim_win_call(ui.pane, function()
+      vim.cmd.normal({ vim.keycode(down and '<C-d>' or '<C-u>'), bang = true })
+    end)
+  end
 end
 
 local function render()
@@ -216,6 +246,9 @@ local function render()
     return
   end
   local cfg = layout()
+  if valid(ui.backdrop) then
+    api.nvim_win_set_config(ui.backdrop, cfg.backdrop)
+  end
   api.nvim_win_set_config(ui.frame, cfg.frame)
   api.nvim_win_set_config(ui.list, cfg.list)
   api.nvim_win_set_config(ui.pane, cfg.pane)
@@ -363,6 +396,7 @@ key_list = function()
       redraw = redraw,
       fetch_info = fetch_info,
       read_orphans = read_orphans,
+      scroll_pane = scroll_pane,
       find_spec_line = find_spec_line,
       newest = newest,
       in_editor = M.in_editor,
@@ -458,6 +492,12 @@ function M.open(view)
   end
 
   local cfg = layout()
+  -- Blending needs 'termguicolors'; without it the backdrop would hide the editor.
+  if M.opts.backdrop and vim.o.termguicolors then
+    ui.backdrop = float(false, cfg.backdrop)
+    vim.wo[ui.backdrop].winhighlight = 'Normal:CinchBackdrop'
+    vim.wo[ui.backdrop].winblend = M.opts.backdrop
+  end
   ui.frame = float(false, cfg.frame)
   ui.pane = float(false, cfg.pane)
   ui.list = float(true, cfg.list)
@@ -465,14 +505,35 @@ function M.open(view)
   vim.bo[buf].filetype = 'cinch'
   vim.wo[ui.list].cursorline = true
   -- A plugin that opens a buffer "in the current window" must not take over ours.
-  for _, win in ipairs({ ui.frame, ui.pane, ui.list }) do
+  for _, win in ipairs({ ui.frame, ui.pane, ui.list, ui.backdrop }) do
     vim.wo[win].winfixbuf = true
   end
   part('keys').map(buf, key_list())
+  -- The pane, scrolled into with the mouse, closes like the list.
+  for _, lhs in ipairs({ 'q', 'Q', '<Esc>' }) do
+    vim.keymap.set('n', lhs, M.close, { buffer = api.nvim_win_get_buf(ui.pane), nowait = true, desc = 'cinch: close' })
+  end
 
   local group = api.nvim_create_augroup('cinch_ui', { clear = true })
   api.nvim_create_autocmd('CursorMoved', { group = group, buffer = buf, callback = on_cursor })
   api.nvim_create_autocmd('VimResized', { group = group, callback = render })
+  -- The cursor stays in cinch: entering an editor window, with a click or <C-w>,
+  -- comes back to the list. Floats are left alone, so a prompt or a picker a
+  -- plugin opens keeps focus.
+  api.nvim_create_autocmd('WinEnter', {
+    group = group,
+    callback = function()
+      local win = api.nvim_get_current_win()
+      if ui.released or win == ui.list or win == ui.pane or api.nvim_win_get_config(win).relative ~= '' then
+        return
+      end
+      vim.schedule(function()
+        if M.is_open() and not ui.released and api.nvim_get_current_win() == win then
+          api.nvim_set_current_win(ui.list --[[@as integer]])
+        end
+      end)
+    end,
+  })
   -- Closing any of the three closes them all. Leaving the list does not: plugins
   -- move focus as they load (dashboards, pickers, input prompts), and that must
   -- not close the window.
@@ -510,14 +571,14 @@ function M.open(view)
 end
 
 function M.close()
-  for _, k in ipairs({ 'list', 'pane', 'frame' }) do
+  for _, k in ipairs({ 'list', 'pane', 'frame', 'backdrop' }) do
     local win = ui[k] --[[@as integer?]]
     if valid(win) then
       pcall(api.nvim_win_close, win, true)
     end
     ui[k] = nil
   end
-  ui.canvas, ui.canvas_of = nil, nil
+  ui.canvas, ui.canvas_of, ui.pane_of, ui.released = nil, nil, nil, false
   pcall(api.nvim_del_augroup_by_name, 'cinch_ui')
   animate()
 end
@@ -548,6 +609,7 @@ local host = {
   animate = animate,
   ---@param to 'editor'|'list'
   focus = function(to)
+    ui.released = to == 'editor'
     local win = to == 'editor' and ui.editor or ui.list
     if valid(win) then
       api.nvim_set_current_win(win --[[@as integer]])
