@@ -24,6 +24,8 @@ M.now_if_args = handler.now_if_args
 ---@field budget? integer ms of `later` loading per event-loop tick; default 5
 ---@field defer? boolean when plugins are missing, install once the UI is up, not during init.lua; default true
 ---@field build_timeout? integer seconds an async function build may take before it fails; default 300
+---@field self? boolean|{ version?: any, tag?: string, branch?: string, commit?: string } update cinch as one of its
+---plugins when it lives in vim.pack's folder; a table pins it, as in a spec; default true: its default branch
 ---@field features? string[] modules under cinch.features to load; default { 'messages', 'stats', 'updates', 'ui' }
 ---@field [string] table a feature's options, under its name
 
@@ -34,11 +36,65 @@ local defaults = {
   budget = 5,
   defer = true,
   build_timeout = 300,
+  self = true,
   features = { 'messages', 'stats', 'updates', 'ui' },
 }
 
 ---@type cinch.Opts? set by setup()
 M.opts = nil
+
+--- cinch's own folder: three levels up from this file.
+M.own_dir = vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(debug.getinfo(1, 'S').source:sub(2))))
+
+---@param path string
+---@return string
+local function real(path)
+  return vim.uv.fs_realpath(path) or vim.fs.normalize(path)
+end
+
+--- The url of a repo's origin remote, read from its .git/config.
+---@param dir string
+---@return string?
+local function origin_of(dir)
+  local f = io.open(vim.fs.joinpath(dir, '.git', 'config'))
+  if not f then
+    return
+  end
+  local text = f:read('*a')
+  f:close()
+  local section = text:match('%[remote "origin"%](.-)\n%[') or text:match('%[remote "origin"%](.*)$')
+  return section and section:match('\n%s*url%s*=%s*(%S+)')
+end
+
+--- cinch as one of its own plugins, so the update check, `u` and `:Cinch update`
+--- keep it current like the rest. Only when it lives in vim.pack's folder, where
+--- the install clones it: a checkout anywhere else is yours to manage. A spec of
+--- yours that lists it is used as it is.
+---@param added cinch.Plugin[]
+local function adopt_self(added)
+  if (M.opts or defaults).self == false or vim.fs.dirname(real(M.own_dir)) ~= real(pack.dir) then
+    return
+  end
+  local name = vim.fs.basename(M.own_dir)
+  local p = state.plugins[name]
+  local src = not p and origin_of(M.own_dir)
+  if src then
+    local file = vim.fs.joinpath(M.own_dir, 'lua', 'cinch', 'init.lua')
+    local own = { src = src, name = name, load = 'now' }
+    -- `self = { tag = 'v1.0.0' }` pins it, with the keys a spec pins a plugin with.
+    local pin = (M.opts or defaults).self
+    if type(pin) == 'table' then
+      for _, k in ipairs({ 'version', 'tag', 'branch', 'commit' }) do
+        own[k] = pin[k]
+      end
+    end
+    p = spec.register({ { spec = own, origin = { file = file } } })[1]
+    added[#added + 1] = p
+  end
+  if p then
+    p.self = true
+  end
+end
 
 ---@param name string
 ---@param start integer hrtime
@@ -257,6 +313,7 @@ function M.setup(opts)
   load_features(M.opts)
   local t = hrtime()
   local added = spec.register(spec.collect(M.opts.spec, caller()))
+  adopt_self(added)
   phase('specs', t)
   activate(added, M.opts.confirm)
 end
@@ -325,6 +382,18 @@ M.update = pack.update
 ---@return boolean ok, any err
 function M.del(names, opts)
   names = type(names) == 'table' and names or { names }
+  -- Not cinch itself: the code doing the deleting.
+  names = vim.tbl_filter(function(name)
+    local p = state.plugins[name]
+    if p and p.self then
+      events.report(('not deleted: `%s` is cinch itself'):format(name), levels.WARN)
+      return false
+    end
+    return true
+  end, names)
+  if #names == 0 then
+    return false, 'nothing to delete'
+  end
   local ok, err = pack.del(names, opts)
   if not ok then
     -- vim.pack says which plugins it kept only in its error text; the delete test

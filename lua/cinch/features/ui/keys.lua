@@ -107,6 +107,8 @@ function M.make(w)
     end)
     if not (p or orphan) then
       return
+    elseif p and p.self then
+      return require('cinch').del({ name })
     end
     local question = p
         and ('`%s` is in your specs, so it installs again on the next start. Delete it from disk anyway?'):format(name)

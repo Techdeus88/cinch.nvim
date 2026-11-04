@@ -135,8 +135,27 @@ local function source_late()
   late = {}
 end
 
+---@param path string
+---@return boolean
+local function on_rtp(path)
+  local want = real(path)
+  for _, dir in
+    ipairs(vim.opt.rtp:get() --[[@as string[] ]])
+  do
+    if real(dir) == want then
+      return true
+    end
+  end
+  return false
+end
+
 ---@param p cinch.Plugin
 local function packadd(p)
+  -- Already on the runtimepath, put there by your init.lua: cinch itself, say, or a
+  -- plugin you packadd yourself. Its plugin/ files ran then; again would run them twice.
+  if p.path and on_rtp(p.path) then
+    return
+  end
   local name = vim.fn.escape(p.name, ' ')
   -- While init.lua runs, Neovim's load-plugins step sources plugin/ and
   -- after/plugin/ later, in normal startup order; :packadd! only adds the path.

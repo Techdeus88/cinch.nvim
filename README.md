@@ -38,7 +38,7 @@ require('cinch').setup({ confirm = false })
 
 cinch is cloned with `git` rather than installed with `vim.pack.add` for one reason. The first `vim.pack.add` of a session reads your lockfile and installs every plugin it lists that is missing on disk. That call should be cinch's, so the install carries your `confirm` setting and cinch shows its progress.
 
-To keep cinch itself updated, add it to your specs like any other plugin: `{ 'Techdeus88/cinch.nvim', load = 'now' }`. `vim.pack` adopts the folder `git` cloned rather than cloning it again. The first time, it says once that it repaired the lock data for `cinch.nvim`. That is `vim.pack` adding it to your lockfile.
+cinch keeps itself updated. Living in `vim.pack`'s folder, where the clone above puts it, it adds itself as one of its plugins, from that folder's `origin` remote. It shows in the window, the update check covers it, and `u`, `U` and `:Cinch update` apply its updates. The new code runs after a restart, and cinch says so. It never deletes itself. `vim.pack` adopts the cloned folder rather than cloning it again, and the first time it says once that it repaired the lock data for `cinch.nvim`: that is `vim.pack` adding it to your lockfile. It follows its default branch. To stay on a tag or follow another branch, give `self` the pin a spec takes: `self = { tag = 'v1.0.0' }`, `{ version = vim.version.range('1.*') }` or `{ branch = 'dev' }`. To change how it loads too, list it in your specs like any other plugin, and cinch uses your spec. `self = false` in setup turns this off, and a checkout anywhere else, such as one you develop in, is left alone.
 
 ## Specs
 
@@ -122,6 +122,7 @@ require('cinch').setup({
   budget = 5,                    -- ms of `later` loading per event-loop tick
   defer = true,                  -- install missing plugins once the UI is up
   build_timeout = 300,           -- seconds an async function build may take before it fails
+  self = true,                   -- update cinch itself as one of its plugins; a table pins it: { tag = 'v1.0.0' }
   features = { 'messages', 'stats', 'updates', 'ui' },
 
   -- each feature's options, under its name

@@ -35,6 +35,7 @@ local M = {}
 ---@field path? string set once vim.pack reports the plugin on disk
 ---@field rev? string checked-out commit, from vim.pack
 ---@field deleted? true deleted from disk this session; installs again on the next start
+---@field self? true cinch itself, kept updated as one of its plugins
 ---@field state cinch.State
 ---@field activity? cinch.Activity
 ---@field build_log? string[] the last build's output, newest last; streams in while a shell build runs

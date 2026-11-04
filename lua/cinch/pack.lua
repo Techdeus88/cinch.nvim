@@ -431,8 +431,14 @@ function M.del(names, opts)
   return ok, res
 end
 
--- cinch's own folder, which a clean never deletes.
-local own_dir = debug.getinfo(1, 'S').source:sub(2):match('^(.*)/lua/cinch/pack%.lua$')
+--- Whether `path` is cinch's own folder, links resolved: a clean never deletes it.
+---@param path string
+---@return boolean
+local function is_own(path)
+  local cinch = package.loaded['cinch']
+  local own = cinch and cinch.own_dir
+  return own ~= nil and (uv.fs_realpath(path) or path) == (uv.fs_realpath(own) or own)
+end
 
 ---@class cinch.Orphan a plugin vim.pack has on disk that no spec names
 ---@field name string
@@ -447,7 +453,7 @@ function M.orphans()
   local ok, list = M.get(nil, { info = false })
   local res = {}
   for _, d in ipairs(ok and type(list) == 'table' and list or {}) do
-    if not d.active and not state.plugins[d.spec.name] and d.path ~= own_dir then
+    if not d.active and not state.plugins[d.spec.name] and not is_own(d.path) then
       res[#res + 1] = { name = d.spec.name, src = d.spec.src, path = d.path, rev = d.rev }
     end
   end
