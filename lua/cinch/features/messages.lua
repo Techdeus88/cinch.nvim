@@ -138,7 +138,23 @@ local function on_echo(chunks, history, o)
     return c[1]
   end, chunks))
   local status = o.status == 'running' and 'running' or 'success'
-  progress('pack', text, status, o.percent)
+  -- "Installing plugins (3/9) - telescope.nvim": the only live per-plugin signal,
+  -- since PackChanged fires for the whole batch at its end.
+  local title, done, total, name = text:match('^(.-) %((%d+)/(%d+)%)%s*%-?%s*(.*)$')
+  local ev = events.has('Progress')
+      and events.emit('Progress', {
+        title = title or text,
+        done = tonumber(done),
+        total = tonumber(total),
+        name = name ~= '' and name or nil,
+        status = status,
+        percent = o.percent,
+      })
+    or {}
+  -- A subscriber that shows it, like the open window, sets `handled`.
+  if not ev.handled then
+    progress('pack', text, status, o.percent)
+  end
   if status ~= 'running' then
     record(levels.INFO, text, 'vim.pack')
   end
@@ -246,6 +262,10 @@ local function log_steps()
       )
     end
   end)
+  events.on('LoadWait', function(d)
+    local whose = d.build == d.plugin and 'its build' or ('the build of ' .. d.build.name)
+    step(kind(d.reason), ('%s: %s waits for %s'):format(d.reason, d.plugin.name, whose), d.plugin.name)
+  end)
   events.on('LoadPre', function(d)
     if kind(d.reason) == 'trigger' then
       step('trigger', ('%s fired: loading %s'):format(d.reason, d.plugin.name), d.plugin.name)
@@ -287,7 +307,8 @@ end
 ---@param opts? cinch.messages.Opts
 function M.setup(opts)
   M.opts = vim.tbl_extend('force', M.opts, opts or {})
-  events.define('Message') -- { time, level, msg, source }: something was logged
+  events.define('Message') -- { time, level, msg, source, plugin? }: something was logged
+  events.define('Progress') -- { title, done?, total?, name?, status, percent? }: vim.pack's progress
 
   events.on('Report', function(d)
     record(d.level, d.msg, 'cinch')

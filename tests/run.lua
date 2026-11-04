@@ -53,6 +53,19 @@ vim.g.beta_order = (vim.g.beta_order or '') .. 'early ']],
   ['cmdy'] = {
     ['plugin/cmdy.lua'] = "vim.api.nvim_create_user_command('CmdyBuild', function() vim.g.cmdy_built = true end, {})",
   },
+  -- Opens a buffer in the current window as it loads, like a dashboard.
+  ['dashy'] = {
+    ['plugin/dashy.lua'] = "vim.cmd('enew') vim.b.dashy = true",
+  },
+  -- Opens a float and focuses it as it loads, like a picker or an input prompt.
+  ['floaty'] = {
+    ['plugin/floaty.lua'] = [[
+vim.g.floaty_win = vim.api.nvim_open_win(vim.api.nvim_create_buf(false, true), true,
+  { relative = 'editor', row = 1, col = 1, width = 20, height = 3 })]],
+  },
+  ['colory'] = {
+    ['colors/colory.lua'] = "vim.g.colors_name = 'colory'",
+  },
   ['builder'] = {
     ['lua/builder.lua'] = 'return { make = function() vim.g.builder_made = true end }',
     ['plugin/builder.lua'] = 'vim.g.builder_plugin = true',

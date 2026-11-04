@@ -168,6 +168,9 @@ function M.load(p, reason, done)
   -- Its build makes something it needs: load once the build ends, never block.
   local b = building(p)
   if b then
+    if events.has('LoadWait') then
+      events.emit('LoadWait', { plugin = p, reason = reason, build = b })
+    end
     pack.after_build(b, function()
       M.load(p, reason, done)
     end)

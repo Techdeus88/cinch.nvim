@@ -27,7 +27,7 @@ end
 
 -- Startup, split into what each part cost. Times are ms since Neovim started.
 ---@param stats table
----@return { [1]: string, [2]: number, [3]: string }[] label, ms, group
+---@return { [1]: string, [2]: number, [3]: string }[] parts each a label, its ms and its highlight
 local function timeline(stats)
   local m, ph = stats.marks, stats.phases
   local cinch = 0

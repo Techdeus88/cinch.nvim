@@ -19,12 +19,18 @@ M.trigger = handler.register
 ---@field spec? (string|cinch.Spec|cinch.Spec[])[] module paths, directories or specs; default { 'plugins' }
 ---@field confirm? boolean ask before installing, vim.pack's prompt; default true
 ---@field budget? integer ms of `later` loading per event-loop tick; default 5
+---@field defer? boolean when plugins are missing, install once the UI is up, not during init.lua; default true
 ---@field features? string[] modules under cinch.features to load; default { 'messages', 'stats', 'updates', 'ui' }
 ---@field [string] table a feature's options, under its name
 
 ---@type cinch.Opts
-local defaults =
-  { spec = { 'plugins' }, confirm = true, budget = 5, features = { 'messages', 'stats', 'updates', 'ui' } }
+local defaults = {
+  spec = { 'plugins' },
+  confirm = true,
+  budget = 5,
+  defer = true,
+  features = { 'messages', 'stats', 'updates', 'ui' },
+}
 
 ---@type cinch.Opts? set by setup()
 M.opts = nil
@@ -65,29 +71,36 @@ local function enabled(p)
   return true
 end
 
---- Install, init and arm new plugins, then load what can load now.
----@param added cinch.Plugin[]
+--- Install a batch in one vim.pack.add call, telling the bus when it starts and ends.
+---@param install cinch.Plugin[]
 ---@param confirm? boolean
-local function activate(added, confirm)
+local function install_all(install, confirm)
   local t = hrtime()
-  local install = {}
-  for _, p in ipairs(added) do
-    local on, why = enabled(p)
-    if on then
-      install[#install + 1] = p
-    else
-      state.set(p, 'disabled', why)
+  local missing = {}
+  for _, p in ipairs(install) do
+    if not vim.uv.fs_stat(vim.fs.joinpath(pack.dir, p.name)) then
+      missing[#missing + 1] = p.name
     end
   end
-  if #install > 0 then
-    for _, p in ipairs(pack.add(install, confirm)) do
-      p.err = 'not installed'
-      state.set(p, 'failed', 'install')
-    end
+  if #missing > 0 and events.has('Installing') then
+    events.emit('Installing', { names = missing })
+  end
+  local failed = {}
+  for _, p in ipairs(pack.add(install, confirm)) do
+    p.err = 'not installed'
+    state.set(p, 'failed', 'install')
+    failed[#failed + 1] = p.name
+  end
+  if #missing > 0 and events.has('Installed') then
+    events.emit('Installed', { names = missing, failed = failed, ms = (hrtime() - t) / 1e6 })
   end
   phase('install', t)
+end
 
-  t = hrtime()
+--- Run init hooks, arm every plugin on disk, then load what can load now.
+---@param install cinch.Plugin[]
+local function start(install)
+  local t = hrtime()
   for _, p in ipairs(install) do
     if p.state == 'registered' then
       local ok, err = loader.hook(p, 'init')
@@ -103,6 +116,77 @@ local function activate(added, confirm)
   t = hrtime()
   handler.start()
   phase('now', t)
+end
+
+--- Whether a UI will attach. Headless Neovim never gets one. Replaceable for tests.
+---@return boolean
+function M.ui_coming()
+  return not vim.list_contains(vim.v.argv, '--headless')
+end
+
+---@type { plugins: cinch.Plugin[], confirm?: boolean }? a batch waiting for UIEnter
+local deferred
+
+--- The plugins to hold until the UI is up, so the window can show them install:
+--- none when nothing is missing or no UI is coming; the missing ones; or all of
+--- them when the lockfile lists plugins that are not on disk, as on a new machine,
+--- because the first vim.pack.add would install those during init.lua anyway.
+---@param install cinch.Plugin[]
+---@return cinch.Plugin[]
+local function to_defer(install)
+  if (M.opts or defaults).defer == false or vim.v.vim_did_enter == 1 or not M.ui_coming() then
+    return {}
+  end
+  local missing = vim.tbl_filter(function(p)
+    return not vim.uv.fs_stat(vim.fs.joinpath(pack.dir, p.name))
+  end, install)
+  -- The lockfile matters only before vim.pack's first call of the session.
+  if #missing > 0 and not pack.idle() and #pack.locked_missing() > 0 then
+    return install
+  end
+  return missing
+end
+
+--- Install, init and arm new plugins, then load what can load now. Plugins that
+--- must wait for the UI do all of that on UIEnter instead.
+---@param added cinch.Plugin[]
+---@param confirm? boolean
+local function activate(added, confirm)
+  local install = {}
+  for _, p in ipairs(added) do
+    local on, why = enabled(p)
+    if on then
+      install[#install + 1] = p
+    else
+      state.set(p, 'disabled', why)
+    end
+  end
+  if deferred then
+    -- add() while a batch waits: it joins the batch.
+    vim.list_extend(deferred.plugins, install)
+    return
+  end
+  local wait = to_defer(install)
+  local now = #wait == 0 and install
+    or vim.tbl_filter(function(p)
+      return not vim.list_contains(wait, p)
+    end, install)
+  if #now > 0 then
+    install_all(now, confirm)
+  end
+  start(now)
+  if #wait > 0 then
+    deferred = { plugins = wait, confirm = confirm }
+    vim.api.nvim_create_autocmd('UIEnter', {
+      once = true,
+      callback = vim.schedule_wrap(function()
+        local d = deferred --[[@as table]]
+        deferred = nil
+        install_all(d.plugins, d.confirm)
+        start(d.plugins)
+      end),
+    })
+  end
 end
 
 --- Load each feature named in opts.features. A feature that is not there is skipped.

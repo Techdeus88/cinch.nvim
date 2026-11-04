@@ -18,6 +18,7 @@ M.names = {
   Register = true, -- { plugin }                        a spec became a plugin record
   State = true, -- { plugin, from, to, reason }         every state change
   Activity = true, -- { plugin, from, to }              disk work on a plugin started or ended
+  LoadWait = true, -- { plugin, reason, build }          waits for a build to end: its own or a dep's
   LoadPre = true, -- { plugin, reason }                 set cancel = true and cancel_reason to stop it
   Load = true, -- { plugin, reason, ms }                ms = { packadd, config }
   LoadError = true, -- { plugin, reason, err }
@@ -28,6 +29,8 @@ M.names = {
   Build = true, -- { plugin, ok, ms, err?, output? }
   Phase = true, -- { name, ms }                         a startup step finished
   Later = true, -- {}                                   the later queue is drained
+  Installing = true, -- { names }                       a batch of installs starts
+  Installed = true, -- { names, failed, ms }            and ended; failed lists names not on disk
   Report = true, -- { msg, level }                      cinch has something to tell the user
 }
 

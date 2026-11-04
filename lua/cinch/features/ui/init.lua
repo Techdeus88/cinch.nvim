@@ -15,10 +15,13 @@ local M = {}
 ---@field size? number share of the editor, default 0.75
 ---@field wide? number share after `=`, default 0.95
 ---@field split? number the list's share of the width in the Plugins view, default 0.58
+---@field side_by_side? integer frame width from which the pane sits beside the list, not under it; default 90
 ---@field border? string|string[] default: 'winborder', or rounded when that is empty
+---@field open_on_install? boolean open the window when plugins install, default true
+---@field colorscheme? string applied the moment a plugin that ships it is on disk, on a first start
 
 ---@type cinch.ui.Opts
-M.opts = { size = 0.75, wide = 0.95, split = 0.58 }
+M.opts = { size = 0.75, wide = 0.95, split = 0.58, side_by_side = 90 }
 
 M.views = { 'plugins', 'stats', 'log' }
 
@@ -33,6 +36,8 @@ local ui = {
   canvas = nil, ---@type cinch.ui.Canvas? what the list shows
   queued = false,
   subscribed = false,
+  colors_done = false, -- opts.colorscheme was applied
+  editor = nil, ---@type integer? the editor window you opened cinch from
   timer = nil, ---@type uv.uv_timer_t?
   ---@type cinch.ui.Ctx
   ctx = { folded = {}, tick = 0, info = {}, spec_lines = {} },
@@ -40,14 +45,10 @@ local ui = {
 
 local ns = api.nvim_create_namespace('cinch_ui')
 
-local function canvas()
-  return require('cinch.features.ui.canvas')
-end
-local function plugins()
-  return require('cinch.features.ui.plugins')
-end
-local function dashboard()
-  return require('cinch.features.ui.dashboard')
+--- One of the window's files, loaded on first use: canvas, plugins, dashboard, keys.
+---@param name string
+local function part(name)
+  return require('cinch.features.ui.' .. name)
 end
 ---@return table?
 local function updates()
@@ -65,6 +66,23 @@ function M.is_open()
   return valid(ui.list)
 end
 
+--- Run `fn` from the editor window you opened cinch from, so a plugin that loads
+--- and opens a buffer "in the current window" opens it there, not in cinch.
+---@param fn fun()
+function M.in_editor(fn)
+  if valid(ui.editor) then
+    api.nvim_win_call(ui.editor --[[@as integer]], fn)
+  else
+    fn()
+  end
+end
+
+--- The window ids of the frame, the list and the pane, while open.
+---@return { frame?: integer, list?: integer, pane?: integer }
+function M.windows()
+  return { frame = ui.frame, list = ui.list, pane = ui.pane }
+end
+
 -- Layout ------------------------------------------------------------------------
 
 local border_line = { rounded = '─', single = '─', double = '═', bold = '━', solid = ' ', shadow = ' ' }
@@ -79,7 +97,7 @@ end
 ---@param width integer
 ---@return { [1]: string, [2]: string }[]
 local function title(width)
-  local cv = canvas()
+  local cv = part('canvas')
   local stats = package.loaded['cinch.features.stats']
   local startup = stats and (stats.marks.uienter or stats.marks.vimenter)
   local left = {
@@ -100,22 +118,11 @@ local function title(width)
   return vim.list_extend(vim.list_extend(left, { { line:rep(fill), 'FloatBorder' } }), tabs)
 end
 
-local hints = {
-  plugins = ' j/k move  <CR> fold  / filter  l load  b build  u update  U all  c check  gf spec'
-    .. '  ? help  = size  q close ',
-  stats = ' <Tab> next view  = size  q close ',
-  log = ' / filter  G newest  <Tab> next view  = size  q close ',
-  help = ' any key goes back ',
-}
-
 ---@param width integer
 ---@return { [1]: string, [2]: string }[]
 local function footer(width)
-  local text = hints[ui.help and 'help' or ui.view]
-  if ui.ctx.install then
-    text = " installing · keys you press now run when it's done · q hides this "
-  end
-  return { { canvas().fit(text, math.min(canvas().cells(text), width - 2)), 'CinchMuted' } }
+  local text = part('keys').hints[ui.ctx.install and 'install' or ui.help and 'help' or ui.view]
+  return { { part('canvas').fit(text, math.min(part('canvas').cells(text), width - 2)), 'CinchMuted' } }
 end
 
 ---@return table<string, vim.api.keyset.win_config>
@@ -127,7 +134,6 @@ local function layout()
   local row = math.max(0, math.floor((lines - h) / 2) - 1)
   local col = math.max(0, math.floor((vim.o.columns - w) / 2) - 1)
   local split = ui.view == 'plugins' and not ui.help
-  local list_w = split and math.floor(w * M.opts.split) or w
   local frame = { relative = 'editor', row = row, col = col, width = w, height = h, zindex = 50, focusable = false }
   frame.border = border()
   -- Neovim allows a title and footer only on a float with a border.
@@ -135,24 +141,29 @@ local function layout()
     frame.title, frame.title_pos = title(w), 'left'
     frame.footer, frame.footer_pos = footer(w), 'left'
   end
-  return {
-    frame = frame,
-    list = { relative = 'editor', row = row + 1, col = col + 1, width = list_w, height = h, zindex = 51 },
-    pane = {
-      relative = 'editor',
-      row = row + 1,
-      col = col + 1 + list_w,
-      width = math.max(1, w - list_w - 1),
-      height = h,
-      zindex = 51,
-      focusable = false,
-      hide = not split,
-      border = { '', '', '', '', '', '', '', { '│', 'CinchRule' } },
-    },
-  }
+  local list = { relative = 'editor', row = row + 1, col = col + 1, width = w, height = h, zindex = 51 }
+  local pane = { relative = 'editor', zindex = 51, focusable = false, hide = not split }
+  if w >= M.opts.side_by_side then
+    -- Wide enough: the pane beside the list, a rule between them.
+    list.width = split and math.floor(w * M.opts.split) or w
+    pane.row, pane.col = row + 1, col + 1 + list.width
+    pane.width, pane.height = math.max(1, w - list.width - 1), h
+    pane.border = { '', '', '', '', '', '', '', { '│', 'CinchRule' } }
+  else
+    -- Too narrow for two columns: the pane under the list, a rule between them.
+    list.height = split and math.max(3, math.floor(h * 0.55)) or h
+    pane.row, pane.col = row + 1 + list.height, col + 1
+    pane.width, pane.height = w, math.max(1, h - list.height - 1)
+    pane.border = { '', { '─', 'CinchRule' }, '', '', '', '', '', '' }
+  end
+  return { frame = frame, list = list, pane = pane }
 end
 
 -- Drawing -----------------------------------------------------------------------
+
+---@type cinch.ui.Key[]? made on the first open, see keys.lua
+local keys
+local key_list ---@type fun(): cinch.ui.Key[]
 
 ---@param win integer
 ---@param c cinch.ui.Canvas
@@ -194,33 +205,7 @@ local function draw_pane()
   if p then
     find_spec_line(p)
   end
-  paint(ui.pane, plugins().pane(ui.selected, api.nvim_win_get_width(ui.pane), ui.ctx))
-end
-
-local function help_canvas(width)
-  local cv = canvas()
-  local c = cv.new(width)
-  local rows = {
-    { 'j / k', 'move between plugins; the pane follows' },
-    { '<CR>', 'fold or open the section under the cursor' },
-    { '/', 'filter by name, or the log by text; empty clears it' },
-    { 'l', 'load the plugin now' },
-    { 'b', 'run its build again' },
-    { 'u', 'apply its pending update' },
-    { 'U', 'apply every pending update' },
-    { 'c', 'check for updates in the background' },
-    { 'gf', 'open the spec file at the plugin' },
-    { 'r', 'read what vim.pack knows again' },
-    { '<Tab> <S-Tab>', 'next or previous view' },
-    { '=', 'switch between 75% and 95% of the editor' },
-    { 'q Q <Esc>', 'close' },
-  }
-  c:add({ { ' keys', 'CinchSection' } })
-  c:blank()
-  for _, r in ipairs(rows) do
-    c:add({ { '   ' .. cv.fit(r[1], 16), 'CinchKey' }, { r[2] } })
-  end
-  return c
+  paint(ui.pane, part('plugins').pane(ui.selected, api.nvim_win_get_width(ui.pane), ui.ctx))
 end
 
 local function render()
@@ -234,13 +219,13 @@ local function render()
   local width = api.nvim_win_get_width(ui.list)
   local c
   if ui.help then
-    c = help_canvas(width)
+    c = part('keys').help(width, key_list())
   elseif ui.view == 'plugins' then
-    c = plugins().list(width, ui.ctx)
+    c = part('plugins').list(width, ui.ctx)
   elseif ui.view == 'stats' then
-    c = dashboard().stats(width)
+    c = part('dashboard').stats(width)
   else
-    c = dashboard().log(width, ui.ctx)
+    c = part('dashboard').log(width, ui.ctx)
   end
   ui.canvas = c
   paint(ui.list, c)
@@ -254,6 +239,10 @@ local function render()
     end
   end
   draw_pane()
+  -- vim.pack.add waits in vim.wait, which runs callbacks but does not redraw.
+  if ui.ctx.install then
+    vim.cmd.redraw()
+  end
 end
 
 --- Redraw on the next tick: a burst of events draws once.
@@ -294,8 +283,14 @@ end
 -- vim.pack details ------------------------------------------------------------------
 
 --- What vim.pack knows about the selected plugin, read once it stays selected a moment.
-local function fetch_info()
+--- While vim.pack is busy, an update check say, it tries again a little later.
+---@param tries? integer
+local function fetch_info(tries)
   local name = ui.selected
+  if not name then
+    return
+  end
+  tries = tries or 0
   vim.defer_fn(function()
     if name ~= ui.selected or ui.ctx.info[name] or not M.is_open() then
       return
@@ -305,13 +300,16 @@ local function fetch_info()
     if not (p and p.path) then
       return
     elseif not pack.idle() then
+      if tries < 20 then
+        return fetch_info(tries + 1)
+      end
       ui.ctx.info[name] = 'vim.pack is busy; r reads again'
     else
       local ok, data = pack.get({ name }, { offline = true })
       ui.ctx.info[name] = ok and type(data) == 'table' and data[1] or tostring(data)
     end
     draw_pane()
-  end, 150)
+  end, tries == 0 and 150 or 300)
 end
 
 --- The cursor moved: select the plugin under it and show it in the pane.
@@ -330,149 +328,27 @@ end
 
 -- Keys --------------------------------------------------------------------------
 
----@param fn fun(p: cinch.Plugin)
----@return fun()
-local function on_plugin(fn)
-  return function()
-    local p = ui.selected and state.plugins[ui.selected]
-    if p and ui.view == 'plugins' then
-      fn(p)
-      redraw()
-    end
-  end
+--- Put the cursor on the last line: the newest log entry.
+local function newest()
+  api.nvim_win_set_cursor(ui.list, { api.nvim_buf_line_count(api.nvim_win_get_buf(ui.list)), 0 })
 end
 
----@param step integer
----@return fun()
-local function cycle(step)
-  return function()
-    local i = 1
-    for j, v in ipairs(M.views) do
-      if v == ui.view then
-        i = j
-      end
-    end
-    M.open(M.views[(i - 1 + step) % #M.views + 1])
-  end
+key_list = function()
+  keys = keys
+    or part('keys').make({
+      ui = ui,
+      views = M.views,
+      render = render,
+      redraw = redraw,
+      fetch_info = fetch_info,
+      find_spec_line = find_spec_line,
+      newest = newest,
+      in_editor = M.in_editor,
+      open = M.open,
+      close = M.close,
+    })
+  return keys
 end
-
-local function fold()
-  local line = api.nvim_win_get_cursor(ui.list)[1]
-  local key = ui.canvas and ui.canvas.sections[line]
-  if key then
-    ui.ctx.folded[key] = not ui.ctx.folded[key] or nil
-    render()
-    api.nvim_win_set_cursor(ui.list, { math.min(line, api.nvim_buf_line_count(api.nvim_win_get_buf(ui.list))), 0 })
-  end
-end
-
-local function filter()
-  vim.ui.input({ prompt = 'filter: ', default = ui.ctx.filter }, function(text)
-    ui.ctx.filter = text and text ~= '' and text or nil
-    vim.schedule(render)
-  end)
-end
-
-local function goto_spec()
-  local p = ui.selected and state.plugins[ui.selected]
-  if not (p and p.origin and p.origin.file) then
-    return
-  end
-  find_spec_line(p)
-  local line = ui.ctx.spec_lines[p.name]
-  M.close()
-  vim.cmd.edit(vim.fn.fnameescape(p.origin.file))
-  if line then
-    api.nvim_win_set_cursor(0, { line, 0 })
-  end
-end
-
----@type table<string, { [1]: fun(), [2]: string }>
-local keys = {
-  ['<Tab>'] = { cycle(1), 'Next view' },
-  ['<S-Tab>'] = { cycle(-1), 'Previous view' },
-  ['='] = {
-    function()
-      ui.wide = not ui.wide
-      render()
-    end,
-    'Switch between 75% and 95% of the editor',
-  },
-  ['<CR>'] = { fold, 'Fold or open the section under the cursor' },
-  ['/'] = { filter, 'Filter' },
-  ['?'] = {
-    function()
-      ui.help = not ui.help
-      render()
-    end,
-    'Keys',
-  },
-  gf = { goto_spec, 'Open the spec file at the plugin' },
-  G = {
-    function()
-      api.nvim_win_set_cursor(ui.list, { api.nvim_buf_line_count(api.nvim_win_get_buf(ui.list)), 0 })
-    end,
-    'Newest',
-  },
-  l = {
-    on_plugin(function(p)
-      require('cinch').load(p.name)
-    end),
-    'Load the plugin',
-  },
-  b = {
-    on_plugin(function(p)
-      require('cinch').build(p.name)
-    end),
-    'Run its build',
-  },
-  u = {
-    on_plugin(function(p)
-      local u = updates()
-      if u and u.results[p.name] then
-        u.apply({ p.name })
-      else
-        events.report(('no pending update for `%s`; c checks'):format(p.name))
-      end
-    end),
-    'Apply its update',
-  },
-  U = {
-    function()
-      local u = updates()
-      if u then
-        u.apply()
-      end
-    end,
-    'Apply every update',
-  },
-  c = {
-    function()
-      local u = updates()
-      if u then
-        u.check(nil, { notify = true })
-        redraw()
-      end
-    end,
-    'Check for updates',
-  },
-  r = {
-    function()
-      ui.ctx.info = {}
-      fetch_info()
-      render()
-    end,
-    'Read again',
-  },
-  q = {
-    function()
-      M.close()
-    end,
-    'Close',
-  },
-}
-keys.Q = keys.q
-keys['<Esc>'] = keys.q
 
 -- Window ------------------------------------------------------------------------
 
@@ -521,14 +397,18 @@ function M.open(view)
     api.nvim_set_current_win(ui.list)
     render()
     if ui.view == 'log' then
-      keys.G[1]()
+      newest()
     end
     return
   end
-  for group, link in pairs(canvas().highlights) do
+  for group, link in pairs(part('canvas').highlights) do
     api.nvim_set_hl(0, group, { link = link, default = true })
   end
   subscribe()
+  local from = api.nvim_get_current_win()
+  if api.nvim_win_get_config(from).relative == '' then
+    ui.editor = from
+  end
 
   local cfg = layout()
   ui.frame = float(false, cfg.frame)
@@ -537,21 +417,28 @@ function M.open(view)
   local buf = api.nvim_win_get_buf(ui.list)
   vim.bo[buf].filetype = 'cinch'
   vim.wo[ui.list].cursorline = true
-  for lhs, def in pairs(keys) do
-    vim.keymap.set('n', lhs, def[1], { buffer = buf, nowait = true, desc = 'cinch: ' .. def[2] })
+  -- A plugin that opens a buffer "in the current window" must not take over ours.
+  for _, win in ipairs({ ui.frame, ui.pane, ui.list }) do
+    vim.wo[win].winfixbuf = true
   end
+  part('keys').map(buf, key_list())
 
   local group = api.nvim_create_augroup('cinch_ui', { clear = true })
   api.nvim_create_autocmd('CursorMoved', { group = group, buffer = buf, callback = on_cursor })
   api.nvim_create_autocmd('VimResized', { group = group, callback = render })
-  -- Leaving the list, or closing any of the three, closes them all.
-  api.nvim_create_autocmd({ 'BufLeave', 'BufWipeout' }, {
-    group = group,
-    buffer = buf,
-    callback = function()
-      vim.schedule(M.close)
-    end,
-  })
+  -- Closing any of the three closes them all. Leaving the list does not: plugins
+  -- move focus as they load (dashboards, pickers, input prompts), and that must
+  -- not close the window.
+  for _, win in ipairs({ ui.frame, ui.pane, ui.list }) do
+    api.nvim_create_autocmd('WinClosed', {
+      group = group,
+      pattern = tostring(win),
+      once = true,
+      callback = function()
+        vim.schedule(M.close)
+      end,
+    })
+  end
 
   render()
   if ui.view == 'plugins' then
@@ -564,20 +451,22 @@ function M.open(view)
     end
     on_cursor()
   elseif ui.view == 'log' then
-    keys.G[1]()
+    newest()
   end
   animate()
-  -- Opening checks for updates when the last check is stale, in the background.
+  -- Opening checks for updates when the last check is stale, in the background;
+  -- not while plugins install.
   local u = updates()
-  if u and not u.checking and not u.fresh() then
+  if u and not u.checking and not u.fresh() and not ui.ctx.install then
     u.check()
   end
 end
 
 function M.close()
   for _, k in ipairs({ 'list', 'pane', 'frame' }) do
-    if valid(ui[k]) then
-      pcall(api.nvim_win_close, ui[k], true)
+    local win = ui[k] --[[@as integer?]]
+    if valid(win) then
+      pcall(api.nvim_win_close, win, true)
     end
     ui[k] = nil
   end
@@ -598,9 +487,46 @@ M.commands = {
   },
 }
 
+-- First start ------------------------------------------------------------------
+
+--- What install.lua needs from the window.
+---@type cinch.ui.InstallHost
+local host = {
+  ui = ui,
+  opts = M.opts,
+  open = M.open,
+  is_open = M.is_open,
+  render = render,
+  redraw = redraw,
+  animate = animate,
+  ---@param to 'editor'|'list'
+  focus = function(to)
+    local win = to == 'editor' and ui.editor or ui.list
+    if valid(win) then
+      api.nvim_set_current_win(win --[[@as integer]])
+    end
+  end,
+}
+
+--- A handler that loads install.lua the first time its event fires.
+---@param name 'installing'|'progress'|'installed'
+---@return fun(d: table)
+local function first_start(name)
+  return function(d)
+    host.opts = M.opts
+    require('cinch.features.ui.install')[name](host, d)
+  end
+end
+
 ---@param opts? cinch.ui.Opts
 function M.setup(opts)
   M.opts = vim.tbl_extend('force', M.opts, opts or {})
+  -- These fire only when plugins install, so listening from startup costs nothing.
+  events.on('Installing', first_start('installing'))
+  events.on('Installed', first_start('installed'))
+  if events.names.Progress then
+    events.on('Progress', first_start('progress'))
+  end
 end
 
 return M

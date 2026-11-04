@@ -65,6 +65,10 @@ H.after_startup(function()
     return delta.state == 'loaded'
   end, 'delta to load after its build')
   H.eq(vim.g.made_at_load, true, 'the build had finished when it loaded')
+  local waited = vim.tbl_filter(function(l)
+    return l.msg == 'manual: delta.nvim waits for its build'
+  end, require('cinch.features.messages').log)
+  H.eq(#waited, 1, 'the wait is in the log')
 
   local alpha = H.plugin('alpha.nvim')
   H.wait(function()

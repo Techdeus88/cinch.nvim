@@ -141,13 +141,23 @@ local function columns(width, plugins)
   for _, p in ipairs(plugins) do
     longest = math.max(longest, cells(p.name))
   end
-  local c = { name = math.min(longest, 26), chip = 10, bar = 7, time = 8, up = 4 }
-  local fixed = 3 + c.name + 1 + c.chip + 1 + c.bar + c.time + c.up
-  c.why = width - fixed
-  if c.why < 14 then
-    c.why, c.bar = c.why + c.bar, 0
+  local any_update = false
+  for _, p in ipairs(plugins) do
+    any_update = any_update or pending(p) ~= nil
   end
-  c.why = math.max(c.why, 6)
+  local c = { name = math.min(longest, 26), chip = 10, bar = 7, time = 8, up = any_update and 4 or 0 }
+  local function left()
+    return width - (3 + c.name + 1 + (c.chip > 0 and c.chip + 1 or 0) + c.bar + c.time + c.up)
+  end
+  -- When space is short the reason keeps room: the bar goes first, then the load
+  -- chip (the pane shows it), then the time.
+  for _, drop in ipairs({ 'bar', 'chip', 'time' }) do
+    if left() >= 18 then
+      break
+    end
+    c[drop] = 0
+  end
+  c.why = math.max(left(), 6)
   return c
 end
 
@@ -172,17 +182,21 @@ local function row(c, p, col, slowest, ctx)
     { ' ' .. ic .. ' ', ic_hl },
     { fit(p.name, col.name), p.state == 'disabled' and 'CinchMuted' or 'CinchName' },
     { ' ' },
-    { fit(' ' .. chip_text[p.load] .. ' ', col.chip - 1), chip_hl[p.load] },
-    { '  ' },
-    { fit(text, col.why - 1) .. ' ', text_hl },
   }
+  if col.chip > 0 then
+    chunks[#chunks + 1] = { fit(' ' .. chip_text[p.load] .. ' ', col.chip - 1), chip_hl[p.load] }
+    chunks[#chunks + 1] = { '  ' }
+  end
+  chunks[#chunks + 1] = { fit(text, col.why - 1) .. ' ', text_hl }
   if col.bar > 0 then
     local filled, empty = canvas.bar(ms or 0, slowest, col.bar - 1)
     chunks[#chunks + 1] = { ms and filled or (' '):rep(col.bar - 1), 'CinchBar' }
     chunks[#chunks + 1] = { ms and empty or '', 'CinchBarEmpty' }
     chunks[#chunks + 1] = { ' ' }
   end
-  chunks[#chunks + 1] = { right(canvas.ms(ms), col.time - 1) .. ' ', 'CinchMuted' }
+  if col.time > 0 then
+    chunks[#chunks + 1] = { right(canvas.ms(ms), col.time - 1) .. ' ', 'CinchMuted' }
+  end
   chunks[#chunks + 1] = { up and ('↑' .. up) or '', 'CinchUpdate' }
   c:add(chunks, { plugin = p.name })
 end
@@ -223,14 +237,13 @@ local function install_rows(c, ctx, col)
     local look = install_look[status]
       or (p.state == 'disabled' and { '–', 'CinchMuted', 'disabled' } or { '✓', 'CinchMuted', 'on disk' })
     local ic = look[1] or canvas.spinner[ctx.tick % #canvas.spinner + 1]
-    c:add({
-      { ' ' .. ic .. ' ', look[2] },
-      { fit(p.name, col.name), 'CinchName' },
-      { ' ' },
-      { fit(' ' .. chip_text[p.load] .. ' ', col.chip - 1), chip_hl[p.load] },
-      { '  ' },
-      { look[3], look[2] },
-    }, { plugin = p.name })
+    local chunks = { { ' ' .. ic .. ' ', look[2] }, { fit(p.name, col.name), 'CinchName' }, { ' ' } }
+    if col.chip > 0 then
+      chunks[#chunks + 1] = { fit(' ' .. chip_text[p.load] .. ' ', col.chip - 1), chip_hl[p.load] }
+      chunks[#chunks + 1] = { '  ' }
+    end
+    chunks[#chunks + 1] = { look[3], look[2] }
+    c:add(chunks, { plugin = p.name })
   end
 end
 
@@ -293,6 +306,13 @@ local key_w = 10
 ---@param chunks { [1]: string, [2]?: string }[]
 local function kv(c, key, chunks)
   local w = c.width - key_w - 2
+  -- One value that does not fit wraps under itself instead of being cut.
+  if #chunks == 1 and cells(chunks[1][1]) > w then
+    for i, part in ipairs(canvas.wrap(chunks[1][1], w)) do
+      c:add({ { ' ' .. fit(i == 1 and key or '', key_w), 'CinchMuted' }, { part, chunks[1][2] } })
+    end
+    return
+  end
   local out = { { ' ' .. fit(key, key_w), 'CinchMuted' } }
   for _, ch in ipairs(chunks) do
     local text = fit(ch[1], math.min(w, cells(ch[1])))
@@ -457,11 +477,7 @@ function M.pane(name, width, ctx)
   end
   if p.origin and p.origin.file then
     local line = ctx.spec_lines[p.name]
-    kv(
-      c,
-      'spec',
-      { { canvas.short_path(p.origin.file) .. (line and (':' .. line) or '') }, { '  gf opens it', 'CinchMuted' } }
-    )
+    kv(c, 'spec', { { canvas.short_path(p.origin.file) .. (line and (':' .. line) or '') } })
   end
   return c
 end

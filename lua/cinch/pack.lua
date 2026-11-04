@@ -52,6 +52,25 @@ local function call(op, names, fn, ...)
   return ok, res
 end
 
+--- Plugins the lockfile lists that are not on disk. The first vim.pack.add of a
+--- session installs these, whatever it was asked to add.
+---@return string[]
+function M.locked_missing()
+  local f = io.open(vim.go.packlockfile)
+  if not f then
+    return {}
+  end
+  local ok, lock = pcall(vim.json.decode, f:read('*a'))
+  f:close()
+  local res = {}
+  for name in pairs(ok and type(lock) == 'table' and type(lock.plugins) == 'table' and lock.plugins or {}) do
+    if not uv.fs_stat(vim.fs.joinpath(M.dir, name)) then
+      res[#res + 1] = name
+    end
+  end
+  return res
+end
+
 --- Whether vim.pack can be called now.
 ---@return boolean
 function M.idle()

@@ -5,9 +5,9 @@ A plugin manager for Neovim, built on `vim.pack`.
 `vim.pack` owns the disk: installing, the lockfile, updating and deleting. cinch owns the session. It decides when each plugin loads, runs builds, measures what everything costs, and shows it all in one window. Every spec is a `vim.pack.Spec`, so anything you write for cinch also works with `vim.pack.add`.
 
 - **Four ways to load.** `now` loads during startup. `later` loads once the UI is up, a few plugins per tick. `now_if_args` is `now` when Neovim starts with a file and `later` when it doesn't. `trigger` loads on an event, a filetype, a command or a key.
-- **One install batch.** Missing plugins go to a single `vim.pack.add` call, which clones them in parallel.
+- **A first start you can watch.** On a new machine, cinch waits until the UI is up, opens its window, and installs everything in one parallel batch while each plugin's row goes from cloning to installed. Your colorscheme applies the moment its plugin lands.
 - **Builds that never block.** A shell build runs in the background. A plugin whose build is still running loads when the build ends, and a key or command that fired meanwhile is replayed after.
-- **Your messages.** cinch shows `vim.pack`'s progress and errors as its own, without Lua stack noise, and keeps a log of everything.
+- **Your messages.** cinch shows `vim.pack`'s progress and errors as its own, without Lua stack noise, and logs every step it takes: each install, build, load and trigger.
 - **Stats.** Startup time measured from when the process began, each phase of cinch's startup, every plugin's load time, and a history across sessions.
 - **Update checks** fetch in the background and list each plugin's new commits. You apply them from the window.
 
@@ -98,7 +98,20 @@ When `load` is not set:
 
 An explicit `load` always wins. `load = 'now'` with a `cmd` loads at startup, and cinch warns that the `cmd` is ignored.
 
-`now` plugins load while `init.lua` runs, in the order you declared them, dependencies first. Neovim then sources their `plugin/` files in its normal startup pass, so a `now` plugin's `config` runs before its own `plugin/` files. A plugin whose `config` needs something its `plugin/` file defines should use `later`.
+`now` plugins load while `init.lua` runs, in the order you declared them, dependencies first. On a first start they load right after the install instead (see below). Neovim then sources their `plugin/` files in its normal startup pass, so a `now` plugin's `config` runs before its own `plugin/` files. A plugin whose `config` needs something its `plugin/` file defines should use `later`.
+
+### The first start
+
+When plugins are missing, cinch doesn't install them while `init.lua` runs, because there's no screen to show the install on yet. It waits for `UIEnter`, opens its window, and installs then. Exactly what waits depends on why plugins are missing:
+
+| Situation | What happens |
+| --- | --- |
+| Nothing missing | A normal start. Nothing waits |
+| A new spec, or one whose `src` doesn't exist | Plugins already on disk start during `init.lua` as usual. Only the missing ones wait for the UI |
+| Your lockfile lists plugins that aren't on disk, as on a new machine with your dotfiles | Everything waits. `vim.pack`'s first call would install those during `init.lua` anyway |
+| Headless Neovim, or `defer = false` | Installs during `init.lua`, as `vim.pack` does |
+
+While the batch installs, the keys you press are held until it's done: `vim.pack.add` waits for git, and so does Neovim's input.
 
 ## Setup
 
@@ -107,13 +120,22 @@ require('cinch').setup({
   spec = { 'plugins' },          -- module paths, folders, or specs; default lua/plugins/
   confirm = true,                -- ask before installing, with vim.pack's prompt
   budget = 5,                    -- ms of `later` loading per event-loop tick
+  defer = true,                  -- install missing plugins once the UI is up
   features = { 'messages', 'stats', 'updates', 'ui' },
 
   -- each feature's options, under its name
-  messages = { level = vim.log.levels.INFO, progress = true, history = 200 },
+  messages = { level = vim.log.levels.INFO, progress = true, history = 1000 },
   stats = { persist = true, history = 50 },
   updates = { fresh = 300 },     -- seconds before opening the window checks again
-  ui = { size = 0.75, wide = 0.95, border = nil },
+  ui = {
+    size = 0.75,                 -- share of the editor
+    wide = 0.95,                 -- share after `=`
+    split = 0.58,                -- the list's share of the width beside the pane
+    side_by_side = 90,           -- frame width from which the pane sits beside the list, not under it
+    border = nil,                -- default: your 'winborder', or rounded
+    open_on_install = true,      -- open the window when plugins install
+    colorscheme = nil,           -- e.g. 'tokyonight': applied as soon as its plugin is on disk
+  },
 })
 ```
 
@@ -133,19 +155,28 @@ require('cinch').setup({
 
 ## The window
 
-A float at 75% of the editor, centered.
+A frame at 75% of the editor. Its top border holds the plugin count, startup time, and the three views: plugins, stats and log. The bottom border holds the keys for the view you're in.
+
+The **Plugins** view is two panes. The list on the left groups plugins into failed, loaded, working, waiting and disabled, each row showing what loaded the plugin or what it waits for, its load time, and pending commits. The pane on the right follows the cursor and shows that plugin in full: how and when it loaded, its version and pending commits, its dependencies, the config and opts it received, the remote's branches and tags, and where its spec is. In a frame narrower than 90 columns, the pane sits under the list instead.
+
+**Stats** shows a startup timeline split into Neovim's own time, each of cinch's phases and `later`, then counts, the slowest plugins, and startup times from past sessions. **Log** shows every step and message, oldest first.
 
 | Key | Does |
 | --- | --- |
-| `<Tab>`, `<S-Tab>` | Next or previous view: plugins, stats, log |
-| `=` | Switch between 75% and 95% of the editor |
-| `<CR>` | Show the plugin's details: its error, its pending commits, and three tables: its spec as cinch read it, what `vim.pack` knows, and the opts and config it received |
+| `j`, `k` | Move between plugins; the pane follows |
+| `<CR>` | Fold or open the section under the cursor |
+| `/` | Filter plugins by name, or the log by text. An empty filter clears it |
 | `l` | Load the plugin under the cursor |
 | `b` | Run its build |
 | `u` | Apply its pending update |
 | `U` | Apply every pending update |
 | `c` | Check for updates |
+| `gf` | Open the plugin's spec file at its line |
 | `r` | Read what `vim.pack` knows again |
+| `G` | Jump to the newest log entry |
+| `?` | Show every key |
+| `<Tab>`, `<S-Tab>` | Next or previous view |
+| `=` | Switch between 75% and 95% of the editor |
 | `q`, `Q`, `<Esc>` | Close |
 
 Opening the window starts an update check when the last one is more than 5 minutes old.
@@ -156,10 +187,10 @@ The core installs, loads and updates plugins on its own. Everything else is a fe
 
 | Feature | What it adds |
 | --- | --- |
-| `messages` | Takes over every message cinch sends and `vim.pack`'s output while cinch calls it. Progress updates in place, and notices and git warnings go to a log |
+| `messages` | Takes over every message cinch sends and `vim.pack`'s output while cinch calls it. Progress updates in place. Every step cinch takes, notices, and git warnings go to the log |
 | `stats` | Counts, startup phases, load times, `:Cinch stats`, and one summary per session in `stdpath('state')/cinch/stats.json` |
 | `updates` | `:Cinch check`, and applying updates from the window |
-| `ui` | The window |
+| `ui` | The window, and the first start shown in it |
 
 stats asks the OS when Neovim started. Its startup time is a few milliseconds higher than `--startuptime`, which starts its clock after the binary has loaded.
 
@@ -183,6 +214,7 @@ end)
 | `Register` | `plugin` |
 | `State` | `plugin`, `from`, `to`, `reason` |
 | `Activity` | `plugin`, `from`, `to`: `installing`, `updating`, `deleting`, `building`, `checking` |
+| `LoadWait` | `plugin`, `reason`, `build`: the load waits for `build`'s build to end, the plugin's own or a dependency's |
 | `LoadPre` | `plugin`, `reason`. Set `cancel = true` to stop the load |
 | `Load` | `plugin`, `reason`, `ms = { packadd, config }` |
 | `LoadError` | `plugin`, `reason`, `err` |
@@ -191,7 +223,10 @@ end)
 | `Build` | `plugin`, `ok`, `ms`, `err`, `output` |
 | `Phase` | `name`, `ms`: a startup step finished |
 | `Later` | The `later` queue is empty |
+| `Installing`, `Installed` | `names`, and after the batch `failed` and `ms`: a batch of installs starts and ends |
 | `Report` | `msg`, `level`: something for you to read |
+
+The message feature adds `Progress` (`title`, `done`, `total`, `name`: `vim.pack`'s progress, one plugin at a time) and `Message` (an entry added to the log).
 
 `Load`, `LoadError` and `Later` also fire as `User CinchLoad`, `User CinchLoadError` and `User CinchLater` autocmds.
 
