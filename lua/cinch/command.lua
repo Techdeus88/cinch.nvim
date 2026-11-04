@@ -40,6 +40,29 @@ M.commands = {
     end,
     complete = names,
   },
+  -- With !, also plugins your specs list; they install again on the next start.
+  del = {
+    run = function(args, bang)
+      if #args == 0 then
+        events.report('which plugins? `:Cinch del {name}`; `:Cinch clean` deletes those no spec names')
+        return
+      end
+      cinch.del(args, { force = bang })
+    end,
+    complete = function()
+      return vim.list_extend(
+        vim.tbl_map(function(o)
+          return o.name
+        end, require('cinch.pack').orphans()),
+        names()
+      )
+    end,
+  },
+  clean = {
+    run = function()
+      cinch.clean()
+    end,
+  },
 }
 
 ---@param name string

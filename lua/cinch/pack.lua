@@ -256,7 +256,8 @@ function M.add(plugins, confirm)
   -- Only vim.pack's own fields: it deep-copies every spec, and `data` holds functions.
   local specs, names = {}, {}
   for i, p in ipairs(plugins) do
-    specs[i] = { src = p.src, name = p.name, version = p.version }
+    -- With its cinch fields in `data`, so vim.pack.get() and PackChanged carry them too.
+    specs[i] = { src = p.src, name = p.name, version = p.version, data = p.data }
     names[i] = p.name
   end
   adding = true
@@ -310,12 +311,43 @@ function M.update(names, opts)
   return call('update', names, vim.pack.update, names, opts)
 end
 
---- vim.pack.del through cinch.
+--- vim.pack.del through cinch. vim.pack fires PackChangedPre for every plugin
+--- named but PackChanged only for those it deleted, so the rest stop "deleting" here.
 ---@param names string[]
----@param opts? table
+---@param opts? vim.pack.keyset.del
 ---@return boolean ok, any err
 function M.del(names, opts)
-  return call('del', names, vim.pack.del, names, opts)
+  local ok, res = call('del', names, vim.pack.del, names, opts)
+  for _, name in ipairs(names) do
+    local p = state.plugins[name]
+    if p and p.activity == 'deleting' then
+      state.activity(p, nil)
+    end
+  end
+  return ok, res
+end
+
+-- cinch's own folder, which a clean never deletes.
+local own_dir = debug.getinfo(1, 'S').source:sub(2):match('^(.*)/lua/cinch/pack%.lua$')
+
+---@class cinch.Orphan a plugin vim.pack has on disk that no spec names
+---@field name string
+---@field src string
+---@field path string
+---@field rev? string
+
+--- Plugins vim.pack has on disk that no spec of this session names: what
+--- `:Cinch clean` deletes.
+---@return cinch.Orphan[]
+function M.orphans()
+  local ok, list = M.get(nil, { info = false })
+  local res = {}
+  for _, d in ipairs(ok and type(list) == 'table' and list or {}) do
+    if not d.active and not state.plugins[d.spec.name] and d.path ~= own_dir then
+      res[#res + 1] = { name = d.spec.name, src = d.spec.src, path = d.path, rev = d.rev }
+    end
+  end
+  return res
 end
 
 --- vim.pack.get through cinch.
@@ -377,9 +409,9 @@ api.nvim_create_autocmd('PackChanged', {
       -- The commit changed or the plugin is gone, so the one read before is stale.
       p.rev = nil
       if d.kind == 'delete' then
-        p.path = nil
+        p.path, p.deleted = nil, true
       else
-        p.path = d.path
+        p.path, p.deleted = d.path, nil
         if p.data.build then
           if adding then
             queue[#queue + 1] = p

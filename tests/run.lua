@@ -1,7 +1,8 @@
 -- Usage: nvim -l tests/run.lua [case-name-filter]
 -- Each case runs in its own headless Neovim with isolated XDG dirs, using its file as init.lua.
 -- A first line `-- phases: N` runs the case N times over the same dirs (CINCH_PHASE=1..N),
--- to test what carries over from one session to the next.
+-- to test what carries over from one session to the next. A line `-- args: files` in the
+-- header opens those files, as if passed on the command line.
 -- Modeled on wrappack's runner.
 
 local root = vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p:h:h')
@@ -34,6 +35,18 @@ vim.api.nvim_create_autocmd('User', { group = g, pattern = 'GammaGo', callback =
   vim.g.gamma_user = (vim.g.gamma_user or 0) + 1
 end })]],
     ['ftplugin/cnc.lua'] = 'vim.b.gamma_ft = true',
+  },
+  -- Vimscript that calls a script-local function from its FileType autocmd, the
+  -- way markdown-preview.nvim does.
+  ['vimmy'] = {
+    ['plugin/vimmy.vim'] = [[
+augroup vimmy
+  autocmd!
+  autocmd FileType * if &filetype ==# 'cnc' | call s:init() | endif
+augroup END
+function! s:init() abort
+  let b:vimmy = get(b:, 'vimmy', 0) + 1
+endfunction]],
   },
   ['delta.nvim'] = {
     ['lua/delta.lua'] = 'return { hit = function() vim.g.delta_hit = (vim.g.delta_hit or 0) + 1 end }',
@@ -100,6 +113,16 @@ for _, case in ipairs(cases) do
   if not filter or name:find(filter, 1, true) then
     local phases = tonumber(io.lines(case)():match('^%-%- phases: (%d+)')) or 1
     local home = vim.fs.joinpath(tmp, 'cases', name)
+    -- A line `-- args: a.md b.lua` near the top opens those files, under the case's home.
+    local args = {}
+    for line in io.lines(case) do
+      if not line:find('^%-%-') then
+        break
+      end
+      for word in (line:match('^%-%- args: (.*)') or ''):gmatch('%S+') do
+        args[#args + 1] = vim.fs.joinpath(home, word)
+      end
+    end
     vim.fn.mkdir(vim.fs.joinpath(home, 'config', 'nvim', 'lua'), 'p')
     local env = {
       CINCH_ROOT = root,
@@ -113,7 +136,7 @@ for _, case in ipairs(cases) do
     local ok, out = true, ''
     for phase = 1, phases do
       env.CINCH_PHASE = tostring(phase)
-      local cmd = { 'nvim', '--headless', '-i', 'NONE', '-u', case }
+      local cmd = vim.list_extend({ 'nvim', '--headless', '-i', 'NONE', '-u', case }, args)
       local r = vim.system(cmd, { env = env, text = true, timeout = 30000 }):wait()
       if r.code ~= 0 then
         ok, out = false, ('phase %d exit %d\n%s%s'):format(phase, r.code, r.stdout or '', r.stderr or '')

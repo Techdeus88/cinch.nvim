@@ -170,13 +170,15 @@ An error in one of these functions is reported with the file and line where you 
 | `:Cinch build {names}` | Run their builds again |
 | `:Cinch check [names]` | Check for updates in the background |
 | `:Cinch update [names]` | Update with `vim.pack`'s review tab. `:Cinch update!` applies without it |
+| `:Cinch del {names}` | Delete plugins from disk. One your specs list is in use, so it needs `:Cinch del!`, and it installs again on the next start |
+| `:Cinch clean` | Delete every plugin on disk that no spec names |
 | `:Cinch stats` | Print this session's stats |
 
 ## The window
 
 A frame at 75% of the editor. Its top border holds the plugin count, startup time, and the three views: plugins, stats and log. The bottom border holds the keys for the view you're in.
 
-The **Plugins** view is two panes. The list on the left groups plugins into working, failed, loaded, waiting and disabled, with what is happening now on top. Each row puts its parts one after the other: a status light (lit once loaded, a spinner while it works), the name, its load time and a load-time bar once it has loaded, then how it loads: a Nerd Font icon and its name for `now` and `later`, and for a trigger plugin each trigger type with its icon and values, the value that loaded it on a chip. A plugin that is only a dependency shows the plugins that need it. Pending commits and a message come last, and only when there is something to say: an error, a build running, why it is off. The pane on the right follows the cursor and shows that plugin in full: how and when it loaded, its folder and url, the branch it follows or the version you pinned, the commit on disk, its readme, pending commits, its dependencies and what needs it, the config and opts it received, and where its spec is. `gx` opens the url. In a frame narrower than 130 columns, where the list could not fit a whole row beside the pane, the pane sits under the list instead.
+The **Plugins** view is two panes. The list on the left groups plugins into working, failed, loaded, waiting and disabled, with what is happening now on top. Each row puts its parts one after the other: a status light (lit once loaded, a spinner while it works), the name, its load time and a load-time bar once it has loaded, then how it loads: a Nerd Font icon and its name for `now` and `later`, and for a trigger plugin each trigger type with its icon and values, the value that loaded it on a chip. A plugin that is only a dependency shows the plugins that need it. Pending commits and a message come last, and only when there is something to say: an error, a build running, why it is off. The pane on the right follows the cursor and shows that plugin in full: how and when it loaded, its folder and url, the branch it follows or the version you pinned, the commit on disk, its readme, pending commits, its dependencies and what needs it, the config and opts it received, and where its spec is. `gx` opens the url. Plugins still on disk that no spec names any more sit last, under "not in your specs", where `d` deletes them. In a frame narrower than 130 columns, where the list could not fit a whole row beside the pane, the pane sits under the list instead.
 
 **Stats** shows a startup timeline split into Neovim's own time, each of cinch's phases and `later`, then counts, the slowest plugins, and startup times from past sessions. **Log** shows every step and message, oldest first.
 
@@ -190,6 +192,7 @@ The **Plugins** view is two panes. The list on the left groups plugins into work
 | `u` | Apply its pending update |
 | `U` | Apply every pending update |
 | `c` | Check for updates |
+| `d` | Delete the plugin under the cursor from disk, once you confirm |
 | `gf` | Open the plugin's spec file at its line |
 | `r` | Read what `vim.pack` knows again |
 | `G` | Jump to the newest log entry |
@@ -284,7 +287,8 @@ cinch.load(names, reason)
 cinch.build(names)
 cinch.get(name)           -- one plugin record, or all of them
 cinch.update(names, opts) -- vim.pack.update through cinch
-cinch.del(names, opts)    -- vim.pack.del through cinch
+cinch.del(names, opts)    -- vim.pack.del through cinch; says why when it refuses
+cinch.clean()             -- delete every plugin on disk that no spec names
 cinch.now(fn)
 cinch.later(fn)
 cinch.now_if_args(fn)
@@ -307,4 +311,4 @@ luacheck lua plugin tests
 VIMRUNTIME=$(nvim --clean --headless +'lua io.write(vim.env.VIMRUNTIME)' +qa) lua-language-server --check . --checklevel=Warning
 ```
 
-The cases live in `tests/cases/`. The runner builds local git repos to install from, so the suite needs no network, and gives every case its own data, state and config folders. A first line of `-- phases: N` runs a case N times over the same folders, to test what carries from one session to the next.
+The cases live in `tests/cases/`. The runner builds local git repos to install from, so the suite needs no network, and gives every case its own data, state and config folders. A first line of `-- phases: N` runs a case N times over the same folders, to test what carries from one session to the next. A header line of `-- args: notes.md` opens that file, as if you passed it on the command line.

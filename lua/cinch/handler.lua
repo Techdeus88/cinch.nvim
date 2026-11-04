@@ -86,12 +86,19 @@ local function autocmd_key(au)
   return au.id or table.concat({ tostring(au.group), au.pattern or '', tostring(au.command) }, '\0')
 end
 
+---@class cinch.Seen the autocmds of an event before a plugin loads
+---@field keys table<integer|string, true>
+---@field groups table<integer, true> groups that had any
+
 ---@param event string
----@return table<integer|string, true>
+---@return cinch.Seen
 local function autocmd_ids(event)
-  local seen = {}
+  local seen = { keys = {}, groups = {} }
   for _, au in ipairs(api.nvim_get_autocmds({ event = event })) do
-    seen[autocmd_key(au)] = true
+    seen.keys[autocmd_key(au)] = true
+    if au.group then
+      seen.groups[au.group] = true
+    end
   end
   return seen
 end
@@ -100,13 +107,28 @@ end
 --- event runs twice. From sarcina's replay.lua.
 ---@param event string
 ---@param args vim.api.keyset.create_autocmd.callback_args
----@param seen table<integer|string, true>
+---@param seen cinch.Seen
 local function replay_event(event, args, seen)
+  local ran = {}
   for _, au in ipairs(api.nvim_get_autocmds({ event = event })) do
     local applies = au.buflocal and (au.buf or au['buffer']) == args.buf
       or not au.buflocal and vim.fn.match(args.match or '', vim.fn.glob2regpat(au.pattern)) >= 0
-    if applies and not seen[autocmd_key(au)] then
-      if type(au.callback) == 'function' then
+    if applies and not seen.keys[autocmd_key(au)] then
+      if au.group and not au.buflocal and not seen.groups[au.group] then
+        -- A group the plugin just made: Neovim runs it, each autocmd in the script
+        -- that defined it, so a Vimscript one can still call its s: functions.
+        if not ran[au.group] then
+          ran[au.group] = true
+          try('replaying ' .. event, api.nvim_buf_call, args.buf, function()
+            api.nvim_exec_autocmds(event, {
+              group = au.group,
+              pattern = args.match ~= '' and args.match or nil,
+              modeline = false,
+              data = args.data,
+            })
+          end)
+        end
+      elseif type(au.callback) == 'function' then
         try('replaying ' .. event, au.callback, args)
       elseif au.command and au.command ~= '' then
         try('replaying ' .. event, api.nvim_buf_call, args.buf, function()

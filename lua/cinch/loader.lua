@@ -98,6 +98,43 @@ local function configure(p)
   return true
 end
 
+---@param path string
+---@return string
+local function real(path)
+  return uv.fs_realpath(path) or vim.fs.normalize(path)
+end
+
+--- Source the plugin's after/plugin/ files, skipping those in `done`.
+---@param p cinch.Plugin
+---@param done? table<string, true> real paths already sourced
+local function source_after(p, done)
+  if not p.path then
+    return
+  end
+  for _, f in ipairs(vim.fn.glob(p.path .. '/after/plugin/**/*.{vim,lua}', false, true)) do
+    if not (done and done[real(f)]) then
+      vim.cmd.source({ f, magic = { file = false } })
+    end
+  end
+end
+
+-- Plugins packadded after init.lua but before VimEnter, a file on the command line
+-- triggering an ft plugin say. Neovim's after/plugin/ pass may already be over by
+-- then, so VimEnter sources what it missed, and only that.
+---@type cinch.Plugin[]
+local late = {}
+
+local function source_late()
+  local done = {}
+  for _, info in ipairs(vim.fn.getscriptinfo()) do
+    done[real(info.name)] = true
+  end
+  for _, p in ipairs(late) do
+    source_after(p, done)
+  end
+  late = {}
+end
+
 ---@param p cinch.Plugin
 local function packadd(p)
   local name = vim.fn.escape(p.name, ' ')
@@ -109,12 +146,14 @@ local function packadd(p)
   end
   vim.cmd.packadd({ name, magic = { file = false } })
   if vim.v.vim_did_enter == 0 then
+    if #late == 0 then
+      api.nvim_create_autocmd('VimEnter', { once = true, callback = source_late })
+    end
+    late[#late + 1] = p
     return
   end
   -- After startup :packadd does not source after/plugin/.
-  for _, f in ipairs(vim.fn.glob(p.path .. '/after/plugin/**/*.{vim,lua}', false, true)) do
-    vim.cmd.source({ f, magic = { file = false } })
-  end
+  source_after(p)
   -- :packadd sourced its ftdetect/; buffers opened before it never saw them.
   if #vim.fn.glob(p.path .. '/ftdetect/*.{vim,lua}', false, true) > 0 then
     for _, b in ipairs(api.nvim_list_bufs()) do

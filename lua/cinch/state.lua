@@ -34,6 +34,7 @@ local M = {}
 ---@field origin? { file: string, index?: integer } where the spec was declared
 ---@field path? string set once vim.pack reports the plugin on disk
 ---@field rev? string checked-out commit, from vim.pack
+---@field deleted? true deleted from disk this session; installs again on the next start
 ---@field state cinch.State
 ---@field activity? cinch.Activity
 ---@field reason? string what loaded or disabled it: 'event BufReadPost', 'dep of x', 'cond'

@@ -31,6 +31,7 @@ cinch.setup({
       },
       { H.src('gamma'), event = { 'User GammaGo', 'BufReadPost' } },
       { src = (H.own('gamma')), name = 'gamma-ft', ft = 'cnc' },
+      { H.src('vimmy'), ft = 'cnc' },
       { H.src('cmdy'), cmd = 'Ghost' },
       { H.src('beta.nvim'), on_flag = true },
     },
@@ -68,6 +69,8 @@ H.after_startup(function()
   vim.cmd('enew | setfiletype cnc')
   H.eq(H.plugin('gamma-ft').reason, 'event FileType cnc', 'a filetype loads')
   H.eq(vim.b.gamma_ft, true, 'and its ftplugin applies to the buffer')
+  H.eq(vim.b.vimmy, 1, 'a Vimscript FileType autocmd replays once, able to call its s: functions')
+  H.eq(H.noted('replaying FileType'), false, 'with no error')
 
   vim.cmd('Ghost')
   H.eq(H.noted('Command not found: Ghost'), true, 'a command the plugin never defines fails once')

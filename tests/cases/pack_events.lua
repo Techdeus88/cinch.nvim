@@ -19,7 +19,10 @@ events.on('PackOp', function(d)
   log[#log + 1] = ('done %s %s'):format(d.op, tostring(d.ok))
 end)
 
-require('cinch').setup({ confirm = false, spec = { { { H.src('alpha.nvim') }, { H.src('beta.nvim') } } } })
+require('cinch').setup({
+  confirm = false,
+  spec = { { { H.src('alpha.nvim'), cmd = 'AlphaCmd', opts = { style = 'night' } }, { H.src('beta.nvim') } } },
+})
 
 H.after_startup(function()
   H.eq(
@@ -37,6 +40,9 @@ H.after_startup(function()
   }, 'state is settled before the bus hears of it')
 
   local alpha = H.plugin('alpha.nvim')
+  local data = vim.pack.get({ 'alpha.nvim' })[1].spec.data
+  H.eq({ data.cmd, data.opts }, { 'AlphaCmd', { style = 'night' } }, 'vim.pack.get() has its cinch fields in data')
+  H.eq(data, alpha.data, 'the same ones cinch uses')
   local fixture = vim.fs.joinpath(vim.env.CINCH_FIXTURES, 'alpha.nvim')
   H.eq(pack.rev(alpha), H.sh({ 'git', '-C', fixture, 'rev-parse', 'HEAD' }), 'rev from .git/HEAD')
   H.eq(pack.idle(), true, 'idle once add returned')

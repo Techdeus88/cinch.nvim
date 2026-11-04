@@ -307,10 +307,12 @@ local function fetch_info(tries)
     end
     local p = state.plugins[name]
     local pack = require('cinch.pack')
-    if not (p and p.path) or not pack.idle() then
+    if not p then
+      return
+    elseif not p.path or not pack.idle() then
       if tries < 20 then
         return fetch_info(tries + 1)
-      elseif not (p and p.path) then
+      elseif not p.path then
         return
       end
       ui.ctx.info[name] = 'vim.pack is busy; r reads again'
@@ -320,6 +322,15 @@ local function fetch_info(tries)
     end
     draw_pane()
   end, tries == 0 and 150 or 300)
+end
+
+--- What vim.pack has on disk that no spec names, for the "not in your specs" section.
+--- Read on open and after a delete; skipped while vim.pack is busy.
+local function read_orphans()
+  local pack = require('cinch.pack')
+  if pack.idle() then
+    ui.ctx.orphans = pack.orphans()
+  end
 end
 
 --- The cursor moved: select the plugin under it and show it in the pane.
@@ -351,6 +362,7 @@ key_list = function()
       render = render,
       redraw = redraw,
       fetch_info = fetch_info,
+      read_orphans = read_orphans,
       find_spec_line = find_spec_line,
       newest = newest,
       in_editor = M.in_editor,
@@ -383,6 +395,12 @@ local function subscribe()
       redraw()
     end,
   })
+  events.on('PackOp', function(d)
+    if d.op == 'del' then
+      read_orphans()
+      redraw()
+    end
+  end)
   events.on('Pack', function(d)
     -- What vim.pack knew about it is out of date: read it again if it is on show.
     ui.ctx.info[d.name] = nil
@@ -423,6 +441,7 @@ function M.open(view)
   end
   part('canvas').define_colors(M.opts.rounded ~= false)
   subscribe()
+  read_orphans()
   local from = api.nvim_get_current_win()
   if api.nvim_win_get_config(from).relative == '' then
     ui.editor = from

@@ -30,6 +30,7 @@ end
 ---@field info table<string, vim.pack.PlugData|string> vim.pack.get per plugin, or why it is missing
 ---@field spec_lines table<string, integer> line of each plugin's spec in its file
 ---@field install? cinch.ui.Install set while a first start installs
+---@field orphans? cinch.Orphan[] on disk, in no spec
 
 -- Sections, in the order they are shown: what is happening now first, so it is in
 -- view while it changes, then what went wrong. section_of() puts a plugin in one,
@@ -172,6 +173,8 @@ local function message(p)
     return (p.activity or 'loading') .. '…', 'CinchActive'
   elseif sec == 'disabled' then
     return p.reason == 'cond' and 'cond is false' or 'enabled = false', 'CinchMuted'
+  elseif p.deleted then
+    return 'deleted from disk', 'CinchWarn'
   end
 end
 
@@ -351,7 +354,23 @@ function M.list(width, ctx)
       end
     end
   end
-  if #plugins == 0 then
+  local orphans = vim.tbl_filter(function(o)
+    return not ctx.filter or o.name:lower():find(ctx.filter:lower(), 1, true) ~= nil
+  end, ctx.orphans or {})
+  if #orphans > 0 then
+    local open = not ctx.folded.orphans
+    c:add({
+      { (open and ' ▾ ' or ' ▸ ') .. 'not in your specs', 'CinchSection' },
+      { ' ' .. #orphans, 'CinchMuted' },
+    }, { section = 'orphans' })
+    for _, o in ipairs(open and orphans or {}) do
+      c:add(
+        { { ' · ' .. o.name .. ' ', 'CinchMuted' }, { 'on disk · d deletes it', 'CinchWarn' } },
+        { plugin = o.name }
+      )
+    end
+  end
+  if #plugins + #orphans == 0 then
     c:add({ { ' no plugins match', 'CinchMuted' } })
   end
   return c
@@ -387,7 +406,7 @@ end
 ---@return { [1]: string, [2]?: string }[]
 local function load_line(p)
   if p.dep_only then
-    return { { glyph('dep') .. ' with the plugins that need it', 'CinchDep' } }
+    return { { glyph('dep') .. ' before its dependents', 'CinchDep' } }
   elseif p.when == 'trigger' then
     return join(trigger_items(p))
   end
@@ -531,7 +550,22 @@ end
 function M.pane(name, width, ctx)
   local c = canvas.new(width)
   local p = name and state.plugins[name]
-  if not p then
+  local orphan = not p
+    and name
+    and vim.iter(ctx.orphans or {}):find(function(o) ---@param o cinch.Orphan
+      return o.name == name
+    end)
+  if orphan then
+    c:add({ { ' ' .. fit(orphan.name, c.width - 20), 'CinchTitle' }, { ' not in your specs ', 'CinchWarn' } })
+    c:add({ { ' ' .. ('─'):rep(c.width - 2), 'CinchRule' } })
+    kv(c, 'dir', { { vim.fn.fnamemodify(orphan.path, ':~'), 'CinchLink' } })
+    kv(c, 'url', { { orphan.src, 'CinchLink' } })
+    if orphan.rev then
+      kv(c, 'commit', { { orphan.rev:sub(1, 7), 'CinchCommit' } })
+    end
+    kv(c, 'delete', { { 'd deletes it from disk; no spec will install it again', 'CinchMuted' } })
+    return c
+  elseif not p then
     c:add({ { ' move to a plugin to see it here', 'CinchMuted' } })
     return c
   end
@@ -569,6 +603,9 @@ function M.pane(name, width, ctx)
     kv(c, 'off', { { p.reason == 'cond' and 'cond returned false' or 'enabled = false' } })
   else
     kv(c, 'load', load_line(p))
+  end
+  if p.deleted then
+    kv(c, 'disk', { { 'deleted; installs again on the next start', 'CinchWarn' } })
   end
   if sec ~= 'disabled' then
     pane_where(c, p, ctx)

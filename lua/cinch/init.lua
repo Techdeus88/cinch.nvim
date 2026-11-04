@@ -287,6 +287,39 @@ function M.get(name)
 end
 
 M.update = pack.update
-M.del = pack.del
+
+--- Delete plugins from disk through vim.pack. A plugin your specs list is in use
+--- this session, so vim.pack deletes it only with `force`, and it installs again
+--- on the next start unless you take it out of your specs.
+---@param names string|string[]
+---@param opts? { force?: boolean }
+---@return boolean ok, any err
+function M.del(names, opts)
+  names = type(names) == 'table' and names or { names }
+  local ok, err = pack.del(names, opts)
+  if not ok then
+    local active = tostring(err):match('active and were not deleted: (.-)%. Remove')
+    local why = ('delete failed: %s'):format((tostring(err):gsub('^[^:]*:%d+: ', '')))
+    if active then
+      why = ('not deleted: %s is in your specs and in use. Take it out of your specs and restart, '):format(active)
+        .. 'or `:Cinch del!` deletes it now and it installs again on the next start'
+    end
+    events.report(why, levels.ERROR)
+  end
+  return ok, err
+end
+
+--- Delete every plugin on disk that no spec names.
+---@return string[] deleted
+function M.clean()
+  local names = vim.tbl_map(function(o)
+    return o.name
+  end, pack.orphans())
+  if #names == 0 then
+    events.report('nothing to clean: every plugin on disk is in your specs')
+    return {}
+  end
+  return M.del(names) and names or {}
+end
 
 return M

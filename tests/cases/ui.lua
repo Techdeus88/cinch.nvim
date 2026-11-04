@@ -97,6 +97,13 @@ H.after_startup(function()
   )
   local gamma_row = lines(w.list)[line_of(w.list, ' gamma ')]
   H.eq(gamma_row:find('gamma ' .. icons.dep .. ' delta.nvim', 1, true) ~= nil, true, 'a dependency: what needs it')
+  go(w.list, ' gamma ')
+  H.eq(
+    line_of(w.pane, '^ load +' .. icons.dep .. ' before its dependents$') ~= nil,
+    true,
+    'its pane: it loads before them'
+  )
+  H.eq(line_of(w.pane, '^ needed by +delta%.nvim') ~= nil, true, 'and which they are')
   H.eq(table.concat(lines(w.list), '\n'):find('by later', 1, true), nil, 'no "by later"')
 
   -- Working plugins sit on top, and the cursor moves freely while their spinner turns.

@@ -15,6 +15,7 @@ local M = {}
 ---@field render fun()
 ---@field redraw fun()
 ---@field fetch_info fun()
+---@field read_orphans fun()
 ---@field find_spec_line fun(p: cinch.Plugin)
 ---@field newest fun() put the cursor on the last line
 ---@field open fun(view?: string)
@@ -28,7 +29,7 @@ local M = {}
 
 --- The keys of each view, for the frame's bottom border.
 M.hints = {
-  plugins = ' <CR> fold  / filter  l load  b build  u update  gf spec  gx url  ? keys  q close ',
+  plugins = ' / filter  l load  b build  u update  d delete  gf spec  gx url  ? keys  q close ',
   stats = ' <Tab> next view  = size  ? keys  q close ',
   log = ' / filter  G newest  <Tab> next view  ? keys  q close ',
   help = ' ? goes back  q close ',
@@ -90,6 +91,32 @@ function M.make(w)
       ui.ctx.filter = text and text ~= '' and text or nil
       vim.schedule(w.render)
     end)
+  end
+
+  --- Delete the plugin under the cursor from disk, once you confirm. One your specs
+  --- list is in use, so it goes with force and installs again on the next start.
+  local function delete()
+    local name = ui.view == 'plugins' and ui.selected
+    if not name then
+      return
+    end
+    local p = state.plugins[name]
+    local orphan = vim.iter(ui.ctx.orphans or {}):any(function(o) ---@param o cinch.Orphan
+      return o.name == name
+    end)
+    if not (p or orphan) then
+      return
+    end
+    local question = p
+        and ('`%s` is in your specs, so it installs again on the next start. Delete it from disk anyway?'):format(name)
+      or ('Delete `%s` from disk?'):format(name)
+    if vim.fn.confirm(question, '&Yes\n&No', 2) ~= 1 then
+      return
+    end
+    w.in_editor(function()
+      require('cinch').del({ name }, { force = p ~= nil })
+    end)
+    w.redraw()
   end
 
   local function goto_spec()
@@ -160,6 +187,7 @@ function M.make(w)
       end,
       'check for updates in the background',
     },
+    { { 'd' }, delete, 'delete the plugin from disk, once you confirm' },
     { { 'gf' }, goto_spec, 'open the spec file at the plugin' },
     {
       { 'gx' },
@@ -172,6 +200,7 @@ function M.make(w)
       { 'r' },
       function()
         ui.ctx.info = {}
+        w.read_orphans()
         w.fetch_info()
         w.render()
       end,
