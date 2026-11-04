@@ -56,7 +56,7 @@ return {
 
 `owner/repo` expands to a GitHub URL. Any other `src` goes to `vim.pack` as it is.
 
-cinch fields can sit at the top level, as above, or inside `data`, the way `vim.pack.Spec` holds extra fields. cinch moves top-level fields into `data` before anything else reads the spec, and when both places set a field, `data` wins. `vim.pack.add` only ever receives `src`, `name` and `version`.
+cinch fields can sit at the top level, as above, or inside `data`, the way `vim.pack.Spec` holds extra fields. cinch moves top-level fields into `data` before anything else reads the spec, and when both places set a field, `data` wins. `vim.pack.add` receives `src`, `name`, `version` and a copy of `data`, so `vim.pack.get()` and the `PackChanged` events show your cinch fields. The copy is made so Neovim can pass it through autocmd event data: a table with both list items and named fields, like a lazy-style key `{ 'gx', fn, desc = '…' }`, keeps its list items under `"1"`, `"2"` and so on, and anything that can't cross, such as a cycle or a timer, becomes text. cinch itself reads your spec as you wrote it.
 
 ### Fields
 

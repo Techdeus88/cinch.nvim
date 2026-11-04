@@ -21,7 +21,17 @@ end)
 
 require('cinch').setup({
   confirm = false,
-  spec = { { { H.src('alpha.nvim'), cmd = 'AlphaCmd', opts = { style = 'night' } }, { H.src('beta.nvim') } } },
+  spec = {
+    {
+      {
+        H.src('alpha.nvim'),
+        cmd = 'AlphaCmd',
+        opts = { style = 'night' },
+        keys = { { 'gA', '<Cmd>AlphaCmd<CR>', desc = 'alpha' } },
+      },
+      { H.src('beta.nvim') },
+    },
+  },
 })
 
 H.after_startup(function()
@@ -42,7 +52,15 @@ H.after_startup(function()
   local alpha = H.plugin('alpha.nvim')
   local data = vim.pack.get({ 'alpha.nvim' })[1].spec.data
   H.eq({ data.cmd, data.opts }, { 'AlphaCmd', { style = 'night' } }, 'vim.pack.get() has its cinch fields in data')
-  H.eq(data, alpha.data, 'the same ones cinch uses')
+  H.eq(
+    data.keys,
+    { { ['1'] = 'gA', ['2'] = '<Cmd>AlphaCmd<CR>', desc = 'alpha' } },
+    'a lazy-style key, in a form that converts'
+  )
+  H.eq(alpha.data.keys[1][1], 'gA', 'while cinch keeps its own as written')
+  local cyclic = {}
+  cyclic.self = cyclic
+  H.eq(pack.portable({ t = cyclic, u = vim.uv.new_timer() }).t.self, '<cycle>', 'a cycle becomes text')
   local fixture = vim.fs.joinpath(vim.env.CINCH_FIXTURES, 'alpha.nvim')
   H.eq(pack.rev(alpha), H.sh({ 'git', '-C', fixture, 'rev-parse', 'HEAD' }), 'rev from .git/HEAD')
   H.eq(pack.idle(), true, 'idle once add returned')

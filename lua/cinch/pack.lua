@@ -52,6 +52,38 @@ local function call(op, names, fn, ...)
   return ok, res
 end
 
+--- A copy of `v` that Neovim's API can convert. vim.pack sends each spec through
+--- autocmd event data, which refuses a table with both list items and named fields
+--- (a lazy-style key such as { 'gx', fn, desc = '...' }), cycles and userdata. Such a
+--- table keeps its list items under "1", "2", ...; what cannot cross becomes text.
+---@param v any
+---@param seen? table<table, true>
+---@return any
+function M.portable(v, seen)
+  local t = type(v)
+  if t == 'userdata' or t == 'thread' then
+    return tostring(v)
+  elseif t ~= 'table' then
+    return v
+  end
+  seen = seen or {}
+  if seen[v] then
+    return '<cycle>'
+  end
+  seen[v] = true
+  local list, dict = true, true
+  for k in pairs(v) do
+    list = list and type(k) == 'number' and k >= 1 and k % 1 == 0
+    dict = dict and type(k) == 'string'
+  end
+  local out = {}
+  for k, x in pairs(v) do
+    out[(list or dict) and k or tostring(k)] = M.portable(x, seen)
+  end
+  seen[v] = nil
+  return out
+end
+
 --- Plugins the lockfile lists that are not on disk. The first vim.pack.add of a
 --- session installs these, whatever it was asked to add.
 ---@return string[]
@@ -257,7 +289,7 @@ function M.add(plugins, confirm)
   local specs, names = {}, {}
   for i, p in ipairs(plugins) do
     -- With its cinch fields in `data`, so vim.pack.get() and PackChanged carry them too.
-    specs[i] = { src = p.src, name = p.name, version = p.version, data = p.data }
+    specs[i] = { src = p.src, name = p.name, version = p.version, data = M.portable(p.data) }
     names[i] = p.name
   end
   adding = true
