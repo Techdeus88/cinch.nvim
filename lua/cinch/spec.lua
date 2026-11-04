@@ -293,7 +293,9 @@ local function make(e, dep_of, added)
     return p
   end
 
-  p = { name = name, deps = deps } --[[@as cinch.Plugin]]
+  -- fill() and state.add() set the rest.
+  ---@diagnostic disable-next-line: missing-fields
+  p = { name = name, deps = deps }
   fill(p, spec, e.origin, dep_of ~= nil, notes)
   report(name, e.origin, notes)
   state.add(p --[[@as cinch.Plugin]])

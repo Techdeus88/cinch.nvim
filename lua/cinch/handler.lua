@@ -103,7 +103,7 @@ end
 ---@param seen table<integer|string, true>
 local function replay_event(event, args, seen)
   for _, au in ipairs(api.nvim_get_autocmds({ event = event })) do
-    local applies = au.buflocal and (au.buf or au.buffer) == args.buf
+    local applies = au.buflocal and (au.buf or au['buffer']) == args.buf
       or not au.buflocal and vim.fn.match(args.match or '', vim.fn.glob2regpat(au.pattern)) >= 0
     if applies and not seen[autocmd_key(au)] then
       if type(au.callback) == 'function' then

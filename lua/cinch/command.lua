@@ -93,7 +93,8 @@ end
 function M.complete(lead, line)
   local words = vim.split(line, '%s+', { trimempty = true })
   local n = #words - (lead == '' and 0 or 1)
-  local cmds, list = all(), nil
+  local cmds = all()
+  local list ---@type string[]
   if n <= 1 then
     list = vim.tbl_keys(cmds)
   else
