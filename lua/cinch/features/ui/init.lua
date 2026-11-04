@@ -380,7 +380,17 @@ local function subscribe()
     return
   end
   ui.subscribed = true
-  for _, name in ipairs({ 'State', 'Activity', 'Load', 'LoadError', 'Build', 'Updates', 'Message', 'Later' }) do
+  for _, name in ipairs({
+    'State',
+    'Activity',
+    'Load',
+    'LoadError',
+    'Build',
+    'BuildOutput',
+    'Updates',
+    'Message',
+    'Later',
+  }) do
     if events.names[name] then
       events.on(name, function()
         redraw()

@@ -170,6 +170,11 @@ local function message(p)
   if sec == 'failed' then
     return vim.split(p.err or 'failed', '\n')[1], 'CinchFailed'
   elseif sec == 'working' then
+    -- A build shows what it is printing now.
+    local log = p.activity == 'building' and p.build_log or {}
+    if #log > 0 then
+      return log[#log], 'CinchMuted'
+    end
     return (p.activity or 'loading') .. '…', 'CinchActive'
   elseif sec == 'disabled' then
     return p.reason == 'cond' and 'cond is false' or 'enabled = false', 'CinchMuted'
@@ -438,6 +443,17 @@ end
 --- follows, the version you asked for when that is not a branch, the commit on
 --- disk, and its readme. Branches come from vim.pack.get, read a moment after the
 --- plugin is selected.
+--- The last lines of its build's output: live while it builds, else the last build's.
+---@param c cinch.ui.Canvas
+---@param p cinch.Plugin
+local function pane_output(c, p)
+  local log = p.build_log or {}
+  local first = math.max(1, #log - 11)
+  for i = first, #log do
+    kv(c, i == first and 'output' or '', { { log[i], 'CinchMuted' } })
+  end
+end
+
 ---@param c cinch.ui.Canvas
 ---@param p cinch.Plugin
 ---@param ctx cinch.ui.Ctx
@@ -599,6 +615,9 @@ function M.pane(name, width, ctx)
     if p.state == 'pending' then
       kv(c, 'then', { { 'loads when this is done', 'CinchMuted' } })
     end
+    if p.activity == 'building' then
+      pane_output(c, p)
+    end
   elseif sec == 'disabled' then
     kv(c, 'off', { { p.reason == 'cond' and 'cond returned false' or 'enabled = false' } })
   else
@@ -612,6 +631,9 @@ function M.pane(name, width, ctx)
     pane_updates(c, p)
     pane_deps(c, p)
     pane_config(c, p)
+    if p.activity ~= 'building' then
+      pane_output(c, p)
+    end
   end
   if p.origin and p.origin.file then
     local line = ctx.spec_lines[p.name]

@@ -152,15 +152,70 @@ function M.after_build(p, fn)
   waiters[p.name] = list
 end
 
---- A shell command, in the background from the plugin's directory.
+-- Lines of build output kept on the plugin.
+local log_max = 100
+
+--- New lines of a build's output onto `p.build_log`, without terminal colors.
+---@param p cinch.Plugin
+---@param lines string[]
+local function add_output(p, lines)
+  local log = p.build_log or {}
+  for _, line in ipairs(lines) do
+    log[#log + 1] = line
+  end
+  while #log > log_max do
+    table.remove(log, 1)
+  end
+  p.build_log = log
+  if events.has('BuildOutput') then
+    events.emit('BuildOutput', { plugin = p, lines = lines })
+  end
+end
+
+--- A vim.system stream reader: collects the whole text in `raw` and passes each
+--- complete line on as it arrives. A carriage return ends a line too, so a progress
+--- counter shows as it moves.
+---@param p cinch.Plugin
+---@param raw string[]
+---@return fun(err?: string, data?: string)
+local function reader(p, raw)
+  local partial = ''
+  return function(_, data)
+    raw[#raw + 1] = data
+    local parts = vim.split(partial .. (data or ''), '[\r\n]')
+    partial = data and table.remove(parts) or ''
+    local lines = {}
+    for _, part in ipairs(parts) do
+      local line = vim.trim((part:gsub('\27%[[%d;?]*%a', '')))
+      if line ~= '' then
+        lines[#lines + 1] = line
+      end
+    end
+    if #lines > 0 then
+      vim.schedule(function()
+        add_output(p, lines)
+      end)
+    end
+  end
+end
+
+--- A shell command, in the background from the plugin's directory. Its output
+--- streams onto `p.build_log` as it runs.
 ---@param p cinch.Plugin
 ---@param cmd string
 ---@param start integer
 local function shell_build(p, cmd, start)
   state.activity(p, 'building')
-  vim.system({ vim.o.shell, vim.o.shellcmdflag, cmd }, { cwd = p.path, text = true }, function(r)
-    local output = vim.trim((r.stdout or '') .. (r.stderr or ''))
-    local err = r.code ~= 0 and (vim.trim(r.stderr or '') ~= '' and vim.trim(r.stderr) or ('exit ' .. r.code)) or nil
+  local out, errs = {}, {}
+  vim.system({ vim.o.shell, vim.o.shellcmdflag, cmd }, {
+    cwd = p.path,
+    text = true,
+    stdout = reader(p, out),
+    stderr = reader(p, errs),
+  }, function(r)
+    local stderr = vim.trim(table.concat(errs))
+    local output = vim.trim(table.concat(out) .. table.concat(errs))
+    local err = r.code ~= 0 and (stderr ~= '' and stderr or ('exit ' .. r.code)) or nil
     vim.schedule(function()
       finish(p, start, err, output)
     end)
@@ -268,6 +323,7 @@ function M.build(p)
     f:close()
   end
   local start = uv.hrtime()
+  p.build_log = {}
   if type(b) == 'function' then
     function_build(p, b, start)
   elseif b:sub(1, 1) == ':' then

@@ -39,7 +39,12 @@ require('cinch').setup({
         end,
       },
       { H.src('cmdy'), cmd = 'CmdyGo', build = ':CmdyBuild' },
-      { H.src('delta.nvim'), cmd = 'DeltaGo', build = 'sleep 0.5 && touch made' },
+      {
+        H.src('delta.nvim'),
+        cmd = 'DeltaGo',
+        -- Colored, then a progress counter on one line, the way build tools print.
+        build = [[printf '\033[32mstep one\033[0m\n' && sleep 0.5 && printf '50%%\r100%%\n' && touch made]],
+      },
       { H.src('gamma'), build = 'exit 3' },
     },
   },
@@ -59,12 +64,25 @@ H.after_startup(function()
 
   local delta = H.plugin('delta.nvim')
   H.eq(delta.activity, 'building', 'delta is still building')
+  H.wait(function()
+    return #(delta.build_log or {}) > 0
+  end, 'its first line of output')
+  H.eq(delta.build_log, { 'step one' }, 'its output streams in as it runs, without colors')
+  local plugins = require('cinch.features.ui.plugins')
+  local ctx = { folded = {}, tick = 0, info = {}, spec_lines = {} }
+  local row = vim.iter(plugins.list(120, ctx).lines):find(function(l) ---@param l string
+    return l:find(' delta%.nvim ') ~= nil
+  end)
+  H.eq(vim.endswith(row, 'step one'), true, 'the row shows the newest line')
   H.eq(require('cinch').load('delta.nvim'), nil, 'load returns at once')
   H.eq(delta.state, 'pending', 'and waits for the build')
   H.wait(function()
     return delta.state == 'loaded'
   end, 'delta to load after its build')
   H.eq(vim.g.made_at_load, true, 'the build had finished when it loaded')
+  H.eq(delta.build_log, { 'step one', '50%', '100%' }, 'a carriage return ends a line too')
+  local pane = table.concat(plugins.pane('delta.nvim', 80, ctx).lines, '\n')
+  H.eq(pane:find('output +step one\n +50%%\n +100%%') ~= nil, true, 'the pane keeps the last build output')
   local waited = vim.tbl_filter(function(l)
     return l.msg == 'manual: delta.nvim waits for its build'
   end, require('cinch.features.messages').log)

@@ -27,6 +27,7 @@ M.names = {
   PackOpPre = true, -- { op, names }                    before cinch calls vim.pack.<op>
   PackOp = true, -- { op, names, ok, ms, err? }         after it returns
   Build = true, -- { plugin, ok, ms, err?, output? }
+  BuildOutput = true, -- { plugin, lines }               new output from a running shell build
   Phase = true, -- { name, ms }                         a startup step finished
   Later = true, -- {}                                   the later queue is drained
   Run = true, -- { when, where, ok, ms, err? }         one of your cinch.now/later functions ran

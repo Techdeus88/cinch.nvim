@@ -37,6 +37,7 @@ local M = {}
 ---@field deleted? true deleted from disk this session; installs again on the next start
 ---@field state cinch.State
 ---@field activity? cinch.Activity
+---@field build_log? string[] the last build's output, newest last; streams in while a shell build runs
 ---@field reason? string what loaded or disabled it: 'event BufReadPost', 'dep of x', 'cond'
 ---@field err? string
 ---@field failed_in? 'install'|'load'
