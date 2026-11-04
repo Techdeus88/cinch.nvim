@@ -1,0 +1,199 @@
+-- Public API and the startup sequence:
+-- collect specs -> register -> vim.pack.add -> init hooks -> arm -> now, then later.
+
+local events = require('cinch.events')
+local handler = require('cinch.handler')
+local loader = require('cinch.loader')
+local pack = require('cinch.pack')
+local spec = require('cinch.spec')
+local state = require('cinch.state')
+
+local levels, hrtime = vim.log.levels, vim.uv.hrtime
+
+local M = {}
+
+M.on = events.on
+M.trigger = handler.register
+
+---@class cinch.Opts
+---@field spec? (string|cinch.Spec|cinch.Spec[])[] module paths, directories or specs; default { 'plugins' }
+---@field confirm? boolean ask before installing, vim.pack's prompt; default true
+---@field budget? integer ms of `later` loading per event-loop tick; default 5
+---@field features? string[] modules under cinch.features to load; default { 'messages', 'stats', 'updates', 'ui' }
+---@field [string] table a feature's options, under its name
+
+---@type cinch.Opts
+local defaults =
+  { spec = { 'plugins' }, confirm = true, budget = 5, features = { 'messages', 'stats', 'updates', 'ui' } }
+
+---@type cinch.Opts? set by setup()
+M.opts = nil
+
+---@param name string
+---@param start integer hrtime
+local function phase(name, start)
+  if events.has('Phase') then
+    events.emit('Phase', { name = name, ms = (hrtime() - start) / 1e6 })
+  end
+end
+
+--- Where setup() or add() was called from, for messages about inline specs.
+---@return cinch.Origin
+local function caller()
+  local info = debug.getinfo(3, 'S')
+  return { file = info and info.source:gsub('^@', '') or '?' }
+end
+
+--- `enabled` or `cond` set to false, or a function returning false, turns a plugin off.
+--- A function that raises leaves it on, with a warning.
+---@param p cinch.Plugin
+---@return boolean on, string? why
+local function enabled(p)
+  for _, k in ipairs({ 'enabled', 'cond' }) do
+    local v = p.data[k]
+    if type(v) == 'function' then
+      local ok, res = pcall(v, p)
+      if not ok then
+        events.report(('`%s`: %s raised, so it stays on: %s'):format(p.name, k, res), levels.WARN)
+      elseif res == false then
+        return false, k
+      end
+    elseif v == false then
+      return false, k
+    end
+  end
+  return true
+end
+
+--- Install, init and arm new plugins, then load what can load now.
+---@param added cinch.Plugin[]
+---@param confirm? boolean
+local function activate(added, confirm)
+  local t = hrtime()
+  local install = {}
+  for _, p in ipairs(added) do
+    local on, why = enabled(p)
+    if on then
+      install[#install + 1] = p
+    else
+      state.set(p, 'disabled', why)
+    end
+  end
+  if #install > 0 then
+    for _, p in ipairs(pack.add(install, confirm)) do
+      p.err = 'not installed'
+      state.set(p, 'failed', 'install')
+    end
+  end
+  phase('install', t)
+
+  t = hrtime()
+  for _, p in ipairs(install) do
+    if p.state == 'registered' then
+      local ok, err = loader.hook(p, 'init')
+      if not ok then
+        events.report(('`%s` %s'):format(p.name, err), levels.ERROR)
+      end
+      state.set(p, 'pending')
+      handler.arm(p)
+    end
+  end
+  phase('init', t)
+
+  t = hrtime()
+  handler.start()
+  phase('now', t)
+end
+
+--- Load each feature named in opts.features. A feature that is not there is skipped.
+---@param opts cinch.Opts
+local function load_features(opts)
+  for _, name in ipairs(opts.features) do
+    local mod = 'cinch.features.' .. name
+    local ok, f = pcall(require, mod)
+    if not ok then
+      if not tostring(f):find(("module '%s' not found"):format(mod), 1, true) then
+        events.report(('feature `%s`: %s'):format(name, f), levels.ERROR)
+      end
+    elseif type(f) == 'table' and type(f.setup) == 'function' then
+      local ran, err = pcall(f.setup, opts[name] or {})
+      if not ran then
+        events.report(('feature `%s`: %s'):format(name, err), levels.ERROR)
+      end
+    end
+  end
+end
+
+--- Read your specs and start your plugins. Call it once, from init.lua.
+---@param opts? cinch.Opts
+function M.setup(opts)
+  if M.opts then
+    return events.report('setup() already ran; use add() for more plugins', levels.WARN)
+  end
+  M.opts = vim.tbl_extend('force', defaults, opts or {})
+  handler.budget = M.opts.budget
+  load_features(M.opts)
+  local t = hrtime()
+  local added = spec.register(spec.collect(M.opts.spec, caller()))
+  phase('specs', t)
+  activate(added, M.opts.confirm)
+end
+
+--- Add plugins, the way vim.pack.add does: a list of specs, cinch fields allowed.
+---@param specs (string|cinch.Spec)[]
+---@param opts? { confirm?: boolean }
+---@return cinch.Plugin[] added
+function M.add(specs, opts)
+  local confirm = opts and opts.confirm
+  if confirm == nil then
+    confirm = (M.opts or defaults).confirm
+  end
+  local added = spec.register(spec.collect({ specs }, caller()))
+  activate(added, confirm)
+  return added
+end
+
+---@param names string|string[]
+---@return cinch.Plugin[]
+local function resolve(names)
+  local res = {}
+  for _, name in ipairs(type(names) == 'table' and names or { names }) do
+    local p = state.plugins[name]
+    if p then
+      res[#res + 1] = p
+    else
+      events.report(('no plugin named `%s`'):format(name), levels.WARN)
+    end
+  end
+  return res
+end
+
+--- Load plugins now, whatever they were waiting for.
+---@param names string|string[]
+---@param reason? string
+function M.load(names, reason)
+  for _, p in ipairs(resolve(names)) do
+    loader.load(p, reason or 'manual')
+  end
+end
+
+--- Run plugins' builds again.
+---@param names string|string[]
+function M.build(names)
+  vim.tbl_map(pack.build, resolve(names))
+end
+
+--- One plugin record, or all of them in declaration order.
+---@param name? string
+---@return cinch.Plugin|cinch.Plugin[]|nil
+function M.get(name)
+  if name then
+    return state.plugins[name]
+  end
+  return state.list
+end
+
+M.update = pack.update
+M.del = pack.del
+
+return M

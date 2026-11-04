@@ -1,0 +1,222 @@
+-- Loading one plugin: its dependencies, packadd, config and after, in that order.
+-- A plugin moves pending -> loading -> loaded or failed. Loading never throws
+-- into whatever asked for it; a failure is reported and recorded on the plugin.
+
+local events = require('cinch.events')
+local handler = require('cinch.handler')
+local pack = require('cinch.pack')
+local state = require('cinch.state')
+
+local api, uv = vim.api, vim.uv
+
+local M = {}
+
+-- Load sequence number, for the order plugins loaded in.
+local count = 0
+
+--- Call a spec hook in protected mode.
+---@param p cinch.Plugin
+---@param name 'init'|'opts'|'config'|'after'
+---@return boolean ok, any result or error
+function M.hook(p, name, ...)
+  local fn = p.data[name]
+  if type(fn) ~= 'function' then
+    return true, nil
+  end
+  local ok, res = xpcall(fn, debug.traceback, p, ...)
+  if not ok then
+    res = ('%s: %s'):format(name, res)
+  end
+  return ok, res
+end
+
+---@param s string
+---@return string
+local function norm(s)
+  return (s:lower():gsub('^n?vim[-_.]', ''):gsub('[-_.]n?vim$', ''):gsub('%.lua$', ''):gsub('[^%w]', ''))
+end
+
+--- The module whose setup() gets opts: `main`, the one in lua/ named like the
+--- plugin or its repo, or the only one there. From sarcina's main_module.lua.
+---@param p cinch.Plugin
+---@return string
+local function main_module(p)
+  if p.data.main then
+    return p.data.main
+  end
+  local wanted = { norm(p.name), norm(p.src:gsub('%.git$', ''):match('[^/]+$') or '') }
+  local mods = {}
+  for entry, kind in vim.fs.dir(vim.fs.joinpath(p.path, 'lua')) do
+    local mod = kind == 'directory' and entry or entry:match('^(.+)%.lua$')
+    if mod then
+      if norm(mod) == wanted[1] or norm(mod) == wanted[2] then
+        return mod
+      end
+      mods[#mods + 1] = mod
+    end
+  end
+  if #mods == 1 then
+    return mods[1]
+  end
+  table.sort(mods)
+  error(('cannot tell which module gets opts (%s); set `main`'):format(table.concat(mods, ', ')), 0)
+end
+
+--- opts, then config: config(p, opts), or require(main).setup(opts).
+---@param p cinch.Plugin
+---@return boolean ok, string? err
+local function configure(p)
+  local d = p.data
+  local opts = d.opts
+  if type(opts) == 'function' then
+    -- sarcina style: return a table, or fill in the empty one given.
+    local given = {}
+    local ok, res = M.hook(p, 'opts', given)
+    if not ok then
+      return false, res
+    end
+    opts = res == nil and given or res
+  end
+  -- What the plugin was given, for the UI's spec view.
+  p.opts_used = opts
+  if type(d.config) == 'function' then
+    return M.hook(p, 'config', opts or {})
+  end
+  if d.config == true or opts ~= nil then
+    return xpcall(function()
+      local main = main_module(p)
+      p.main_used = main
+      local mod = require(main)
+      if type(mod) ~= 'table' or type(mod.setup) ~= 'function' then
+        error(('`%s` has no setup(); set `main` or `config`'):format(main), 0)
+      end
+      mod.setup(opts or {})
+    end, function(e)
+      return 'config: ' .. tostring(e)
+    end)
+  end
+  return true
+end
+
+---@param p cinch.Plugin
+local function packadd(p)
+  local name = vim.fn.escape(p.name, ' ')
+  -- While init.lua runs, Neovim's load-plugins step sources plugin/ and
+  -- after/plugin/ later, in normal startup order; :packadd! only adds the path.
+  if vim.v.vim_did_init == 0 then
+    vim.cmd.packadd({ name, bang = true, magic = { file = false } })
+    return
+  end
+  vim.cmd.packadd({ name, magic = { file = false } })
+  if vim.v.vim_did_enter == 0 then
+    return
+  end
+  -- After startup :packadd does not source after/plugin/.
+  for _, f in ipairs(vim.fn.glob(p.path .. '/after/plugin/**/*.{vim,lua}', false, true)) do
+    vim.cmd.source({ f, magic = { file = false } })
+  end
+  -- :packadd sourced its ftdetect/; buffers opened before it never saw them.
+  if #vim.fn.glob(p.path .. '/ftdetect/*.{vim,lua}', false, true) > 0 then
+    for _, b in ipairs(api.nvim_list_bufs()) do
+      if api.nvim_buf_is_loaded(b) and vim.bo[b].buftype == '' and vim.bo[b].filetype == '' then
+        api.nvim_buf_call(b, function()
+          vim.cmd('filetype detect')
+        end)
+      end
+    end
+  end
+end
+
+---@param p cinch.Plugin
+---@return cinch.Plugin? building itself or a dependency with a build running
+local function building(p)
+  if p.activity == 'building' then
+    return p
+  end
+  for _, name in ipairs(p.deps) do
+    local d = state.plugins[name]
+    if d and d.activity == 'building' then
+      return d
+    end
+  end
+end
+
+---@param p cinch.Plugin
+---@param reason string
+---@param err string
+local function fail(p, reason, err)
+  p.err = err
+  state.set(p, 'failed', reason)
+  events.report(('`%s` failed to load: %s'):format(p.name, err), vim.log.levels.ERROR)
+  if events.has('LoadError') then
+    events.emit('LoadError', { plugin = p, reason = reason, err = err })
+  end
+end
+
+--- Load a pending plugin and its dependencies. `done` runs once, when it has
+--- loaded or failed, which may be later if a build is still running.
+---@param p cinch.Plugin
+---@param reason string 'now', 'later', 'event BufReadPost', 'dep of x', ...
+---@param done? fun()
+---@return boolean loaded now
+function M.load(p, reason, done)
+  done = done or function() end
+  if p.state ~= 'pending' then
+    done()
+    return p.state == 'loaded'
+  end
+  -- Its build makes something it needs: load once the build ends, never block.
+  local b = building(p)
+  if b then
+    pack.after_build(b, function()
+      M.load(p, reason, done)
+    end)
+    return false
+  end
+  local pre = events.has('LoadPre') and events.emit('LoadPre', { plugin = p, reason = reason }) or {}
+  if pre.cancel then
+    events.report(('`%s` not loaded: %s'):format(p.name, pre.cancel_reason or 'cancelled'))
+    done()
+    return false
+  end
+
+  state.set(p, 'loading', reason)
+  for _, name in ipairs(p.deps) do
+    local d = state.plugins[name]
+    if d.state == 'loading' then
+      events.report(('dependency cycle: `%s` and `%s`'):format(p.name, name), vim.log.levels.WARN)
+    else
+      M.load(d, 'dep of ' .. p.name)
+    end
+  end
+  -- Before packadd, so a stub never shadows or deletes what the plugin defines.
+  handler.disarm(p)
+  pack.rev(p)
+
+  local t0 = uv.hrtime()
+  local ok, err = pcall(packadd, p)
+  local t1 = uv.hrtime()
+  if ok then
+    ok, err = configure(p)
+  end
+  if ok then
+    ok, err = M.hook(p, 'after')
+  end
+  local t2 = uv.hrtime()
+  if not ok then
+    fail(p, reason, tostring(err))
+    done()
+    return false
+  end
+
+  count = count + 1
+  p.order = count
+  handler.loaded(p)
+  state.set(p, 'loaded', reason)
+  -- Always emitted: it is also the `User CinchLoad` autocmd.
+  events.emit('Load', { plugin = p, reason = reason, ms = { packadd = (t1 - t0) / 1e6, config = (t2 - t1) / 1e6 } })
+  done()
+  return true
+end
+
+return M
