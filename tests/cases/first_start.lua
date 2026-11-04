@@ -32,6 +32,8 @@ cinch.setup({
   spec = { { { H.src('early'), load = 'now' }, { H.src('beta.nvim') }, { H.src('missing') } } },
 })
 cinch.add({ { H.src('alpha.nvim'), cmd = 'AlphaCmd' } })
+-- A :Cmd build needs its plugin loaded, so it must wait until the batch is armed.
+cinch.add({ { H.src('cmdy'), cmd = 'CmdyGo', build = ':CmdyBuild' } })
 local after_setup = { early = H.plugin('early').state, alpha = H.plugin('alpha.nvim').state }
 
 local function ui_enter()
@@ -63,11 +65,17 @@ H.after_startup(function()
   H.eq(vim.uv.fs_stat(pack.dir .. '/early'), nil, 'nothing installed before UIEnter')
   H.eq(pack.idle(), false, 'and vim.pack not called yet')
   ui_enter()
-  H.eq(seen.installing, { 'alpha.nvim', 'beta.nvim', 'early', 'missing' }, 'one batch, the add() call joined it')
+  H.eq(
+    seen.installing,
+    { 'alpha.nvim', 'beta.nvim', 'cmdy', 'early', 'missing' },
+    'one batch, the add() calls joined it'
+  )
   H.eq(seen.failed, { 'missing' }, 'Installed names what did not install')
   H.eq(H.plugin('early').reason, 'now', 'now plugins load right after the batch')
   H.eq(vim.g.early_did_enter, 1, 'after VimEnter on a first start')
   vim.cmd('AlphaCmd go')
   H.eq(vim.g.alpha_cmd.args, 'go', 'triggers are armed after the batch')
   H.eq(H.plugin('missing').failed_in, 'install', 'a failed install is marked')
+  H.eq(vim.g.cmdy_built, true, 'a :Cmd build ran once its plugin was armed')
+  H.eq(H.plugin('cmdy').reason, 'build', 'loading the plugin first')
 end)

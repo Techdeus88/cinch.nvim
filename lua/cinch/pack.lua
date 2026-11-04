@@ -187,27 +187,20 @@ local function function_build(p, fn, start)
   end
 end
 
----@type cinch.Plugin[] `:Cmd` builds waiting for VimEnter
-local after_enter = {}
+---@type cinch.Plugin[] `:Cmd` builds waiting for their plugin to be able to load
+local waiting = {}
 
---- An Ex command. It comes from the plugin itself, so the plugin loads first.
---- During startup that waits for VimEnter, when its plugin/ files have run.
+--- An Ex command. It comes from the plugin itself, so the plugin loads first,
+--- which needs two things: Neovim has started, so its plugin/ files and yours have
+--- run, and the plugin is armed. On a first start it installs on UIEnter, after
+--- startup but before it is armed, so the build waits for M.run_waiting().
 ---@param p cinch.Plugin
 ---@param cmd string
 local function cmd_build(p, cmd)
-  if vim.v.vim_did_enter == 0 then
-    after_enter[#after_enter + 1] = p
-    if #after_enter == 1 then
-      api.nvim_create_autocmd('VimEnter', {
-        once = true,
-        callback = vim.schedule_wrap(function()
-          local list = after_enter
-          after_enter = {}
-          for _, q in ipairs(list) do
-            cmd_build(q, q.data.build:sub(2))
-          end
-        end),
-      })
+  if vim.v.vim_did_enter == 0 or p.state == 'registered' then
+    waiting[#waiting + 1] = p
+    if #waiting == 1 and vim.v.vim_did_enter == 0 then
+      api.nvim_create_autocmd('VimEnter', { once = true, callback = vim.schedule_wrap(M.run_waiting) })
     end
     return
   end
@@ -219,6 +212,16 @@ local function cmd_build(p, cmd)
   state.activity(p, 'building')
   local ok, err = pcall(vim.cmd --[[@as function]], cmd)
   finish(p, start, not ok and tostring(err) or nil)
+end
+
+--- Run the `:Cmd` builds that were waiting, once their plugin can load. init.lua
+--- calls this after arming a batch; VimEnter calls it too.
+function M.run_waiting()
+  local list = waiting
+  waiting = {}
+  for _, p in ipairs(list) do
+    cmd_build(p, p.data.build:sub(2))
+  end
 end
 
 --- Run a plugin's `build`.

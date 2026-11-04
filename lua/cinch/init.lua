@@ -116,6 +116,8 @@ local function start(install)
   t = hrtime()
   handler.start()
   phase('now', t)
+  -- `:Cmd` builds of plugins installed in this batch can run now they are armed.
+  pack.run_waiting()
 end
 
 --- Whether a UI will attach. Headless Neovim never gets one. Replaceable for tests.
