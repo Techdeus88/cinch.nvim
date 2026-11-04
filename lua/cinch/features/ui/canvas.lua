@@ -28,6 +28,9 @@ M.highlights = {
   CinchIconLater = 'DiagnosticInfo',
   CinchIconTrigger = 'DiagnosticWarn',
   CinchDep = 'DiagnosticHint',
+  CinchTriggerValue = 'Normal',
+  CinchLink = 'Underlined',
+  CinchCommit = 'Constant',
 }
 
 -- Colors and rounded shapes ------------------------------------------------------
@@ -88,6 +91,8 @@ function M.define_colors(rounded)
     -- fg only: the end takes the row's own background, the cursor line's included.
     set(0, group .. 'Cap', { fg = bg })
   end
+  -- A link reads as one: underlined, in the color of a directory name.
+  set(0, 'CinchLink', { fg = color('Directory', 'fg') or color('Underlined', 'fg'), underline = true })
   local fill = color('DiagnosticInfo', 'fg') or color('Function', 'fg') or 0x7aa2f7
   local track = blend(fill, base, 0.18)
   set(0, 'CinchPillFill', { bg = fill })

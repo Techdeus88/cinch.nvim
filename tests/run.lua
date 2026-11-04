@@ -18,6 +18,7 @@ vim.api.nvim_create_user_command('AlphaCmd', function(a)
   vim.g.alpha_cmd = { args = a.args, bang = a.bang, range = a.range }
 end, { nargs = '*', bang = true, range = true })]],
     ['after/plugin/alpha.lua'] = 'vim.g.alpha_after = (vim.g.alpha_after or 0) + 1',
+    ['README.md'] = '# alpha',
   },
   ['beta.nvim'] = {
     ['lua/beta.lua'] = 'vim.g.beta_required = (vim.g.beta_required or 0) + 1 return { v = 1 }',

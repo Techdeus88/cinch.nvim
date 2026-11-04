@@ -88,10 +88,10 @@ H.after_startup(function()
   local icons = require('cinch.features.ui.plugins').icons
   local alpha_row = lines(w.list)[line_of(w.list, ' alpha%.nvim ')]
   H.eq(alpha_row:find('● alpha.nvim (', 1, true) ~= nil, true, 'the lit light left of the name, then its load time')
-  H.eq(vim.endswith(alpha_row, icons.later), true, 'later is its icon, with nothing after it')
+  H.eq(vim.endswith(alpha_row, icons.later .. ' later'), true, 'later is its icon and name, with nothing after it')
   local delta_row = lines(w.list)[line_of(w.list, ' delta%.nvim ')]
   H.eq(
-    delta_row:find('○ delta.nvim ' .. icons.cmd .. ' DeltaGo', 1, true) ~= nil,
+    delta_row:find('○ delta.nvim ' .. icons.cmd .. ' cmd DeltaGo', 1, true) ~= nil,
     true,
     'a trigger: its icon and value'
   )
@@ -116,6 +116,15 @@ H.after_startup(function()
   H.eq(line_of(w.pane, "require%('alpha'%)%.setup%(opts%)") ~= nil, true, 'with what config called')
   H.eq(line_of(w.pane, 'style = "night"') ~= nil, true, 'and the opts it got')
   H.eq(line_of(w.pane, 'ui%.lua:%d+') ~= nil, true, 'and where its spec is')
+  -- Long paths wrap under themselves; read them whole.
+  local pane = table.concat(lines(w.pane), '\n'):gsub('\n' .. (' '):rep(11), '')
+  H.eq(pane:find('dir +/[^\n]*/pack/core/opt/alpha%.nvim\n') ~= nil, true, 'its folder')
+  H.eq(pane:find('url +file://[^\n]*alpha%.nvim\n') ~= nil, true, 'its url')
+  H.eq(line_of(w.pane, '^ commit +' .. H.plugin('alpha.nvim').rev:sub(1, 7)) ~= nil, true, 'the commit on disk')
+  H.eq(line_of(w.pane, '^ readme +README%.md') ~= nil, true, 'its readme')
+  H.wait(function()
+    return line_of(w.pane, '^ branch +main') ~= nil
+  end, 'the branch it follows, once vim.pack.get has answered')
 
   H.press('=')
   H.eq(api.nvim_win_get_config(w.frame).width, math.floor(vim.o.columns * 0.95), '= stretches to 95%')

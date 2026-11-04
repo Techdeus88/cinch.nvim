@@ -71,4 +71,8 @@ H.after_startup(function()
   H.eq(vim.b[vim.api.nvim_win_get_buf(vim.fn.win_getid(1))].dashy, true, 'that buffer opened in your editor')
   H.eq(vim.api.nvim_get_current_win(), w.list, 'and focus is back on the list')
   H.eq(H.plugin('colory').state, 'loaded', 'and the plugins started')
+  H.wait(function()
+    local pane = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(w.pane), 0, -1, false)
+    return table.concat(pane, '\n'):find('\n branch +main') ~= nil
+  end, 'the pane reading vim.pack once the plugin it shows has installed')
 end)

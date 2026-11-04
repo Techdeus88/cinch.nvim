@@ -292,7 +292,8 @@ end
 -- vim.pack details ------------------------------------------------------------------
 
 --- What vim.pack knows about the selected plugin, read once it stays selected a moment.
---- While vim.pack is busy, an update check say, it tries again a little later.
+--- While vim.pack is busy, an update check say, or the plugin is still installing,
+--- it tries again a little later.
 ---@param tries? integer
 local function fetch_info(tries)
   local name = ui.selected
@@ -306,11 +307,11 @@ local function fetch_info(tries)
     end
     local p = state.plugins[name]
     local pack = require('cinch.pack')
-    if not (p and p.path) then
-      return
-    elseif not pack.idle() then
+    if not (p and p.path) or not pack.idle() then
       if tries < 20 then
         return fetch_info(tries + 1)
+      elseif not (p and p.path) then
+        return
       end
       ui.ctx.info[name] = 'vim.pack is busy; r reads again'
     else
@@ -383,8 +384,11 @@ local function subscribe()
     end,
   })
   events.on('Pack', function(d)
-    -- What vim.pack knew about it is out of date.
+    -- What vim.pack knew about it is out of date: read it again if it is on show.
     ui.ctx.info[d.name] = nil
+    if d.name == ui.selected then
+      fetch_info()
+    end
     redraw()
   end)
 end

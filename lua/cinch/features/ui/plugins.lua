@@ -102,8 +102,8 @@ end
 -- Triggers in this order, then any of your own by name.
 local trigger_order = { event = 1, ft = 2, cmd = 3, keys = 4 }
 
---- A trigger plugin's triggers, one item each: its icon and value. The one that
---- loaded it sits on a chip.
+--- A trigger plugin's triggers, one item per type: its icon and type, then its
+--- values. The value that loaded it sits on a chip.
 ---@param p cinch.Plugin
 ---@return cinch.ui.Item[]
 local function trigger_items(p)
@@ -114,23 +114,26 @@ local function trigger_items(p)
   end)
   local out = {}
   for _, kind in ipairs(kinds) do
+    local item = { { glyph(kind) .. ' ' .. kind, 'CinchIconTrigger' } }
     for _, v in ipairs(p.triggers[kind]) do
       local value = type(v) == 'table' and v.lhs or tostring(v)
       -- What the handler says when it fires: 'event FileType lua', 'cmd Foo', 'keys <lhs>'.
       local fired_as = ((kind == 'event' or kind == 'ft') and 'event' or kind) .. ' ' .. value
-      local text = glyph(kind) .. ' ' .. (kind == 'ft' and value:gsub('^FileType ', '') or value)
+      local shown = kind == 'ft' and value:gsub('^FileType ', '') or value
+      item[#item + 1] = { ' ' }
       if p.reason == fired_as and p.state ~= 'pending' then
-        out[#out + 1] = canvas.chip(text, 'CinchTrigger', cells(text) + 2)
+        vim.list_extend(item, canvas.chip(shown, 'CinchTrigger', cells(shown) + 2))
       else
-        out[#out + 1] = { { text, 'CinchIconTrigger' } }
+        item[#item + 1] = { shown, 'CinchTriggerValue' }
       end
     end
+    out[#out + 1] = item
   end
   return out
 end
 
---- How a plugin loads, as icons: now and later one each, a trigger plugin its
---- triggers, and a plugin that is only a dependency the plugins that need it.
+--- How a plugin loads: an icon and its name for now and later, each trigger type
+--- with its values, and for a plugin that is only a dependency the plugins that need it.
 ---@param p cinch.Plugin
 ---@param needed_by string[]
 ---@return cinch.ui.Item[]
@@ -142,7 +145,7 @@ local function load_items(p, needed_by)
   elseif p.when == 'trigger' then
     return trigger_items(p)
   end
-  return { { { glyph(p.when), p.when == 'now' and 'CinchIconNow' or 'CinchIconLater' } } }
+  return { { { glyph(p.when) .. ' ' .. p.when, p.when == 'now' and 'CinchIconNow' or 'CinchIconLater' } } }
 end
 
 --- Who needs each plugin: name -> the plugins that list it in deps.
@@ -412,12 +415,47 @@ local function pane_header(c, p)
   c:add({ { ' ' .. ('─'):rep(c.width - 2), 'CinchRule' } })
 end
 
+--- Where the plugin lives and what it is at: its folder, its url, the branch it
+--- follows, the version you asked for when that is not a branch, the commit on
+--- disk, and its readme. Branches come from vim.pack.get, read a moment after the
+--- plugin is selected.
 ---@param c cinch.ui.Canvas
 ---@param p cinch.Plugin
-local function pane_version(c, p)
-  local version = p.version and canvas.value(p.version) or 'default branch'
-  local rev = p.rev and p.rev:sub(1, 7)
-  kv(c, 'version', { { version }, { rev and (' → ' .. rev) or '', 'CinchMuted' } })
+---@param ctx cinch.ui.Ctx
+local function pane_where(c, p, ctx)
+  local path = p.path or vim.fs.joinpath(require('cinch.pack').dir, p.name)
+  local on_disk = vim.uv.fs_stat(path) ~= nil
+  if on_disk then
+    kv(c, 'dir', { { vim.fn.fnamemodify(path, ':~'), 'CinchLink' } })
+  end
+  kv(c, 'url', { { p.src, 'CinchLink' } })
+  local info = ctx.info[p.name]
+  local branches = type(info) == 'table' and info.branches or {}
+  local version = p.version
+  -- The branch it follows: the one you named, or the default when you named none.
+  local branch = type(version) == 'string' and vim.list_contains(branches, version) and version
+    or version == nil and branches[1]
+  if branch then
+    local tags = #(info.tags or {})
+    kv(c, 'branch', { { branch }, { (' · %d tag%s'):format(tags, tags == 1 and '' or 's'), 'CinchMuted' } })
+  elseif type(info) == 'string' then
+    kv(c, 'branch', { { info, 'CinchMuted' } })
+  end
+  if version ~= nil and not branch then
+    kv(c, 'version', { { canvas.value(version) } })
+  end
+  if p.rev then
+    kv(c, 'commit', { { p.rev:sub(1, 7), 'CinchCommit' } })
+  end
+  local readme = on_disk and vim.fn.glob(path .. '/[Rr][Ee][Aa][Dd][Mm][Ee]*', false, true)[1]
+  if readme then
+    kv(c, 'readme', { { vim.fs.basename(readme) } })
+  end
+end
+
+---@param c cinch.ui.Canvas
+---@param p cinch.Plugin
+local function pane_updates(c, p)
   local updates = feature('updates')
   local u = updates and updates.results[p.name]
   if u then
@@ -485,23 +523,6 @@ local function pane_config(c, p)
   end
 end
 
----@param c cinch.ui.Canvas
----@param p cinch.Plugin
----@param ctx cinch.ui.Ctx
-local function pane_disk(c, p, ctx)
-  local info = ctx.info[p.name]
-  if type(info) == 'table' then
-    local tags = #(info.tags or {})
-    local branches = table.concat(info.branches or {}, ', ')
-    kv(c, 'remote', {
-      { branches ~= '' and branches or 'no branches' },
-      { (' · %d tag%s'):format(tags, tags == 1 and '' or 's'), 'CinchMuted' },
-    })
-  elseif type(info) == 'string' then
-    kv(c, 'remote', { { info, 'CinchMuted' } })
-  end
-end
-
 --- The detail pane for one plugin, `width` cells wide.
 ---@param name? string
 ---@param width integer
@@ -550,10 +571,10 @@ function M.pane(name, width, ctx)
     kv(c, 'load', load_line(p))
   end
   if sec ~= 'disabled' then
-    pane_version(c, p)
+    pane_where(c, p, ctx)
+    pane_updates(c, p)
     pane_deps(c, p)
     pane_config(c, p)
-    pane_disk(c, p, ctx)
   end
   if p.origin and p.origin.file then
     local line = ctx.spec_lines[p.name]

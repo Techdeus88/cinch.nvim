@@ -28,7 +28,7 @@ local M = {}
 
 --- The keys of each view, for the frame's bottom border.
 M.hints = {
-  plugins = ' <CR> fold  / filter  l load  b build  u update  c check  gf spec  ? keys  q close ',
+  plugins = ' <CR> fold  / filter  l load  b build  u update  gf spec  gx url  ? keys  q close ',
   stats = ' <Tab> next view  = size  ? keys  q close ',
   log = ' / filter  G newest  <Tab> next view  ? keys  q close ',
   help = ' ? goes back  q close ',
@@ -161,6 +161,13 @@ function M.make(w)
       'check for updates in the background',
     },
     { { 'gf' }, goto_spec, 'open the spec file at the plugin' },
+    {
+      { 'gx' },
+      on_plugin(function(p)
+        vim.ui.open(p.src)
+      end),
+      'open its url',
+    },
     {
       { 'r' },
       function()
