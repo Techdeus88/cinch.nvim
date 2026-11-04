@@ -56,6 +56,16 @@ H.after_startup(function()
   end
   H.eq(vim.pack.get({ 'cinch.nvim' })[1].active, true, 'vim.pack manages it')
 
+  -- cinch is none of your plugins: no row, no count.
+  local view = require('cinch.features.ui.plugins')
+  local ctx = { folded = {}, tick = 0, info = {}, spec_lines = {} }
+  local function list()
+    return table.concat(view.list(100, ctx).lines, '\n')
+  end
+  H.eq(list():find('cinch', 1, true), nil, 'no row in the Plugins view')
+  H.eq(require('cinch.features.stats').summary().plugins.total, 1, 'and not counted')
+  H.eq(require('cinch.state').yours()[1].name, 'alpha.nvim', 'only your plugins')
+
   local before = pack.rev(p)
   H.commit(origin, 'feat: newer cinch')
   local u = require('cinch.features.updates')
@@ -64,7 +74,9 @@ H.after_startup(function()
     return not u.checking
   end, 'the check')
   H.eq(#(u.results['cinch.nvim'] or { commits = {} }).commits, 1, 'its new commit shows as an update')
+  H.eq(list():find('^ ↑ cinch has 1 new commit · u updates it') ~= nil, true, 'its update gets one line on top')
   u.apply({ 'cinch.nvim' })
+  H.eq(list():find('cinch', 1, true), nil, 'gone once applied')
   H.eq(pack.rev(p) ~= before, true, 'and applies')
   H.eq(H.noted('restart Neovim to run the new code of cinch%.nvim'), true, 'with a restart notice')
 

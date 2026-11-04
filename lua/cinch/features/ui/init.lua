@@ -109,7 +109,7 @@ local function title(width)
   local startup = stats and (stats.marks.uienter or stats.marks.vimenter)
   local left = {
     { ' cinch ', 'CinchTitle' },
-    { ('· %d plugins%s '):format(#state.list, startup and (' · startup ' .. cv.ms(startup)) or ''), 'CinchMuted' },
+    { ('· %d plugins%s '):format(#state.yours(), startup and (' · startup ' .. cv.ms(startup)) or ''), 'CinchMuted' },
   }
   local tabs = {}
   for _, v in ipairs(M.views) do

@@ -40,7 +40,7 @@ end
 ---@return cinch.ui.Trigger[]
 local function collect()
   local by, list = {}, {}
-  for _, p in ipairs(state.list) do
+  for _, p in ipairs(state.yours()) do
     if p.when == 'trigger' and p.state ~= 'disabled' then
       for kind, values in pairs(p.triggers or {}) do
         for _, v in ipairs(values) do
@@ -164,7 +164,7 @@ end
 local function queue(when)
   local list = vim.tbl_filter(function(p)
     return p.when == when and p.state ~= 'disabled'
-  end, state.list)
+  end, state.yours())
   table.sort(list, function(a, b)
     if waits(a) ~= waits(b) then
       return waits(a)
@@ -229,7 +229,7 @@ function M.view(width, ctx)
 
   local deps = vim.tbl_filter(function(p)
     return p.dep_only and p.state ~= 'disabled'
-  end, state.list)
+  end, state.yours())
   if #deps > 0 then
     c:blank()
     if section(c, ctx, 'triggers:deps', glyph('dep') .. ' dependencies', #deps, 'load before what needs them') then

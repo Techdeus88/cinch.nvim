@@ -136,7 +136,7 @@ end
 ---@return table
 function M.summary()
   local s = {
-    plugins = { total = #state.list },
+    plugins = { total = #state.yours() },
     by_state = {},
     by_when = { now = 0, later = 0, trigger = 0 },
     loaded_by = {},
@@ -154,7 +154,7 @@ function M.summary()
   for _, ms in pairs(M.phases) do
     s.startup.cinch = s.startup.cinch + ms
   end
-  for _, p in ipairs(state.list) do
+  for _, p in ipairs(state.yours()) do
     s.by_state[p.state] = (s.by_state[p.state] or 0) + 1
     if p.when then
       s.by_when[p.when] = s.by_when[p.when] + 1
@@ -274,6 +274,10 @@ function M.setup(opts)
     M.phases[d.name] = (M.phases[d.name] or 0) + d.ms
   end)
   events.on('Load', function(d)
+    -- cinch itself is in no count: it was running before anything loaded.
+    if d.plugin.self then
+      return
+    end
     M.plugins[d.plugin.name] = {
       order = d.plugin.order,
       reason = d.reason,

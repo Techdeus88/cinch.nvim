@@ -101,12 +101,13 @@ end
 ---@param c cinch.ui.Canvas
 local function draw_counts(c)
   local by = {}
-  for _, p in ipairs(state.list) do
+  local yours = state.yours()
+  for _, p in ipairs(yours) do
     by[p.state] = (by[p.state] or 0) + 1
   end
   local updates = feature('updates')
   local chips = {
-    { #state.list, 'plugins', 'CinchName' },
+    { #yours, 'plugins', 'CinchName' },
     { by.loaded or 0, 'loaded', 'CinchLoaded' },
     { (by.pending or 0) + (by.registered or 0), 'waiting', 'CinchWaiting' },
     { by.failed or 0, 'failed', 'CinchFailed' },

@@ -65,6 +65,15 @@ local allowed = {
   disabled = { registered = true },
 }
 
+--- Your plugins, in declaration order: every record but cinch itself, which the
+--- update check and `:Cinch update` cover like a plugin but no list or count shows.
+---@return cinch.Plugin[]
+function M.yours()
+  return vim.tbl_filter(function(p)
+    return not p.self
+  end, M.list)
+end
+
 --- Add a record to the registry. spec.lua dedupes first, so a name seen twice is a bug.
 ---@param p cinch.Plugin
 ---@return cinch.Plugin

@@ -255,7 +255,25 @@ end
 local function visible(ctx)
   return vim.tbl_filter(function(p)
     return not ctx.filter or p.name:lower():find(ctx.filter:lower(), 1, true) ~= nil
-  end, state.list)
+  end, state.yours())
+end
+
+--- cinch itself has no row; a pending update of it gets one line above the rest,
+--- which selects it like a plugin, so the pane lists its commits and `u` applies it.
+---@param c cinch.ui.Canvas
+local function own_update(c)
+  local updates = feature('updates')
+  for _, p in ipairs(state.list) do
+    local u = p.self and updates and updates.results[p.name]
+    if u then
+      c:add({
+        { ' ↑ ', 'CinchUpdate' },
+        { 'cinch', 'CinchName' },
+        { (' has %d new commit%s · u updates it'):format(#u.commits, #u.commits == 1 and '' or 's'), 'CinchMuted' },
+      }, { plugin = p.name })
+      c:blank()
+    end
+  end
 end
 
 --- Install progress for a first start: one line of status and a bar across the list.
@@ -331,8 +349,9 @@ function M.list(width, ctx)
   table.sort(by.loaded or {}, function(a, b)
     return (a.order or 0) < (b.order or 0)
   end)
+  own_update(c)
   if ctx.filter then
-    c:add({ { ' / ' .. ctx.filter, 'CinchKey' }, { ('  %d of %d'):format(#plugins, #state.list), 'CinchMuted' } })
+    c:add({ { ' / ' .. ctx.filter, 'CinchKey' }, { ('  %d of %d'):format(#plugins, #state.yours()), 'CinchMuted' } })
   end
   for _, s in ipairs(M.sections) do
     local list = by[s.key]
