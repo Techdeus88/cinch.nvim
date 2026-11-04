@@ -24,6 +24,10 @@ M.highlights = {
   CinchNow = 'DiagnosticVirtualTextOk',
   CinchLater = 'DiagnosticVirtualTextInfo',
   CinchTrigger = 'DiagnosticVirtualTextWarn',
+  CinchIconNow = 'DiagnosticOk',
+  CinchIconLater = 'DiagnosticInfo',
+  CinchIconTrigger = 'DiagnosticWarn',
+  CinchDep = 'DiagnosticHint',
 }
 
 -- Colors and rounded shapes ------------------------------------------------------
@@ -201,6 +205,23 @@ function M.fit(s, w)
     out = vim.fn.strcharpart(out, 0, vim.fn.strchars(out) - 1)
   end
   return out .. '…' .. (' '):rep(w - 1 - M.cells(out))
+end
+
+--- Chunks cut to `w` cells, the last one ending in … when it is cut.
+---@param chunks { [1]: string, [2]?: string }[]
+---@param w integer
+---@return { [1]: string, [2]?: string }[]
+function M.clip(chunks, w)
+  local out, used = {}, 0
+  for _, c in ipairs(chunks) do
+    local n = M.cells(c[1])
+    if used + n > w then
+      out[#out + 1] = { M.fit(c[1], w - used), c[2] }
+      return out
+    end
+    out[#out + 1], used = c, used + n
+  end
+  return out
 end
 
 --- Split `s` into lines of at most `w` cells, at spaces where it can.

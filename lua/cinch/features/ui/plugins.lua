@@ -31,12 +31,13 @@ end
 ---@field spec_lines table<string, integer> line of each plugin's spec in its file
 ---@field install? cinch.ui.Install set while a first start installs
 
--- Sections, in the order they are shown. A plugin goes in the first one whose
--- test it passes, in `priority` order, so a loaded plugin that is updating is "working".
+-- Sections, in the order they are shown: what is happening now first, so it is in
+-- view while it changes, then what went wrong. section_of() puts a plugin in one,
+-- so a loaded plugin that is updating is "working".
 M.sections = {
+  { key = 'working', title = 'working', hl = 'CinchActive' },
   { key = 'failed', title = 'failed', hl = 'CinchFailed' },
   { key = 'loaded', title = 'loaded', hl = 'CinchLoaded' },
-  { key = 'working', title = 'working', hl = 'CinchActive' },
   { key = 'waiting', title = 'waiting', hl = 'CinchWaiting' },
   { key = 'disabled', title = 'disabled', hl = 'CinchMuted' },
 }
@@ -44,10 +45,10 @@ M.sections = {
 ---@param p cinch.Plugin
 ---@return string section key
 function M.section_of(p)
-  if p.state == 'failed' then
-    return 'failed'
-  elseif p.activity or p.state == 'loading' then
+  if p.activity or p.state == 'loading' then
     return 'working'
+  elseif p.state == 'failed' then
+    return 'failed'
   elseif p.state == 'loaded' then
     return 'loaded'
   elseif p.state == 'disabled' then
@@ -56,48 +57,111 @@ function M.section_of(p)
   return 'waiting'
 end
 
-local icons = { failed = '✗', loaded = '●', waiting = '○', disabled = '–' }
-local chip_hl = { now = 'CinchNow', later = 'CinchLater', trigger = 'CinchTrigger', now_if_args = 'CinchNow' }
-local chip_text = { now = 'now', later = 'later', trigger = 'trigger', now_if_args = 'if args' }
+local marks = { failed = '✗', loaded = '●', waiting = '○', disabled = '–' }
 
+--- Nerd Font icons for how a plugin loads. `ui.icons` in setup() replaces any of
+--- them; `trigger` is for a trigger of your own.
+M.icons = {
+  now = '\u{f135}',
+  later = '\u{f017}',
+  event = '\u{f0e7}',
+  ft = '\u{f15b}',
+  cmd = '\u{f120}',
+  keys = '\u{f11c}',
+  dep = '\u{f487}',
+  trigger = '\u{f013}',
+}
+
+---@param name string
+---@return string
+local function glyph(name)
+  local ui = package.loaded['cinch.features.ui']
+  local own = ui and ui.opts.icons
+  return own and own[name] or M.icons[name] or M.icons.trigger
+end
+
+--- The status light left of the name: lit when loaded, a spinner while working.
 ---@param p cinch.Plugin
 ---@param tick integer spinner frame
----@return string icon, string group
-local function icon(p, tick)
+---@return string mark, string group
+local function mark(p, tick)
   local sec = M.section_of(p)
   if sec == 'working' then
     return canvas.spinner[tick % #canvas.spinner + 1], 'CinchActive'
   end
   for _, s in ipairs(M.sections) do
     if s.key == sec then
-      return icons[sec], s.hl
+      return marks[sec], s.hl
     end
   end
   return '·', 'CinchMuted'
 end
 
---- What a waiting plugin waits on: "cmd Trouble · keys <leader>x".
+---@alias cinch.ui.Item { [1]: string, [2]?: string }[] chunks that stay together
+
+-- Triggers in this order, then any of your own by name.
+local trigger_order = { event = 1, ft = 2, cmd = 3, keys = 4 }
+
+--- A trigger plugin's triggers, one item each: its icon and value. The one that
+--- loaded it sits on a chip.
 ---@param p cinch.Plugin
----@return string
-local function waits_on(p)
-  if p.when ~= 'trigger' then
-    return p.when == 'later' and 'after startup' or 'at startup'
+---@return cinch.ui.Item[]
+local function trigger_items(p)
+  local kinds = vim.tbl_keys(p.triggers or {})
+  table.sort(kinds, function(a, b)
+    local x, y = trigger_order[a] or 9, trigger_order[b] or 9
+    return x ~= y and x < y or a < b
+  end)
+  local out = {}
+  for _, kind in ipairs(kinds) do
+    for _, v in ipairs(p.triggers[kind]) do
+      local value = type(v) == 'table' and v.lhs or tostring(v)
+      -- What the handler says when it fires: 'event FileType lua', 'cmd Foo', 'keys <lhs>'.
+      local fired_as = ((kind == 'event' or kind == 'ft') and 'event' or kind) .. ' ' .. value
+      local text = glyph(kind) .. ' ' .. (kind == 'ft' and value:gsub('^FileType ', '') or value)
+      if p.reason == fired_as and p.state ~= 'pending' then
+        out[#out + 1] = canvas.chip(text, 'CinchTrigger', cells(text) + 2)
+      else
+        out[#out + 1] = { { text, 'CinchIconTrigger' } }
+      end
+    end
   end
-  local parts = {}
-  for name, values in pairs(p.triggers or {}) do
-    local shown = vim.tbl_map(function(v)
-      return type(v) == 'table' and v.lhs or (tostring(v):gsub('^FileType ', ''))
-    end, values)
-    parts[#parts + 1] = (name == 'event' and '' or (name .. ' ')) .. table.concat(shown, ', ')
-  end
-  table.sort(parts)
-  return #parts > 0 and table.concat(parts, ' · ') or 'loads with its dependents'
+  return out
 end
 
---- One short phrase per plugin for the list.
+--- How a plugin loads, as icons: now and later one each, a trigger plugin its
+--- triggers, and a plugin that is only a dependency the plugins that need it.
 ---@param p cinch.Plugin
----@return string text, string group
-local function why(p)
+---@param needed_by string[]
+---@return cinch.ui.Item[]
+local function load_items(p, needed_by)
+  if p.dep_only then
+    return vim.tbl_map(function(name)
+      return { { glyph('dep') .. ' ' .. name, 'CinchDep' } }
+    end, needed_by)
+  elseif p.when == 'trigger' then
+    return trigger_items(p)
+  end
+  return { { { glyph(p.when), p.when == 'now' and 'CinchIconNow' or 'CinchIconLater' } } }
+end
+
+--- Who needs each plugin: name -> the plugins that list it in deps.
+---@return table<string, string[]>
+local function dependents()
+  local out = {}
+  for _, p in ipairs(state.list) do
+    for _, d in ipairs(p.deps) do
+      out[d] = out[d] or {}
+      table.insert(out[d], p.name)
+    end
+  end
+  return out
+end
+
+--- The row's message: only when there is something to say.
+---@param p cinch.Plugin
+---@return string? text, string? group
+local function message(p)
   local sec = M.section_of(p)
   if sec == 'failed' then
     return vim.split(p.err or 'failed', '\n')[1], 'CinchFailed'
@@ -105,14 +169,7 @@ local function why(p)
     return (p.activity or 'loading') .. '…', 'CinchActive'
   elseif sec == 'disabled' then
     return p.reason == 'cond' and 'cond is false' or 'enabled = false', 'CinchMuted'
-  elseif sec == 'loaded' then
-    local r = p.reason or ''
-    if r == 'now' or r == 'later' or r == 'manual' then
-      return 'by ' .. r, 'CinchMuted'
-    end
-    return (r:gsub('^event ', '')), 'CinchMuted'
   end
-  return waits_on(p), 'CinchMuted'
 end
 
 ---@param p cinch.Plugin
@@ -133,40 +190,52 @@ end
 
 -- List ----------------------------------------------------------------------------
 
---- Column widths for a list `width` cells wide. A row reads:
----   <name> (<load time>) <bar> <now|later|trigger> <state> <updates and message>
---- When space is short the bar goes first, then the time; the chip and the state
---- always stay, and the message is cut.
----@param width integer
----@param plugins cinch.Plugin[]
-local function columns(width, plugins)
-  local longest = 12
-  for _, p in ipairs(plugins) do
-    longest = math.max(longest, cells(p.name))
-  end
-  local c = { name = math.min(longest, 26), time = 10, bar = 7, chip = canvas.chip_width(9), state = 13 }
-  local function left()
-    return width - (1 + c.name + 1 + c.time + c.bar + c.chip + 1 + c.state)
-  end
-  -- The bar goes when the message would get less than 16 cells, the time below 10.
-  for _, drop in ipairs({ { 'bar', 16 }, { 'time', 10 } }) do
-    if left() < drop[2] then
-      c[drop[1]] = 0
+---@param items cinch.ui.Item[]
+---@return { [1]: string, [2]?: string }[]
+local function join(items)
+  local out = {}
+  for i, item in ipairs(items) do
+    if i > 1 then
+      out[#out + 1] = { ' ' }
     end
+    vim.list_extend(out, item)
   end
-  c.message = math.max(left(), 6)
-  return c
+  return out
 end
 
---- The state column: its mark and word, colored.
+---@class cinch.ui.Row
+---@field mark string
+---@field mark_hl string
+---@field ms? number load time, for the time and the bar
+---@field slowest number the bar's full length
+---@field needed_by string[]
+---@field up? integer pending commits
+---@field msg? string
+---@field msg_hl? string
+
+--- One plugin's line, each part right after the last, cut at the list's edge:
+---   ● <name> (<load time>) <bar> <how it loads> <↑updates> <message>
+---@param c cinch.ui.Canvas
 ---@param p cinch.Plugin
----@param tick integer
----@return string text, string group
-local function state_text(p, tick)
-  local ic, hl = icon(p, tick)
-  local sec = M.section_of(p)
-  local word = sec == 'working' and (p.activity or 'loading') or sec
-  return ic .. ' ' .. word, hl
+---@param r cinch.ui.Row
+local function add_row(c, p, r)
+  local items = {
+    { { ' ' .. r.mark, r.mark_hl } },
+    { { p.name, p.state == 'disabled' and 'CinchMuted' or 'CinchName' } },
+  }
+  if r.ms then
+    local filled, empty = canvas.bar(r.ms, r.slowest, 6)
+    items[#items + 1] = { { '(' .. canvas.ms(r.ms) .. ')', 'CinchMuted' } }
+    items[#items + 1] = { { filled, 'CinchBar' }, { empty, 'CinchBarEmpty' } }
+  end
+  vim.list_extend(items, load_items(p, r.needed_by))
+  if r.up then
+    items[#items + 1] = { { '↑' .. r.up, 'CinchUpdate' } }
+  end
+  if r.msg then
+    items[#items + 1] = { { r.msg, r.msg_hl } }
+  end
+  c:add(canvas.clip(join(items), c.width - 1), { plugin = p.name })
 end
 
 ---@param ctx cinch.ui.Ctx
@@ -175,54 +244,6 @@ local function visible(ctx)
   return vim.tbl_filter(function(p)
     return not ctx.filter or p.name:lower():find(ctx.filter:lower(), 1, true) ~= nil
   end, state.list)
-end
-
---- The start of a row, the same in every phase: name, time, bar, chip.
----@param p cinch.Plugin
----@param col table
----@param ms? number
----@param slowest number
----@return { [1]: string, [2]?: string }[]
-local function row_start(p, col, ms, slowest)
-  local chunks = {
-    { ' ' .. fit(p.name, col.name) .. ' ', p.state == 'disabled' and 'CinchMuted' or 'CinchName' },
-  }
-  if col.time > 0 then
-    chunks[#chunks + 1] = { fit(ms and ('(' .. canvas.ms(ms) .. ')') or '', col.time), 'CinchMuted' }
-  end
-  if col.bar > 0 then
-    local filled, empty = canvas.bar(ms or 0, slowest, col.bar - 1)
-    chunks[#chunks + 1] = { ms and filled or (' '):rep(col.bar - 1), 'CinchBar' }
-    chunks[#chunks + 1] = { (ms and empty or '') .. ' ', 'CinchBarEmpty' }
-  end
-  vim.list_extend(chunks, canvas.chip(chip_text[p.load], chip_hl[p.load], 9))
-  chunks[#chunks + 1] = { ' ' }
-  return chunks
-end
-
----@param c cinch.ui.Canvas
----@param p cinch.Plugin
----@param col table
----@param slowest number
----@param ctx cinch.ui.Ctx
-local function row(c, p, col, slowest, ctx)
-  local chunks = row_start(p, col, load_ms(p), slowest)
-  local st, st_hl = state_text(p, ctx.tick)
-  chunks[#chunks + 1] = { fit(st, col.state), st_hl }
-  local up = pending(p)
-  local msg, msg_hl = why(p)
-  if M.section_of(p) == 'working' then
-    -- The state already says what is happening; say what it waits on or loaded by.
-    msg = p.state == 'loaded' and ('by ' .. (p.reason or '?')) or waits_on(p)
-  end
-  local room = col.message
-  if up then
-    local badge = ('↑%d '):format(up)
-    chunks[#chunks + 1] = { badge, 'CinchUpdate' }
-    room = room - cells(badge)
-  end
-  chunks[#chunks + 1] = { fit(msg, math.max(room, 1)), msg_hl }
-  c:add(chunks, { plugin = p.name })
 end
 
 --- Install progress for a first start: one line of status and a bar across the list.
@@ -243,28 +264,32 @@ local function install_header(c, install)
   c:blank()
 end
 
--- Each install status: its mark, its color, the state column, the message.
+-- Each install status: its mark (nil: the spinner), its color, the message.
 local install_look = {
-  queued = { '·', 'CinchMuted', 'queued', '' },
-  cloning = { nil, 'CinchActive', 'cloning…', '' },
-  installed = { '✓', 'CinchLoaded', 'installed', '' },
-  failed = { '✗', 'CinchFailed', 'failed', 'could not install' },
+  queued = { '·', 'CinchMuted', 'queued' },
+  cloning = { nil, 'CinchActive', 'cloning…' },
+  installed = { '✓', 'CinchLoaded' },
+  failed = { '✗', 'CinchFailed', 'could not install' },
+  disabled = { '–', 'CinchMuted' },
+  on_disk = { '✓', 'CinchMuted' },
 }
 
 --- The list while a first start installs: every plugin with its install status,
---- in the same columns as the Plugins view, so the rows settle in place.
+--- in the same rows as the Plugins view, so they settle in place.
 ---@param c cinch.ui.Canvas
 ---@param ctx cinch.ui.Ctx
----@param col table
-local function install_rows(c, ctx, col)
+local function install_rows(c, ctx)
+  local needed = dependents()
   for _, p in ipairs(visible(ctx)) do
-    local look = install_look[ctx.install.status[p.name]]
-      or (p.state == 'disabled' and { '–', 'CinchMuted', 'disabled', '' } or { '✓', 'CinchMuted', 'on disk', '' })
-    local ic = look[1] or canvas.spinner[ctx.tick % #canvas.spinner + 1]
-    local chunks = row_start(p, col, nil, 0)
-    chunks[#chunks + 1] = { fit(ic .. ' ' .. look[3], col.state), look[2] }
-    chunks[#chunks + 1] = { look[4], look[2] }
-    c:add(chunks, { plugin = p.name })
+    local look = install_look[ctx.install.status[p.name] or (p.state == 'disabled' and 'disabled' or 'on_disk')]
+    add_row(c, p, {
+      mark = look[1] or canvas.spinner[ctx.tick % #canvas.spinner + 1],
+      mark_hl = look[2],
+      slowest = 0,
+      needed_by = needed[p.name] or {},
+      msg = look[3],
+      msg_hl = look[2],
+    })
   end
 end
 
@@ -275,16 +300,16 @@ end
 function M.list(width, ctx)
   local c = canvas.new(width)
   local plugins = visible(ctx)
-  local col = columns(width, plugins)
   if ctx.install then
     install_header(c, ctx.install)
-    install_rows(c, ctx, col)
+    install_rows(c, ctx)
     return c
   end
   local slowest = 0
   for _, p in ipairs(plugins) do
     slowest = math.max(slowest, load_ms(p) or 0)
   end
+  local needed = dependents()
   local by = {}
   for _, p in ipairs(plugins) do
     local key = M.section_of(p)
@@ -307,7 +332,18 @@ function M.list(width, ctx)
       }, { section = s.key })
       if open then
         for _, p in ipairs(list) do
-          row(c, p, col, slowest, ctx)
+          local m, m_hl = mark(p, ctx.tick)
+          local msg, msg_hl = message(p)
+          add_row(c, p, {
+            mark = m,
+            mark_hl = m_hl,
+            ms = load_ms(p),
+            slowest = slowest,
+            needed_by = needed[p.name] or {},
+            up = pending(p),
+            msg = msg,
+            msg_hl = msg_hl,
+          })
         end
       end
     end
@@ -343,10 +379,29 @@ local function kv(c, key, chunks)
   c:add(out)
 end
 
+--- How it loads, in words next to the icons.
+---@param p cinch.Plugin
+---@return { [1]: string, [2]?: string }[]
+local function load_line(p)
+  if p.dep_only then
+    return { { glyph('dep') .. ' with the plugins that need it', 'CinchDep' } }
+  elseif p.when == 'trigger' then
+    return join(trigger_items(p))
+  end
+  local words = p.when == 'now' and 'at startup' or 'after startup'
+  local text = glyph(p.when)
+    .. ' '
+    .. p.load
+    .. (p.load == 'now_if_args' and (', so ' .. p.when) or '')
+    .. ' · '
+    .. words
+  return { { text, p.when == 'now' and 'CinchIconNow' or 'CinchIconLater' } }
+end
+
 ---@param c cinch.ui.Canvas
 ---@param p cinch.Plugin
 local function pane_header(c, p)
-  local ic, ic_hl = icon(p, 0)
+  local ic, ic_hl = mark(p, 0)
   local status = ic .. ' ' .. (M.section_of(p) == 'working' and (p.activity or 'loading') or p.state)
   local ms = load_ms(p)
   if ms then
@@ -380,17 +435,19 @@ end
 ---@param c cinch.ui.Canvas
 ---@param p cinch.Plugin
 local function pane_deps(c, p)
-  if #p.deps == 0 then
-    return
+  if #p.deps > 0 then
+    local chunks = {}
+    for i, name in ipairs(p.deps) do
+      local ic, hl = mark(state.plugins[name], 0)
+      chunks[#chunks + 1] = { (i > 1 and ', ' or '') .. name .. ' ' }
+      chunks[#chunks + 1] = { ic, hl }
+    end
+    kv(c, 'deps', chunks)
   end
-  local chunks = {}
-  for i, name in ipairs(p.deps) do
-    local d = state.plugins[name]
-    local ic, hl = icon(d, 0)
-    chunks[#chunks + 1] = { (i > 1 and ', ' or '') .. name .. ' ' }
-    chunks[#chunks + 1] = { ic, hl }
+  local needed = dependents()[p.name]
+  if needed then
+    kv(c, 'needed by', { { table.concat(needed, ', '), 'CinchDep' } })
   end
-  kv(c, 'deps', chunks)
 end
 
 ---@param c cinch.ui.Canvas
@@ -475,10 +532,12 @@ function M.pane(name, width, ctx)
   elseif sec == 'loaded' then
     local stats = feature('stats')
     local at = stats and stats.plugins[p.name] and stats.plugins[p.name].at
-    kv(c, 'load', { { p.load }, { p.when == 'trigger' and ('  ' .. waits_on(p)) or '', 'CinchMuted' } })
+    -- now and later say it all; anything else says what loaded it.
+    local by = ({ now = '', later = '', manual = 'by hand  ' })[p.reason] or ((p.reason or '?') .. '  ')
+    kv(c, 'load', load_line(p))
     kv(c, 'loaded', {
-      { why(p) },
-      { ('  %s%s'):format(p.order and ('#' .. p.order) or '', at and (' at ' .. canvas.ms(at)) or ''), 'CinchMuted' },
+      { by },
+      { ('%s%s'):format(p.order and ('#' .. p.order) or '', at and (' at ' .. canvas.ms(at)) or ''), 'CinchMuted' },
     })
   elseif sec == 'working' then
     kv(c, 'now', { { (p.activity or 'loading') .. '…', 'CinchActive' } })
@@ -488,7 +547,7 @@ function M.pane(name, width, ctx)
   elseif sec == 'disabled' then
     kv(c, 'off', { { p.reason == 'cond' and 'cond returned false' or 'enabled = false' } })
   else
-    kv(c, 'waits on', { { waits_on(p) } })
+    kv(c, 'load', load_line(p))
   end
   if sec ~= 'disabled' then
     pane_version(c, p)

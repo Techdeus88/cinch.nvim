@@ -10,7 +10,7 @@ require('cinch').setup({
     {
       { H.src('alpha.nvim'), opts = { style = 'night' } },
       { beta_src },
-      { H.src('delta.nvim'), cmd = 'DeltaGo' },
+      { H.src('delta.nvim'), cmd = 'DeltaGo', deps = { H.src('gamma') } },
       { H.src('dashy'), cmd = 'DashyGo' },
       { H.src('floaty'), cmd = 'FloatyGo' },
     },
@@ -83,6 +83,33 @@ H.after_startup(function()
   end, 'the check')
   vim.wait(50)
   H.eq(lines(w.list)[line_of(w.list, ' beta%.nvim ')]:find('↑1') ~= nil, true, 'pending commits on the row')
+
+  -- A row: the status light, the name, its load time and bar, then how it loads.
+  local icons = require('cinch.features.ui.plugins').icons
+  local alpha_row = lines(w.list)[line_of(w.list, ' alpha%.nvim ')]
+  H.eq(alpha_row:find('● alpha.nvim (', 1, true) ~= nil, true, 'the lit light left of the name, then its load time')
+  H.eq(vim.endswith(alpha_row, icons.later), true, 'later is its icon, with nothing after it')
+  local delta_row = lines(w.list)[line_of(w.list, ' delta%.nvim ')]
+  H.eq(
+    delta_row:find('○ delta.nvim ' .. icons.cmd .. ' DeltaGo', 1, true) ~= nil,
+    true,
+    'a trigger: its icon and value'
+  )
+  local gamma_row = lines(w.list)[line_of(w.list, ' gamma ')]
+  H.eq(gamma_row:find('gamma ' .. icons.dep .. ' delta.nvim', 1, true) ~= nil, true, 'a dependency: what needs it')
+  H.eq(table.concat(lines(w.list), '\n'):find('by later', 1, true), nil, 'no "by later"')
+
+  -- Working plugins sit on top, and the cursor moves freely while their spinner turns.
+  local state = require('cinch.state')
+  state.activity(H.plugin('beta.nvim'), 'building')
+  vim.wait(50)
+  H.eq(line_of(w.list, '▾ working'), 1, 'working comes first')
+  H.eq(lines(w.list)[2]:find('beta%.nvim .*building…') ~= nil, true, 'with what it is doing')
+  go(w.list, '▾ loaded')
+  vim.wait(250)
+  H.eq(api.nvim_win_get_cursor(w.list)[1], line_of(w.list, '▾ loaded'), 'the spinner leaves the cursor on a title')
+  state.activity(H.plugin('beta.nvim'), nil)
+  vim.wait(50)
 
   go(w.list, ' alpha%.nvim ')
   H.eq(lines(w.pane)[1]:find('alpha', 1, true) ~= nil, true, 'the pane follows the cursor')

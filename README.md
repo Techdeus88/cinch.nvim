@@ -135,6 +135,7 @@ require('cinch').setup({
     border = nil,                -- default: your 'winborder', or rounded
     open_on_install = true,      -- open the window when plugins install
     colorscheme = nil,           -- e.g. 'tokyonight': applied as soon as its plugin is on disk
+    icons = {},                  -- your own for any of: now, later, event, ft, cmd, keys, dep, trigger
   },
 })
 ```
@@ -175,7 +176,7 @@ An error in one of these functions is reported with the file and line where you 
 
 A frame at 75% of the editor. Its top border holds the plugin count, startup time, and the three views: plugins, stats and log. The bottom border holds the keys for the view you're in.
 
-The **Plugins** view is two panes. The list on the left groups plugins into failed, loaded, working, waiting and disabled. Each row reads: the name, its load time, a load-time bar, a `now`, `later` or `trigger` chip, its state, then pending commits and what loaded it or what it waits for. The pane on the right follows the cursor and shows that plugin in full: how and when it loaded, its version and pending commits, its dependencies, the config and opts it received, the remote's branches and tags, and where its spec is. In a frame narrower than 130 columns, where the list could not fit a whole row beside the pane, the pane sits under the list instead.
+The **Plugins** view is two panes. The list on the left groups plugins into working, failed, loaded, waiting and disabled, with what is happening now on top. Each row puts its parts one after the other: a status light (lit once loaded, a spinner while it works), the name, its load time and a load-time bar once it has loaded, then how it loads as Nerd Font icons. `now` and `later` are one icon each. A trigger plugin shows each trigger with its icon, and the one that loaded it sits on a chip. A plugin that is only a dependency shows the plugins that need it. Pending commits and a message come last, and only when there is something to say: an error, a build running, why it is off. The pane on the right follows the cursor and shows that plugin in full: how and when it loaded, its version and pending commits, its dependencies, the config and opts it received, the remote's branches and tags, and where its spec is. In a frame narrower than 130 columns, where the list could not fit a whole row beside the pane, the pane sits under the list instead.
 
 **Stats** shows a startup timeline split into Neovim's own time, each of cinch's phases and `later`, then counts, the slowest plugins, and startup times from past sessions. **Log** shows every step and message, oldest first.
 

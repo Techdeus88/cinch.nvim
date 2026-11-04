@@ -20,6 +20,7 @@ local M = {}
 ---@field open_on_install? boolean open the window when plugins install, default true
 ---@field colorscheme? string applied the moment a plugin that ships it is on disk, on a first start
 ---@field rounded? boolean rounded ends on chips and bars, drawn with Nerd Font glyphs; default true
+---@field icons? table<string, string> your own Nerd Font icons: now, later, event, ft, cmd, keys, dep, trigger
 
 ---@type cinch.ui.Opts
 M.opts = { size = 0.75, wide = 0.95, split = 0.58, side_by_side = 130 }
@@ -35,6 +36,7 @@ local ui = {
   help = false,
   selected = nil, ---@type string? plugin under the cursor
   canvas = nil, ---@type cinch.ui.Canvas? what the list shows
+  canvas_of = nil, ---@type string? the view it was drawn for, nil for the ? screen
   queued = false,
   subscribed = false,
   colors_done = false, -- opts.colorscheme was applied
@@ -228,12 +230,18 @@ local function render()
   else
     c = part('dashboard').log(width, ui.ctx)
   end
-  ui.canvas = c
+  -- What the cursor is on, a plugin or a section title, so it stays on it when
+  -- rows move. Coming from another view, that is the selected plugin.
+  local at = { plugin = ui.selected }
+  if ui.canvas_of == 'plugins' then
+    local l = api.nvim_win_get_cursor(ui.list)[1]
+    at = { plugin = ui.canvas.rows[l], section = ui.canvas.sections[l] }
+  end
+  ui.canvas, ui.canvas_of = c, not ui.help and ui.view or nil
   paint(ui.list, c)
-  -- Keep the cursor on the same plugin when rows move.
-  if ui.view == 'plugins' and ui.selected then
-    for l, name in pairs(c.rows) do
-      if name == ui.selected then
+  if ui.canvas_of == 'plugins' then
+    for l = 1, #c.lines do
+      if (at.plugin and c.rows[l] == at.plugin) or (at.section and c.sections[l] == at.section) then
         api.nvim_win_set_cursor(ui.list, { l, 0 })
         break
       end
@@ -476,7 +484,7 @@ function M.close()
     end
     ui[k] = nil
   end
-  ui.canvas = nil
+  ui.canvas, ui.canvas_of = nil, nil
   pcall(api.nvim_del_augroup_by_name, 'cinch_ui')
   animate()
 end
