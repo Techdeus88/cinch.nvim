@@ -28,6 +28,9 @@ M.opts = { size = 0.75, wide = 0.95, split = 0.58, side_by_side = 130, backdrop 
 
 M.views = { 'plugins', 'triggers', 'stats', 'log' }
 
+-- Views with the details pane, and the field of `ui` that holds what the cursor is on.
+local paned = { plugins = 'selected', triggers = 'trigger' }
+
 local ui = {
   backdrop = nil, ---@type integer? window
   frame = nil, ---@type integer? window
@@ -39,6 +42,7 @@ local ui = {
   wide = false,
   help = false,
   selected = nil, ---@type string? plugin under the cursor
+  trigger = nil, ---@type string? trigger under the cursor, in the Triggers view
   canvas = nil, ---@type cinch.ui.Canvas? what the list shows
   canvas_of = nil, ---@type string? the view it was drawn for, nil for the ? screen
   queued = false,
@@ -140,7 +144,7 @@ local function layout()
   local h = math.max(10, math.floor(lines * share))
   local row = math.max(0, math.floor((lines - h) / 2) - 1)
   local col = math.max(0, math.floor((vim.o.columns - w) / 2) - 1)
-  local split = ui.view == 'plugins' and not ui.help
+  local split = paned[ui.view] ~= nil and not ui.help
   local frame = { relative = 'editor', row = row, col = col, width = w, height = h, zindex = 50, focusable = false }
   frame.border = border()
   -- Neovim allows a title and footer only on a float with a border.
@@ -216,17 +220,24 @@ local function find_spec_line(p)
 end
 
 local function draw_pane()
-  if not (valid(ui.pane) and ui.view == 'plugins' and not ui.help) then
+  local field = paned[ui.view]
+  if not (valid(ui.pane) and field and not ui.help) then
     return
   end
-  local p = ui.selected and state.plugins[ui.selected]
-  if p then
-    find_spec_line(p)
+  local width = api.nvim_win_get_width(ui.pane)
+  if ui.view == 'triggers' then
+    paint(ui.pane, part('triggers').pane(ui.trigger, width))
+  else
+    local p = ui.selected and state.plugins[ui.selected]
+    if p then
+      find_spec_line(p)
+    end
+    paint(ui.pane, part('plugins').pane(ui.selected, width, ui.ctx))
   end
-  paint(ui.pane, part('plugins').pane(ui.selected, api.nvim_win_get_width(ui.pane), ui.ctx))
-  -- Another plugin starts at its top; the same one keeps where you scrolled it.
-  if ui.pane_of ~= ui.selected then
-    ui.pane_of = ui.selected
+  -- Something else starts at its top; the same one keeps where you scrolled it.
+  local shows = ui.view .. ' ' .. tostring(ui[field])
+  if ui.pane_of ~= shows then
+    ui.pane_of = shows
     api.nvim_win_set_cursor(ui.pane, { 1, 0 })
   end
 end
@@ -259,27 +270,36 @@ local function render()
   elseif ui.view == 'plugins' then
     c = part('plugins').list(width, ui.ctx)
   elseif ui.view == 'triggers' then
-    c = part('triggers').view(width, ui.ctx)
+    c = part('triggers').list(width, ui.ctx)
   elseif ui.view == 'stats' then
     c = part('dashboard').stats(width)
   else
     c = part('dashboard').log(width, ui.ctx)
   end
-  -- What the cursor is on, a plugin or a section title, so it stays on it when
-  -- rows move. Coming from another view, that is the selected plugin.
-  local at = { plugin = ui.selected }
-  if ui.canvas_of == 'plugins' then
+  -- What the cursor is on, a row or a section title, so it stays on it when rows
+  -- move. Coming from another view, that is what this view had selected.
+  local field = not ui.help and paned[ui.view]
+  local at = { row = field and ui[field] }
+  if field and ui.canvas_of == ui.view then
     local l = api.nvim_win_get_cursor(ui.list)[1]
-    at = { plugin = ui.canvas.rows[l], section = ui.canvas.sections[l] }
+    at = { row = ui.canvas.rows[l], section = ui.canvas.sections[l] }
   end
   ui.canvas, ui.canvas_of = c, not ui.help and ui.view or nil
   paint(ui.list, c)
-  if ui.canvas_of == 'plugins' then
+  if field then
+    local first
     for l = 1, #c.lines do
-      if (at.plugin and c.rows[l] == at.plugin) or (at.section and c.sections[l] == at.section) then
+      first = first or (c.rows[l] and l)
+      if (at.row and c.rows[l] == at.row) or (at.section and c.sections[l] == at.section) then
         api.nvim_win_set_cursor(ui.list, { l, 0 })
+        first = nil
         break
       end
+    end
+    -- Nothing selected in this view yet: the first row, so the pane has something.
+    if first and not ui[field] then
+      api.nvim_win_set_cursor(ui.list, { first, 0 })
+      ui[field] = c.rows[first]
     end
   end
   draw_pane()
@@ -371,14 +391,17 @@ end
 --- The cursor moved: select the plugin under it and show it in the pane.
 local function on_cursor()
   local c = ui.canvas
-  if not (c and M.is_open()) or ui.view ~= 'plugins' or ui.help then
+  local field = paned[ui.view]
+  if not (c and M.is_open()) or not field or ui.help then
     return
   end
-  local name = c.rows[api.nvim_win_get_cursor(ui.list)[1]]
-  if name and name ~= ui.selected then
-    ui.selected = name
+  local id = c.rows[api.nvim_win_get_cursor(ui.list)[1]]
+  if id and id ~= ui[field] then
+    ui[field] = id
     draw_pane()
-    fetch_info()
+    if field == 'selected' then
+      fetch_info()
+    end
   end
 end
 
@@ -580,7 +603,7 @@ function M.close()
     end
     ui[k] = nil
   end
-  ui.canvas, ui.canvas_of, ui.pane_of, ui.released = nil, nil, nil, false
+  ui.canvas, ui.canvas_of, ui.pane_of, ui.released, ui.trigger = nil, nil, nil, false, nil
   pcall(api.nvim_del_augroup_by_name, 'cinch_ui')
   animate()
 end

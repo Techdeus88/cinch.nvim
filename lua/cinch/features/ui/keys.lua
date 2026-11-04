@@ -31,7 +31,7 @@ local M = {}
 --- The keys of each view, for the frame's bottom border.
 M.hints = {
   plugins = ' / filter  l load  b build  u update  d delete  <C-d> <C-u> details  ? keys  q close ',
-  triggers = ' <CR> fold  <Tab> next view  = size  ? keys  q close ',
+  triggers = ' <CR> fold  l load what waits  <C-d> <C-u> details  <Tab> next view  ? keys  q close ',
   stats = ' <Tab> next view  = size  ? keys  q close ',
   log = ' / filter  G newest  <Tab> next view  ? keys  q close ',
   help = ' ? goes back  q close ',
@@ -146,10 +146,23 @@ function M.make(w)
     { { '/' }, filter, 'filter by name, or the log by text; empty clears it' },
     {
       { 'l' },
-      on_plugin(function(p)
-        require('cinch').load(p.name)
-      end),
-      'load the plugin now',
+      function()
+        if ui.view == 'triggers' then
+          -- Every plugin still waiting on the trigger under the cursor.
+          local names = require('cinch.features.ui.triggers').waiting(ui.trigger)
+          if #names > 0 then
+            w.in_editor(function()
+              require('cinch').load(names)
+            end)
+            w.redraw()
+          end
+          return
+        end
+        on_plugin(function(p)
+          require('cinch').load(p.name)
+        end)()
+      end,
+      'load the plugin now; in Triggers, what waits on the trigger',
     },
     {
       { 'b' },
