@@ -70,8 +70,6 @@ local function record(level, msg, source, plugin)
   end
 end
 
----@param level integer
----@param msg string
 -- While Neovim starts, the screen is not drawn yet and every message waits for it;
 -- more than one line waiting means a "Press ENTER" prompt. So until VimEnter,
 -- warnings and errors are held to show as one message, and the rest only go to
@@ -337,7 +335,6 @@ end
 
 -- Setup -------------------------------------------------------------------------
 
----@param opts? cinch.messages.Opts
 --- Startup is over: show what was held, warnings and errors as one message, then
 --- the progress still running.
 local function release_held()
@@ -357,6 +354,7 @@ local function release_held()
   end
 end
 
+---@param opts? cinch.messages.Opts
 function M.setup(opts)
   M.opts = vim.tbl_extend('force', M.opts, opts or {})
   if starting() then
