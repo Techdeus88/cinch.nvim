@@ -114,7 +114,7 @@ end
 M.plugins = {}
 ---@type table<string, number> startup phase -> ms
 M.phases = {}
----@type table<string, number> moment -> ms since start: vimenter, uienter, later
+---@type table<string, number> moment -> ms since start: setup, vimenter, uienter, later
 M.marks = {}
 ---@type { op: string, count: integer, ms: number, ok: boolean, at: number }[]
 M.ops = {}
@@ -267,6 +267,8 @@ M.command = {
 ---@param opts? cinch.stats.Opts
 function M.setup(opts)
   M.opts = vim.tbl_extend('force', M.opts, opts or {})
+  -- Features load first in setup(), so this is when cinch began.
+  M.marks.setup = M.now()
 
   events.on('Phase', function(d)
     M.phases[d.name] = (M.phases[d.name] or 0) + d.ms

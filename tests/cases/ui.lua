@@ -26,14 +26,13 @@ local function size()
 end
 
 H.after_startup(function()
-  local events = require('cinch.events')
-  H.eq(events.has('State'), false, 'nothing listens to State before the first open')
+  H.eq(package.loaded['cinch.features.ui.views'], nil, 'the drawing code waits for the first open')
   H.commit(beta_dir, 'feat: from ui')
 
   vim.cmd('Cinch')
   local lines = vim.o.lines - vim.o.cmdheight
   H.eq(size(), { math.floor(vim.o.columns * 0.75), math.floor(lines * 0.75) }, ':Cinch opens a float at 75%')
-  H.eq(events.has('State'), true, 'subscribed on open')
+  H.eq(package.loaded['cinch.features.ui.views'] ~= nil, true, 'and loads on it')
   local u = require('cinch.features.updates')
   H.eq(u.checking, true, 'opening starts a check')
   H.wait(function()

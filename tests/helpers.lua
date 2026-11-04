@@ -52,23 +52,20 @@ end
 ---@param dir string
 ---@param msg string
 function H.commit(dir, msg)
-  H.sh(
-    {
-      'git',
-      '-c',
-      'user.name=t',
-      '-c',
-      'user.email=t@t',
-      '-c',
-      'commit.gpgsign=false',
-      'commit',
-      '-q',
-      '--allow-empty',
-      '-m',
-      msg,
-    },
-    dir
-  )
+  H.sh({
+    'git',
+    '-c',
+    'user.name=t',
+    '-c',
+    'user.email=t@t',
+    '-c',
+    'commit.gpgsign=false',
+    'commit',
+    '-q',
+    '--allow-empty',
+    '-m',
+    msg,
+  }, dir)
 end
 
 function H.eq(actual, expected, what)

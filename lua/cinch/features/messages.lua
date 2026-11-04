@@ -11,21 +11,26 @@ local levels = vim.log.levels
 
 local M = {}
 
+local ms ---@type fun(n: number): string defined with the steps below
+
 ---@class cinch.messages.Opts
 ---@field level? integer lowest level shown; lower ones are only logged. Default INFO
 ---@field progress? boolean show install, update and build progress. Default true
----@field history? integer messages kept in M.log. Default 200
+---@field history? integer messages kept in M.log. Default 1000
 
 ---@type cinch.messages.Opts
-M.opts = { level = levels.INFO, progress = true, history = 200 }
+M.opts = { level = levels.INFO, progress = true, history = 1000 }
 
----@alias cinch.MessageSource 'cinch'|'vim.pack'|'git'|'build'
+--- Who logged it: cinch's own messages, vim.pack and git output, or a step:
+--- install, update, delete, build, now, later, trigger, dep, manual, state, startup.
+---@alias cinch.MessageSource string
 
 ---@class cinch.Message
 ---@field time integer os.time()
 ---@field level integer
 ---@field msg string
 ---@field source cinch.MessageSource
+---@field plugin? string the plugin it is about
 
 ---@type cinch.Message[]
 M.log = {}
@@ -53,9 +58,10 @@ end
 ---@param level integer
 ---@param msg string
 ---@param source cinch.MessageSource
-local function record(level, msg, source)
+---@param plugin? string
+local function record(level, msg, source, plugin)
   msg = clean(msg)
-  M.log[#M.log + 1] = { time = os.time(), level = level, msg = msg, source = source }
+  M.log[#M.log + 1] = { time = os.time(), level = level, msg = msg, source = source, plugin = plugin }
   if #M.log > M.opts.history then
     table.remove(M.log, 1)
   end
@@ -178,6 +184,104 @@ local function release()
   end
 end
 
+-- Steps -----------------------------------------------------------------------
+
+---@param n number
+---@return string
+ms = function(n)
+  return n >= 1000 and ('%.2fs'):format(n / 1000) or ('%.1fms'):format(n)
+end
+
+--- What loaded a plugin, as a log source: now, later, dep, manual, build, or trigger.
+---@param reason string
+---@return string
+local function kind(reason)
+  local k = reason:match('^(%S+)')
+  if k == 'now' or k == 'later' or k == 'dep' or k == 'manual' or k == 'build' then
+    return k
+  end
+  return 'trigger'
+end
+
+--- What a plugin waits for, read from its spec: "cmd Trouble, keys <leader>xx".
+---@param p cinch.Plugin
+---@return string
+local function waits_for(p)
+  if p.when ~= 'trigger' then
+    return p.when == 'later' and 'later, after startup' or 'now'
+  end
+  local parts = {}
+  for _, field in ipairs({ 'event', 'ft', 'cmd', 'keys' }) do
+    local v = p.data[field]
+    for _, x in ipairs(type(v) == 'table' and v or { v }) do
+      parts[#parts + 1] = field .. ' ' .. tostring(type(x) == 'table' and x[1] or x)
+    end
+  end
+  return #parts > 0 and table.concat(parts, ', ') or 'a plugin that depends on it'
+end
+
+local doing = { install = 'installing', update = 'updating', delete = 'deleting' }
+local done = { install = 'installed', update = 'updated', delete = 'deleted' }
+
+--- Every step cinch takes, logged at DEBUG: never on screen, always in the log.
+local function log_steps()
+  local debug = levels.DEBUG
+  local function step(source, msg, plugin)
+    record(debug, msg, source, plugin)
+  end
+  local later_count = 0
+
+  events.on('Phase', function(d)
+    step('startup', ('%s took %s'):format(d.name, ms(d.ms)))
+  end)
+  events.on('State', function(d)
+    local p = d.plugin
+    if d.to == 'pending' and d.from == 'registered' then
+      step('state', ('%s waits for %s'):format(p.name, waits_for(p)), p.name)
+    elseif d.to == 'disabled' then
+      step(
+        'state',
+        ('%s is off: %s'):format(p.name, d.reason == 'cond' and 'cond is false' or 'enabled = false'),
+        p.name
+      )
+    end
+  end)
+  events.on('LoadPre', function(d)
+    if kind(d.reason) == 'trigger' then
+      step('trigger', ('%s fired: loading %s'):format(d.reason, d.plugin.name), d.plugin.name)
+    end
+  end)
+  events.on('Load', function(d)
+    local k = kind(d.reason)
+    if k == 'later' then
+      later_count = later_count + 1
+    end
+    step(
+      k,
+      ('loaded %s by %s · packadd %s · config %s'):format(d.plugin.name, d.reason, ms(d.ms.packadd), ms(d.ms.config)),
+      d.plugin.name
+    )
+  end)
+  events.on('Later', function()
+    step('later', ('later: %d plugin%s loaded'):format(later_count, later_count == 1 and '' or 's'))
+  end)
+  events.on('PackPre', function(d)
+    step(d.kind, ('%s %s…'):format(doing[d.kind] or d.kind, d.name), d.name)
+  end)
+  events.on('Pack', function(d)
+    step(d.kind, ('%s %s'):format(done[d.kind] or d.kind, d.name), d.name)
+  end)
+  events.on('PackOp', function(d)
+    local what = d.names and (#d.names == 1 and d.names[1] or (#d.names .. ' plugins')) or 'all plugins'
+    step('vim.pack', ('vim.pack.%s %s · %s%s'):format(d.op, what, ms(d.ms), d.ok and '' or ' · failed'))
+  end)
+  events.on('Activity', function(d)
+    if d.to == 'building' then
+      step('build', ('building %s…'):format(d.plugin.name), d.plugin.name)
+    end
+  end)
+end
+
 -- Setup -------------------------------------------------------------------------
 
 ---@param opts? cinch.messages.Opts
@@ -204,15 +308,18 @@ function M.setup(opts)
   end)
 
   events.on('Build', function(d)
-    local name, ms = d.plugin.name, math.floor(d.ms + 0.5)
-    local msg = d.ok and ('built %s in %dms'):format(name, ms) or ('build of %s failed'):format(name)
+    local name = d.plugin.name
+    local msg = d.ok and ('built %s in %s'):format(name, ms(d.ms)) or ('build of %s failed'):format(name)
     progress(name, msg, d.ok and 'success' or 'failed')
     record(
       d.ok and levels.INFO or levels.ERROR,
       d.output and d.output ~= '' and (msg .. '\n' .. d.output) or msg,
-      'build'
+      'build',
+      name
     )
   end)
+
+  log_steps()
 end
 
 return M

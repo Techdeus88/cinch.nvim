@@ -41,9 +41,23 @@ H.after_startup(function()
   vim.notify('not ours')
   events.emit('PackOp', { op = 'get', ok = true, ms = 1 })
   vim.wait(30)
+  local notices = vim.tbl_filter(function(l)
+    return l.level > vim.log.levels.DEBUG
+  end, m.log)
   local tail = vim.tbl_map(function(l)
     return l.source .. ' ' .. l.msg
-  end, vim.list_slice(m.log, #m.log - 1))
+  end, vim.list_slice(notices, #notices - 1))
   H.eq(tail, { 'vim.pack Removed plugin: foo', 'git warning: redirecting to x' }, 'notices and git warnings are logged')
   H.eq(H.noted('^not ours$'), true, 'everything else passes through')
+
+  local steps = {}
+  for _, l in ipairs(m.log) do
+    if l.level == vim.log.levels.DEBUG then
+      steps[l.source .. ' ' .. l.msg:gsub(' · .*', '')] = l.plugin or true
+    end
+  end
+  H.eq(steps['install installed alpha.nvim'], 'alpha.nvim', 'installs are logged, with their plugin')
+  H.eq(steps['state alpha.nvim waits for later, after startup'] ~= nil, true, 'what each plugin waits for')
+  H.eq(steps['later loaded alpha.nvim by later'] ~= nil, true, 'loads, by what loaded them')
+  H.eq(steps['vim.pack vim.pack.add 2 plugins'] ~= nil, true, 'vim.pack calls')
 end)
