@@ -15,13 +15,14 @@ local M = {}
 ---@field size? number share of the editor, default 0.75
 ---@field wide? number share after `=`, default 0.95
 ---@field split? number the list's share of the width in the Plugins view, default 0.58
----@field side_by_side? integer frame width from which the pane sits beside the list, not under it; default 90
+---@field side_by_side? integer frame width from which the pane sits beside the list; default 130, room for a whole row
 ---@field border? string|string[] default: 'winborder', or rounded when that is empty
 ---@field open_on_install? boolean open the window when plugins install, default true
 ---@field colorscheme? string applied the moment a plugin that ships it is on disk, on a first start
+---@field rounded? boolean rounded ends on chips and bars, drawn with Nerd Font glyphs; default true
 
 ---@type cinch.ui.Opts
-M.opts = { size = 0.75, wide = 0.95, split = 0.58, side_by_side = 90 }
+M.opts = { size = 0.75, wide = 0.95, split = 0.58, side_by_side = 130 }
 
 M.views = { 'plugins', 'stats', 'log' }
 
@@ -366,6 +367,13 @@ local function subscribe()
       end)
     end
   end
+  -- A new colorscheme, yours applied mid-install say: chips and bar follow it.
+  api.nvim_create_autocmd('ColorScheme', {
+    callback = function()
+      part('canvas').define_colors(M.opts.rounded ~= false)
+      redraw()
+    end,
+  })
   events.on('Pack', function(d)
     -- What vim.pack knew about it is out of date.
     ui.ctx.info[d.name] = nil
@@ -401,9 +409,7 @@ function M.open(view)
     end
     return
   end
-  for group, link in pairs(part('canvas').highlights) do
-    api.nvim_set_hl(0, group, { link = link, default = true })
-  end
+  part('canvas').define_colors(M.opts.rounded ~= false)
   subscribe()
   local from = api.nvim_get_current_win()
   if api.nvim_win_get_config(from).relative == '' then

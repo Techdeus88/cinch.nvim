@@ -343,22 +343,46 @@ M.handlers.keys = {
 
 -- now / later -------------------------------------------------------------
 
----@type cinch.Plugin[]
+-- Both queues hold plugins and your own functions (cinch.now, cinch.later).
+---@type (cinch.Plugin|function)[]
 local now_queue = {}
----@type cinch.Plugin[]
+---@type (cinch.Plugin|function)[]
 local later_queue = {}
 local later_next = 1
 local later_draining = false
 local later_done = false
+local started = false
+
+--- Held while a first start's batch waits for the UI, so `now` functions run after
+--- the plugins they may require are installed. init.lua sets it.
+M.held = false
+
+--- Run one of your functions, protected: an error is reported, and the rest go on.
+---@param when 'now'|'later'
+---@param fn function
+local function run(when, fn)
+  local info = debug.getinfo(fn, 'S')
+  local where = ('%s:%d'):format(vim.fs.basename(info.short_src), info.linedefined)
+  local t = uv.hrtime()
+  local ok, err = xpcall(fn, debug.traceback)
+  if not ok then
+    events.report(('%s function at %s failed: %s'):format(when, where, err), vim.log.levels.ERROR)
+  end
+  if events.has('Run') then
+    events.emit('Run', { when = when, where = where, ok = ok, ms = (uv.hrtime() - t) / 1e6, err = err })
+  end
+end
 
 local function drain()
   local start = uv.hrtime()
   while later_next <= #later_queue do
-    local p = later_queue[later_next]
+    local x = later_queue[later_next]
     later_next = later_next + 1
-    -- A plugin loaded meanwhile, as a dependency say, is skipped.
-    if p.state == 'pending' then
-      M.fire(p, 'later')
+    if type(x) == 'function' then
+      run('later', x)
+    elseif x.state == 'pending' then
+      -- A plugin loaded meanwhile, as a dependency say, is skipped.
+      M.fire(x, 'later')
     end
     if (uv.hrtime() - start) / 1e6 >= M.budget then
       return vim.schedule(drain)
@@ -378,28 +402,59 @@ local function start_drain()
   end
 end
 
-local started = false
-
---- Load the `now` plugins, then wait for the UI to load the `later` ones. init.lua
---- calls this once all plugins are armed; plugins armed after it start right away.
+--- Load the `now` plugins, run the `now` functions waiting for them, then wait for
+--- the UI to work through the `later` queue. init.lua calls this once all plugins
+--- are armed; plugins and functions added after it start right away.
 function M.start()
+  local first = not started
+  started = true
   local q = now_queue
   now_queue = {}
-  for _, p in ipairs(q) do
-    if p.state == 'pending' then
-      M.fire(p, 'now')
+  for _, x in ipairs(q) do
+    if type(x) ~= 'function' and x.state == 'pending' then
+      M.fire(x, 'now')
     end
   end
-  if started then
-    return start_drain()
+  -- After the plugins, so a function can require() them.
+  for _, x in ipairs(q) do
+    if type(x) == 'function' then
+      run('now', x)
+    end
   end
-  started = true
-  if vim.v.vim_did_enter == 1 then
+  if not first or vim.v.vim_did_enter == 1 then
     return start_drain()
   end
   -- Headless Neovim never gets UIEnter; VimEnter is the moment there.
   local headless = vim.list_contains(vim.v.argv, '--headless')
   api.nvim_create_autocmd(headless and 'VimEnter' or 'UIEnter', { once = true, callback = start_drain })
+end
+
+--- Run `fn` now: at once once startup has run, else right after the `now` plugins.
+---@param fn function
+function M.now(fn)
+  if started and not M.held then
+    return run('now', fn)
+  end
+  now_queue[#now_queue + 1] = fn
+end
+
+--- Run `fn` later: in the `later` queue once the UI is up, in turn with plugins.
+---@param fn function
+function M.later(fn)
+  later_queue[#later_queue + 1] = fn
+  if started and vim.v.vim_did_enter == 1 then
+    start_drain()
+  end
+end
+
+--- `now` when Neovim started with a file argument, `later` when it did not.
+---@param fn function
+function M.now_if_args(fn)
+  if vim.fn.argc(-1) > 0 then
+    M.now(fn)
+  else
+    M.later(fn)
+  end
 end
 
 -- registry ------------------------------------------------------------------

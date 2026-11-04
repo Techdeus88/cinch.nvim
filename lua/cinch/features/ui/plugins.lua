@@ -6,7 +6,7 @@
 local canvas = require('cinch.features.ui.canvas')
 local state = require('cinch.state')
 
-local fit, right, cells = canvas.fit, canvas.right, canvas.cells
+local fit, cells = canvas.fit, canvas.cells
 
 local M = {}
 
@@ -133,7 +133,10 @@ end
 
 -- List ----------------------------------------------------------------------------
 
---- Column widths for a list `width` cells wide. Narrow windows drop the bar first.
+--- Column widths for a list `width` cells wide. A row reads:
+---   <name> (<load time>) <bar> <now|later|trigger> <state> <updates and message>
+--- When space is short the bar goes first, then the time; the chip and the state
+--- always stay, and the message is cut.
 ---@param width integer
 ---@param plugins cinch.Plugin[]
 local function columns(width, plugins)
@@ -141,24 +144,29 @@ local function columns(width, plugins)
   for _, p in ipairs(plugins) do
     longest = math.max(longest, cells(p.name))
   end
-  local any_update = false
-  for _, p in ipairs(plugins) do
-    any_update = any_update or pending(p) ~= nil
-  end
-  local c = { name = math.min(longest, 26), chip = 10, bar = 7, time = 8, up = any_update and 4 or 0 }
+  local c = { name = math.min(longest, 26), time = 10, bar = 7, chip = canvas.chip_width(9), state = 13 }
   local function left()
-    return width - (3 + c.name + 1 + (c.chip > 0 and c.chip + 1 or 0) + c.bar + c.time + c.up)
+    return width - (1 + c.name + 1 + c.time + c.bar + c.chip + 1 + c.state)
   end
-  -- When space is short the reason keeps room: the bar goes first, then the load
-  -- chip (the pane shows it), then the time.
-  for _, drop in ipairs({ 'bar', 'chip', 'time' }) do
-    if left() >= 18 then
-      break
+  -- The bar goes when the message would get less than 16 cells, the time below 10.
+  for _, drop in ipairs({ { 'bar', 16 }, { 'time', 10 } }) do
+    if left() < drop[2] then
+      c[drop[1]] = 0
     end
-    c[drop] = 0
   end
-  c.why = math.max(left(), 6)
+  c.message = math.max(left(), 6)
   return c
+end
+
+--- The state column: its mark and word, colored.
+---@param p cinch.Plugin
+---@param tick integer
+---@return string text, string group
+local function state_text(p, tick)
+  local ic, hl = icon(p, tick)
+  local sec = M.section_of(p)
+  local word = sec == 'working' and (p.activity or 'loading') or sec
+  return ic .. ' ' .. word, hl
 end
 
 ---@param ctx cinch.ui.Ctx
@@ -169,35 +177,51 @@ local function visible(ctx)
   end, state.list)
 end
 
+--- The start of a row, the same in every phase: name, time, bar, chip.
+---@param p cinch.Plugin
+---@param col table
+---@param ms? number
+---@param slowest number
+---@return { [1]: string, [2]?: string }[]
+local function row_start(p, col, ms, slowest)
+  local chunks = {
+    { ' ' .. fit(p.name, col.name) .. ' ', p.state == 'disabled' and 'CinchMuted' or 'CinchName' },
+  }
+  if col.time > 0 then
+    chunks[#chunks + 1] = { fit(ms and ('(' .. canvas.ms(ms) .. ')') or '', col.time), 'CinchMuted' }
+  end
+  if col.bar > 0 then
+    local filled, empty = canvas.bar(ms or 0, slowest, col.bar - 1)
+    chunks[#chunks + 1] = { ms and filled or (' '):rep(col.bar - 1), 'CinchBar' }
+    chunks[#chunks + 1] = { (ms and empty or '') .. ' ', 'CinchBarEmpty' }
+  end
+  vim.list_extend(chunks, canvas.chip(chip_text[p.load], chip_hl[p.load], 9))
+  chunks[#chunks + 1] = { ' ' }
+  return chunks
+end
+
 ---@param c cinch.ui.Canvas
 ---@param p cinch.Plugin
 ---@param col table
 ---@param slowest number
 ---@param ctx cinch.ui.Ctx
 local function row(c, p, col, slowest, ctx)
-  local ic, ic_hl = icon(p, ctx.tick)
-  local text, text_hl = why(p)
-  local ms, up = load_ms(p), pending(p)
-  local chunks = {
-    { ' ' .. ic .. ' ', ic_hl },
-    { fit(p.name, col.name), p.state == 'disabled' and 'CinchMuted' or 'CinchName' },
-    { ' ' },
-  }
-  if col.chip > 0 then
-    chunks[#chunks + 1] = { fit(' ' .. chip_text[p.load] .. ' ', col.chip - 1), chip_hl[p.load] }
-    chunks[#chunks + 1] = { '  ' }
+  local chunks = row_start(p, col, load_ms(p), slowest)
+  local st, st_hl = state_text(p, ctx.tick)
+  chunks[#chunks + 1] = { fit(st, col.state), st_hl }
+  local up = pending(p)
+  local msg, msg_hl = why(p)
+  if M.section_of(p) == 'working' then
+    -- The state already says what is happening; say what it waits on or loaded by.
+    msg = p.state == 'loaded' and ('by ' .. (p.reason or '?')) or waits_on(p)
   end
-  chunks[#chunks + 1] = { fit(text, col.why - 1) .. ' ', text_hl }
-  if col.bar > 0 then
-    local filled, empty = canvas.bar(ms or 0, slowest, col.bar - 1)
-    chunks[#chunks + 1] = { ms and filled or (' '):rep(col.bar - 1), 'CinchBar' }
-    chunks[#chunks + 1] = { ms and empty or '', 'CinchBarEmpty' }
-    chunks[#chunks + 1] = { ' ' }
+  local room = col.message
+  if up then
+    local badge = ('↑%d '):format(up)
+    chunks[#chunks + 1] = { badge, 'CinchUpdate' }
+    room = room - cells(badge)
   end
-  if col.time > 0 then
-    chunks[#chunks + 1] = { right(canvas.ms(ms), col.time - 1) .. ' ', 'CinchMuted' }
-  end
-  chunks[#chunks + 1] = { up and ('↑' .. up) or '', 'CinchUpdate' }
+  chunks[#chunks + 1] = { fit(msg, math.max(room, 1)), msg_hl }
   c:add(chunks, { plugin = p.name })
 end
 
@@ -215,34 +239,31 @@ local function install_header(c, install)
       secs
     )
   c:add({ { ' ' .. msg, 'CinchTitle' } })
-  local filled, empty = canvas.bar(install.done, install.total, c.width - 2)
-  c:add({ { ' ' .. filled, 'CinchBar' }, { empty, 'CinchBarEmpty' } })
+  c:add(vim.list_extend({ { ' ' } }, canvas.pill(install.done, install.total, c.width - 3)))
   c:blank()
 end
 
+-- Each install status: its mark, its color, the state column, the message.
 local install_look = {
-  queued = { '·', 'CinchMuted', 'queued' },
-  cloning = { nil, 'CinchActive', 'cloning…' },
-  installed = { '✓', 'CinchLoaded', 'installed' },
-  failed = { '✗', 'CinchFailed', 'could not install' },
+  queued = { '·', 'CinchMuted', 'queued', '' },
+  cloning = { nil, 'CinchActive', 'cloning…', '' },
+  installed = { '✓', 'CinchLoaded', 'installed', '' },
+  failed = { '✗', 'CinchFailed', 'failed', 'could not install' },
 }
 
---- The list while a first start installs: every plugin with its install status.
+--- The list while a first start installs: every plugin with its install status,
+--- in the same columns as the Plugins view, so the rows settle in place.
 ---@param c cinch.ui.Canvas
 ---@param ctx cinch.ui.Ctx
 ---@param col table
 local function install_rows(c, ctx, col)
   for _, p in ipairs(visible(ctx)) do
-    local status = ctx.install.status[p.name]
-    local look = install_look[status]
-      or (p.state == 'disabled' and { '–', 'CinchMuted', 'disabled' } or { '✓', 'CinchMuted', 'on disk' })
+    local look = install_look[ctx.install.status[p.name]]
+      or (p.state == 'disabled' and { '–', 'CinchMuted', 'disabled', '' } or { '✓', 'CinchMuted', 'on disk', '' })
     local ic = look[1] or canvas.spinner[ctx.tick % #canvas.spinner + 1]
-    local chunks = { { ' ' .. ic .. ' ', look[2] }, { fit(p.name, col.name), 'CinchName' }, { ' ' } }
-    if col.chip > 0 then
-      chunks[#chunks + 1] = { fit(' ' .. chip_text[p.load] .. ' ', col.chip - 1), chip_hl[p.load] }
-      chunks[#chunks + 1] = { '  ' }
-    end
-    chunks[#chunks + 1] = { look[3], look[2] }
+    local chunks = row_start(p, col, nil, 0)
+    chunks[#chunks + 1] = { fit(ic .. ' ' .. look[3], col.state), look[2] }
+    chunks[#chunks + 1] = { look[4], look[2] }
     c:add(chunks, { plugin = p.name })
   end
 end

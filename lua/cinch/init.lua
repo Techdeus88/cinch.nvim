@@ -14,6 +14,9 @@ local M = {}
 
 M.on = events.on
 M.trigger = handler.register
+M.now = handler.now
+M.later = handler.later
+M.now_if_args = handler.now_if_args
 
 ---@class cinch.Opts
 ---@field spec? (string|cinch.Spec|cinch.Spec[])[] module paths, directories or specs; default { 'plugins' }
@@ -179,12 +182,16 @@ local function activate(added, confirm)
   start(now)
   if #wait > 0 then
     deferred = { plugins = wait, confirm = confirm }
+    -- When the whole batch waits (a first start, a new machine), cinch.now()
+    -- functions wait with it; when only some plugins are missing, the rest started.
+    handler.held = #now == 0
     vim.api.nvim_create_autocmd('UIEnter', {
       once = true,
       callback = vim.schedule_wrap(function()
         local d = deferred --[[@as table]]
         deferred = nil
         install_all(d.plugins, d.confirm)
+        handler.held = false
         start(d.plugins)
       end),
     })

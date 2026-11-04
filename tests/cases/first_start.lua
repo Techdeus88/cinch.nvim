@@ -34,7 +34,11 @@ cinch.setup({
 cinch.add({ { H.src('alpha.nvim'), cmd = 'AlphaCmd' } })
 -- A :Cmd build needs its plugin loaded, so it must wait until the batch is armed.
 cinch.add({ { H.src('cmdy'), cmd = 'CmdyGo', build = ':CmdyBuild' } })
-local after_setup = { early = H.plugin('early').state, alpha = H.plugin('alpha.nvim').state }
+-- While the batch waits, cinch.now() waits with it.
+cinch.now(function()
+  vim.g.now_saw = H.plugin('early').state
+end)
+local after_setup = { early = H.plugin('early').state, alpha = H.plugin('alpha.nvim').state, now_ran = vim.g.now_saw }
 
 local function ui_enter()
   vim.api.nvim_exec_autocmds('UIEnter', {})
@@ -48,6 +52,7 @@ H.after_startup(function()
   if H.phase == 2 then
     H.eq(after_setup.early, 'loaded', 'what is on disk loads during init.lua as usual')
     H.eq(H.plugin('missing').state, 'registered', 'only the missing plugin waits')
+    H.eq(after_setup.now_ran, 'loaded', 'and now() runs during init.lua as usual')
     vim.api.nvim_exec_autocmds('UIEnter', {})
     H.wait(function()
       return seen.failed ~= nil
@@ -56,12 +61,13 @@ H.after_startup(function()
     return
   elseif H.phase == 3 then
     H.eq(after_setup.early, 'registered', 'a locked plugin is missing: everything waits')
+    H.eq(after_setup.now_ran, nil, 'now() too')
     ui_enter()
     H.eq(seen.installing, { 'beta.nvim', 'missing' }, 'the locked plugin is installed again')
     return
   end
 
-  H.eq(after_setup, { early = 'registered', alpha = 'registered' }, 'setup waits for the UI')
+  H.eq(after_setup, { early = 'registered', alpha = 'registered' }, 'setup waits for the UI, and so does now()')
   H.eq(vim.uv.fs_stat(pack.dir .. '/early'), nil, 'nothing installed before UIEnter')
   H.eq(pack.idle(), false, 'and vim.pack not called yet')
   ui_enter()
@@ -77,5 +83,6 @@ H.after_startup(function()
   H.eq(vim.g.alpha_cmd.args, 'go', 'triggers are armed after the batch')
   H.eq(H.plugin('missing').failed_in, 'install', 'a failed install is marked')
   H.eq(vim.g.cmdy_built, true, 'a :Cmd build ran once its plugin was armed')
+  H.eq(vim.g.now_saw, 'loaded', 'now() ran after the batch, once its now plugins loaded')
   H.eq(H.plugin('cmdy').reason, 'build', 'loading the plugin first')
 end)

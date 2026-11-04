@@ -131,7 +131,7 @@ require('cinch').setup({
     size = 0.75,                 -- share of the editor
     wide = 0.95,                 -- share after `=`
     split = 0.58,                -- the list's share of the width beside the pane
-    side_by_side = 90,           -- frame width from which the pane sits beside the list, not under it
+    side_by_side = 130,          -- frame width from which the pane sits beside the list, not under it
     border = nil,                -- default: your 'winborder', or rounded
     open_on_install = true,      -- open the window when plugins install
     colorscheme = nil,           -- e.g. 'tokyonight': applied as soon as its plugin is on disk
@@ -140,6 +140,24 @@ require('cinch').setup({
 ```
 
 `require('cinch').add(specs)` takes the same list `vim.pack.add` does, with cinch fields allowed, and works without `setup()`.
+
+### Your own code on the same schedule
+
+`now`, `later` and `now_if_args` also take a function, for config that isn't a plugin spec: options, keymaps, autocmds.
+
+```lua
+local cinch = require('cinch')
+
+cinch.now(function() vim.o.number = true end)
+cinch.later(function() require('my.keymaps') end)
+cinch.now_if_args(function() vim.cmd.colorscheme('tokyonight') end)
+```
+
+- `now(fn)` runs at once. Called before `setup()`, it runs right after the `now` plugins load, so it can `require()` them. On a first start, when every plugin waits for the UI, it waits too.
+- `later(fn)` joins the `later` queue once the UI is up, in turn with `later` plugins, in the order you call it.
+- `now_if_args(fn)` is `now` when Neovim starts with a file argument and `later` when it doesn't.
+
+An error in one of these functions is reported with the file and line where you defined it, and the others still run. Each one that runs is in the log.
 
 ## Commands
 
@@ -157,7 +175,7 @@ require('cinch').setup({
 
 A frame at 75% of the editor. Its top border holds the plugin count, startup time, and the three views: plugins, stats and log. The bottom border holds the keys for the view you're in.
 
-The **Plugins** view is two panes. The list on the left groups plugins into failed, loaded, working, waiting and disabled, each row showing what loaded the plugin or what it waits for, its load time, and pending commits. The pane on the right follows the cursor and shows that plugin in full: how and when it loaded, its version and pending commits, its dependencies, the config and opts it received, the remote's branches and tags, and where its spec is. In a frame narrower than 90 columns, the pane sits under the list instead.
+The **Plugins** view is two panes. The list on the left groups plugins into failed, loaded, working, waiting and disabled. Each row reads: the name, its load time, a load-time bar, a `now`, `later` or `trigger` chip, its state, then pending commits and what loaded it or what it waits for. The pane on the right follows the cursor and shows that plugin in full: how and when it loaded, its version and pending commits, its dependencies, the config and opts it received, the remote's branches and tags, and where its spec is. In a frame narrower than 130 columns, where the list could not fit a whole row beside the pane, the pane sits under the list instead.
 
 **Stats** shows a startup timeline split into Neovim's own time, each of cinch's phases and `later`, then counts, the slowest plugins, and startup times from past sessions. **Log** shows every step and message, oldest first.
 
@@ -223,6 +241,7 @@ end)
 | `Build` | `plugin`, `ok`, `ms`, `err`, `output` |
 | `Phase` | `name`, `ms`: a startup step finished |
 | `Later` | The `later` queue is empty |
+| `Run` | `when`, `where`, `ok`, `ms`, `err`: one of your `now`/`later` functions ran |
 | `Installing`, `Installed` | `names`, and after the batch `failed` and `ms`: a batch of installs starts and ends |
 | `Report` | `msg`, `level`: something for you to read |
 
@@ -265,6 +284,9 @@ cinch.build(names)
 cinch.get(name)           -- one plugin record, or all of them
 cinch.update(names, opts) -- vim.pack.update through cinch
 cinch.del(names, opts)    -- vim.pack.del through cinch
+cinch.now(fn)
+cinch.later(fn)
+cinch.now_if_args(fn)
 cinch.on(event, fn, { priority = 50, once = false })
 cinch.trigger(name, def)
 ```

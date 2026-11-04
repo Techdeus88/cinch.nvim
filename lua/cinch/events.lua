@@ -29,6 +29,7 @@ M.names = {
   Build = true, -- { plugin, ok, ms, err?, output? }
   Phase = true, -- { name, ms }                         a startup step finished
   Later = true, -- {}                                   the later queue is drained
+  Run = true, -- { when, where, ok, ms, err? }         one of your cinch.now/later functions ran
   Installing = true, -- { names }                       a batch of installs starts
   Installed = true, -- { names, failed, ms }            and ended; failed lists names not on disk
   Report = true, -- { msg, level }                      cinch has something to tell the user

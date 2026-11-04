@@ -9,7 +9,7 @@ vim.api.nvim_echo = function(chunks, history, opts)
   local text = table.concat(vim.tbl_map(function(c)
     return c[1]
   end, chunks))
-  echoed[#echoed + 1] = { source = opts and opts.source, text = text }
+  echoed[#echoed + 1] = { source = opts and opts.source, text = text, starting = vim.v.vim_did_enter == 0 }
   return echo(chunks, history, opts)
 end
 local my_echo, my_notify = vim.api.nvim_echo, vim.notify
@@ -24,6 +24,21 @@ H.after_startup(function()
   end
   H.eq(sources['vim.pack'], nil, "vim.pack's progress never reaches the screen as its own")
   H.eq(sources.cinch, true, "it shows as cinch's")
+  local during_init = vim.tbl_filter(function(e)
+    return e.starting
+  end, echoed)
+  H.eq(during_init, {}, 'nothing echoed while init.lua runs, so no Press ENTER prompt')
+  local after = table.concat(
+    vim.tbl_map(function(e)
+      return e.text
+    end, echoed),
+    '\n'
+  )
+  H.eq(
+    after:find('cinch: not installed: missing', 1, true) ~= nil,
+    true,
+    'the install error is shown once startup ends'
+  )
   H.eq({ vim.api.nvim_echo == my_echo, vim.notify == my_notify }, { true, true }, 'both are released after')
 
   local err

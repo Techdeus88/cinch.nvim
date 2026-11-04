@@ -72,12 +72,35 @@ end
 
 ---@param level integer
 ---@param msg string
+-- While Neovim starts, the screen is not drawn yet and every message waits for it;
+-- more than one line waiting means a "Press ENTER" prompt. So until VimEnter,
+-- warnings and errors are held to show as one message, and the rest only go to
+-- the log. These hold what waits.
+---@type { [1]: integer, [2]: string }[]
+local held = {}
+---@type table<string, { [1]: string, [2]: string, [3]?: integer }> running progress by key
+local held_progress = {}
+
+---@return boolean
+local function starting()
+  return vim.v.vim_did_enter == 0
+end
+
+---@param level integer
+---@param msg string
 local function show(level, msg)
+  if level < M.opts.level then
+    return
+  end
+  if starting() then
+    if level >= levels.WARN then
+      held[#held + 1] = { level, clean(msg) }
+    end
+    return
+  end
   -- Highlighted as an error, not raised as one: an error echoed while init.lua
   -- runs gets an "Error in init.lua" header that points at the wrong place.
-  if level >= M.opts.level then
-    echo({ { 'cinch: ', hl[level] or 'Title' }, { clean(msg), hl[level] } }, true, {})
-  end
+  echo({ { 'cinch: ', hl[level] or 'Title' }, { clean(msg), hl[level] } }, true, {})
 end
 
 ---@type table<string, integer> progress message id by key: 'pack', or a plugin name for its build
@@ -90,6 +113,11 @@ local ids = {}
 ---@param percent? integer
 local function progress(key, msg, status, percent)
   if not M.opts.progress then
+    return
+  end
+  if starting() then
+    -- Only what is still running once startup ends is shown, then.
+    held_progress[key] = status == 'running' and { msg, status, percent } or nil
     return
   end
   local done = status ~= 'running'
@@ -282,6 +310,11 @@ local function log_steps()
       d.plugin.name
     )
   end)
+  events.on('Run', function(d)
+    if d.ok then
+      step(d.when, ('ran your function at %s · %s'):format(d.where, ms(d.ms)))
+    end
+  end)
   events.on('Later', function()
     step('later', ('later: %d plugin%s loaded'):format(later_count, later_count == 1 and '' or 's'))
   end)
@@ -305,8 +338,30 @@ end
 -- Setup -------------------------------------------------------------------------
 
 ---@param opts? cinch.messages.Opts
+--- Startup is over: show what was held, warnings and errors as one message, then
+--- the progress still running.
+local function release_held()
+  if #held > 0 then
+    local chunks = {}
+    for i, h in ipairs(held) do
+      chunks[#chunks + 1] = { (i > 1 and '\n' or '') .. 'cinch: ', hl[h[1]] }
+      chunks[#chunks + 1] = { h[2], hl[h[1]] }
+    end
+    held = {}
+    echo(chunks, true, {})
+  end
+  local running = held_progress
+  held_progress = {}
+  for key, pr in pairs(running) do
+    progress(key, pr[1], pr[2] --[[@as 'running']], pr[3])
+  end
+end
+
 function M.setup(opts)
   M.opts = vim.tbl_extend('force', M.opts, opts or {})
+  if starting() then
+    vim.api.nvim_create_autocmd('VimEnter', { once = true, callback = vim.schedule_wrap(release_held) })
+  end
   events.define('Message') -- { time, level, msg, source, plugin? }: something was logged
   events.define('Progress') -- { title, done?, total?, name?, status, percent? }: vim.pack's progress
 
