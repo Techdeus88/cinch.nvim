@@ -26,7 +26,7 @@ local M = {}
 ---@type cinch.ui.Opts
 M.opts = { size = 0.75, wide = 0.95, split = 0.58, side_by_side = 130, backdrop = 60 }
 
-M.views = { 'plugins', 'stats', 'log' }
+M.views = { 'plugins', 'triggers', 'stats', 'log' }
 
 local ui = {
   backdrop = nil, ---@type integer? window
@@ -52,7 +52,7 @@ local ui = {
 
 local ns = api.nvim_create_namespace('cinch_ui')
 
---- One of the window's files, loaded on first use: canvas, plugins, dashboard, keys.
+--- One of the window's files, loaded on first use: canvas, plugins, triggers, dashboard, keys.
 ---@param name string
 local function part(name)
   return require('cinch.features.ui.' .. name)
@@ -258,6 +258,8 @@ local function render()
     c = part('keys').help(width, key_list())
   elseif ui.view == 'plugins' then
     c = part('plugins').list(width, ui.ctx)
+  elseif ui.view == 'triggers' then
+    c = part('triggers').view(width, ui.ctx)
   elseif ui.view == 'stats' then
     c = part('dashboard').stats(width)
   else
@@ -469,7 +471,7 @@ local function float(focus, cfg)
 end
 
 --- Open the window, or switch an open one to `view`.
----@param view? 'plugins'|'stats'|'log'
+---@param view? 'plugins'|'triggers'|'stats'|'log'
 function M.open(view)
   if view and vim.list_contains(M.views, view) then
     ui.view = view

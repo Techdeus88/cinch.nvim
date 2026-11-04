@@ -79,7 +79,7 @@ H.after_startup(function()
     return c[1]
   end, frame.title))
   H.eq(
-    title:find('cinch', 1, true) ~= nil and title:find('plugins  stats  log', 1, true) ~= nil,
+    title:find('cinch', 1, true) ~= nil and title:find('plugins  triggers  stats  log', 1, true) ~= nil,
     true,
     'title and tabs'
   )
@@ -217,8 +217,10 @@ H.after_startup(function()
   H.eq(u.results['beta.nvim'], nil, 'u applies its update')
 
   H.press('<Tab>')
-  H.eq(api.nvim_win_get_config(w.pane).hide, true, 'stats uses the whole width')
-  H.eq(line_of(w.list, '^ startup') ~= nil and line_of(w.list, '^ slowest') ~= nil, true, '<Tab> goes to stats')
+  H.eq(api.nvim_win_get_config(w.pane).hide, true, 'triggers uses the whole width')
+  H.eq(line_of(w.list, '^ ▾ done') ~= nil, true, '<Tab> goes to triggers')
+  H.press('<Tab>')
+  H.eq(line_of(w.list, '^ startup') ~= nil and line_of(w.list, '^ slowest') ~= nil, true, 'then stats')
   H.press('<Tab>')
   H.eq(line_of(w.list, '^ %d%d:%d%d:%d%d ') ~= nil, true, 'then log')
   H.press('<Tab>')

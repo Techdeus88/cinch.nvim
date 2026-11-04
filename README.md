@@ -168,7 +168,7 @@ An error in one of these functions is reported with the file and line where you 
 | Command | Does |
 | --- | --- |
 | `:Cinch` | Open the window |
-| `:Cinch open [plugins\|stats\|log]` | Open it on a view |
+| `:Cinch open [plugins\|triggers\|stats\|log]` | Open it on a view |
 | `:Cinch load {names}` | Load plugins now |
 | `:Cinch build {names}` | Run their builds again |
 | `:Cinch check [names]` | Check for updates in the background |
@@ -179,9 +179,11 @@ An error in one of these functions is reported with the file and line where you 
 
 ## The window
 
-A frame at 75% of the editor, over a dark backdrop that dims the editor behind it. The cursor stays in the window: moving to an editor window, with a click or `<C-w>`, comes back to the list, while a prompt or picker a plugin opens keeps focus. Its top border holds the plugin count, startup time, and the three views: plugins, stats and log. The bottom border holds the keys for the view you're in.
+A frame at 75% of the editor, over a dark backdrop that dims the editor behind it. The cursor stays in the window: moving to an editor window, with a click or `<C-w>`, comes back to the list, while a prompt or picker a plugin opens keeps focus. Its top border holds the plugin count, startup time, and the four views: plugins, triggers, stats and log. The bottom border holds the keys for the view you're in.
 
 The **Plugins** view is two panes. The list on the left groups plugins into working, failed, loaded, waiting and disabled, with what is happening now on top. Each row puts its parts one after the other: a status light (lit once loaded, a spinner while it works), the name, its load time and a load-time bar once it has loaded, then how it loads: a Nerd Font icon and its name for `now` and `later`, and for a trigger plugin each trigger type with its icon and values, the value that loaded it on a chip. A plugin that is only a dependency shows the plugins that need it. Pending commits and a message come last, and only when there is something to say: an error, the newest line a build is printing, why it is off. The pane on the right follows the cursor and shows that plugin in full: how and when it loaded, its folder and url, the branch it follows or the version you pinned, the commit on disk, its readme, pending commits, its dependencies and what needs it, the config and opts it received, the last lines of its build output, live while it builds, and where its spec is. `gx` opens the url. Plugins still on disk that no spec names any more sit last, under "not in your specs", where `d` deletes them. In a frame narrower than 130 columns, where the list could not fit a whole row beside the pane, the pane sits under the list instead.
+
+**Triggers** shows what each waiting plugin waits for. Every trigger, event, ft, cmd, keys or one of your own, is listed with the plugins behind it: armed ones first, with how many still wait, then the ones done with, either fired, and when, or never fired because their plugins loaded another way, such as by hand or as a dependency. Below them are the `now` and `later` queues, which are no triggers but load everything else, with `now_if_args` plugins in the queue they became, and the plugins that load only before what needs them.
 
 **Stats** shows a startup timeline split into Neovim's own time, each of cinch's phases and `later`, then counts, the slowest plugins, and startup times from past sessions. **Log** shows every step and message, oldest first.
 

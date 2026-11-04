@@ -80,6 +80,7 @@ local function glyph(name)
   local own = ui and ui.opts.icons
   return own and own[name] or M.icons[name] or M.icons.trigger
 end
+M.glyph = glyph
 
 --- The status light left of the name: lit when loaded, a spinner while working.
 ---@param p cinch.Plugin
