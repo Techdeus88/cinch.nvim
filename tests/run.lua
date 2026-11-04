@@ -73,7 +73,8 @@ for name, files in pairs(fixtures) do
   end
   sh({ 'git', 'init', '-q', '-b', 'main' }, dir)
   sh({ 'git', 'add', '-A' }, dir)
-  sh({ 'git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'init' }, dir)
+  -- No signing: your own git config may sign every commit, which needs a key.
+  sh({ 'git', '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'init' }, dir)
 end
 
 local filter = _G.arg[1]

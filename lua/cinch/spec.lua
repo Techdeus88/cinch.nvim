@@ -104,6 +104,14 @@ local function resolve_version(s, notes)
     s.version = s[won]
   end
   s.commit, s.tag, s.branch = nil, nil, nil
+  -- vim.pack reads a string as a branch, tag or commit, never as a range. Git refs
+  -- cannot hold * ^ ~ or spaces, so a string with them can only be a range by mistake.
+  local v = s.version
+  if type(v) == 'string' and (v:find('[%*%^~%s<>=]') or v:find('%d%.[xX]')) then
+    local msg = 'version `%s` looks like a range, which vim.pack reads as a branch or tag; '
+      .. "write vim.version.range('%s')"
+    notes[#notes + 1] = msg:format(v, v)
+  end
 end
 
 --- Move cinch fields from the top level into `data`.

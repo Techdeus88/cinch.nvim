@@ -143,7 +143,10 @@ function M.check(names, opts)
     resolve(plugins, opts)
   end)
   for _, p in ipairs(plugins) do
-    state.activity(p, 'checking')
+    -- A plugin already busy, building say, keeps showing that.
+    if p.activity == nil then
+      state.activity(p, 'checking')
+    end
     -- vim.pack's own fetch: tags too, and conflicting tags follow the remote.
     git({ 'fetch', '--quiet', '--tags', '--force', '--recurse-submodules=yes', 'origin' }, p.path, function(r)
       if r.code ~= 0 then

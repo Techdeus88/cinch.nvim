@@ -17,6 +17,14 @@ H.write('lua/plugins/a.lua', {
 H.write('lua/plugins/sub/b.lua', { "return { 'owner/icons-repo', name = 'icons', branch = 'dev' }" })
 H.write('lua/plugins/c.lua', { "return { 'owner/which.nvim' }" })
 H.write('lua/plugins/d.lua', { "error('broken file')" })
+H.write('lua/plugins/e.lua', {
+  'return {',
+  "  { 'owner/ranged', version = '^1.2' },",
+  "  { 'owner/starred', tag = '1.*' },",
+  "  { 'owner/branchy', version = 'feat/x-1.0' },",
+  "  { 'owner/real-range', version = vim.version.range('^1.2') },",
+  '}',
+})
 
 local spec, state = require('cinch.spec'), require('cinch.state')
 local added = spec.register(spec.collect({ 'plugins' }, { file = 'init.lua' }))
@@ -25,11 +33,21 @@ H.after_startup(function()
   local names = vim.tbl_map(function(p)
     return p.name
   end, added)
-  H.eq(
-    names,
-    { 'plenary.nvim', 'tele.nvim', 'which.nvim', 'now-cmd', 'odd', 'needs', 'args', 'repo', 'icons' },
-    'deps first'
-  )
+  H.eq(names, {
+    'plenary.nvim',
+    'tele.nvim',
+    'which.nvim',
+    'now-cmd',
+    'odd',
+    'needs',
+    'args',
+    'repo',
+    'ranged',
+    'starred',
+    'branchy',
+    'real-range',
+    'icons',
+  }, 'deps first')
 
   local t = state.plugins['tele.nvim']
   H.eq(t.src, 'https://github.com/owner/tele.nvim', 'owner/repo expands')
@@ -60,4 +78,12 @@ H.after_startup(function()
   H.eq(state.plugins['repo'] ~= nil, true, 'the name drops .git like vim.pack')
   H.eq(state.plugins['icons'].version, 'dev', 'branch becomes version')
   H.eq(H.noted('broken file'), true, 'a broken spec file is reported')
+
+  local looks = 'version `%s` looks like a range, which vim.pack reads as a branch or tag; write vim.version.range'
+  H.eq(H.noted(vim.pesc(looks:format('^1.2'))), true, 'a range written as a string warns')
+  H.eq(H.noted(vim.pesc(looks:format('1.*'))), true, 'from a tag too')
+  H.eq(state.plugins['ranged'].version, '^1.2', 'and goes to vim.pack unchanged')
+  H.eq(H.noted('`feat/x%-1%.0` looks like'), false, 'a branch name does not warn')
+  H.eq(H.noted('`real%-range`'), false, 'a real range does not warn')
+  H.eq(getmetatable(state.plugins['real-range'].version) ~= nil, true, 'and stays a range object')
 end)

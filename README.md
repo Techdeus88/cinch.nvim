@@ -64,7 +64,7 @@ cinch fields can sit at the top level, as above, or inside `data`, the way `vim.
 | --- | --- |
 | `[1]` or `src` | Where the plugin comes from |
 | `name` | The plugin's name. Defaults to the last part of `src`, the same way `vim.pack` names it |
-| `version` | A branch, tag, commit, or `vim.version.range()`. Passed to `vim.pack` unchanged |
+| `version` | A branch, tag, commit, or `vim.version.range()`. Passed to `vim.pack` unchanged. A range must be a range object: `vim.pack` reads a string like `'^1.2'` as a branch or tag name, so cinch warns when a string looks like a range |
 | `commit`, `tag`, `branch` | Become `version`. When more than one is set, `commit` beats `tag`, which beats `version`, which beats `branch`, and the losers are named in a warning |
 | `load` | `'now'`, `'later'`, `'now_if_args'` or `'trigger'`. See below |
 | `event` | `'BufReadPost'`, or `'User MyEvent'` for an event with a pattern. A string or a list |
