@@ -152,6 +152,9 @@ function M.after_build(p, fn)
   waiters[p.name] = list
 end
 
+--- How long an async function build may take before it fails, in ms.
+M.timeout = 300000
+
 -- Lines of build output kept on the plugin.
 local log_max = 100
 
@@ -207,7 +210,13 @@ end
 local function shell_build(p, cmd, start)
   state.activity(p, 'building')
   local out, errs = {}, {}
-  vim.system({ vim.o.shell, vim.o.shellcmdflag, cmd }, {
+  -- sh on Unix, whatever your 'shell' is (fish, nushell), so a build runs the same
+  -- everywhere; on Windows your 'shell', its flags split into words (PowerShell's are several).
+  local argv = vim.fn.has('win32') == 1
+      and vim.list_extend({ vim.o.shell }, vim.split(vim.o.shellcmdflag, ' ', { trimempty = true }))
+    or { 'sh', '-c' }
+  argv[#argv + 1] = cmd
+  vim.system(argv, {
     cwd = p.path,
     text = true,
     stdout = reader(p, out),
@@ -238,7 +247,8 @@ local function function_build(p, fn, start)
     end
     vim.opt.rtp:prepend(p.path)
   end
-  -- `function(p, done)` is async: the build ends when it calls done.
+  -- `function(p, done)` is async: the build ends when it calls done, or fails
+  -- after M.timeout, so what waits on it is not stuck forever.
   local async = debug.getinfo(fn, 'u').nparams >= 2
   local ended = false
   local function done(ok, msg)
@@ -250,11 +260,17 @@ local function function_build(p, fn, start)
       finish(p, start, ok == false and (msg or 'failed') or nil)
     end)
   end
+  if async then
+    vim.defer_fn(function()
+      done(false, ('did not call done() within %ds'):format(M.timeout / 1000))
+    end, M.timeout)
+  end
   local ok, err = pcall(fn, p, async and done or nil)
   if not on_rtp and p.state ~= 'loaded' then
     vim.opt.rtp:remove(p.path)
     -- vim.loader searches its cached runtimepath first and re-reads it only after
-    -- a miss; without one it would keep finding this plugin's modules.
+    -- a miss; without one it would keep finding this plugin's modules. This leans on
+    -- how vim.loader caches today; the builds test pins it with vim.loader enabled.
     vim.loader.find(' cinch: refresh the runtimepath cache ')
     -- Forget the modules the build loaded, so a later require() loads the plugin properly.
     local lua = vim.fs.joinpath(p.path, 'lua')

@@ -3,6 +3,10 @@
 -- running build without blocking; a failed build runs again on the next start.
 local H = dofile(vim.env.CINCH_ROOT .. '/tests/helpers.lua')
 local events = require('cinch.events')
+-- Shell builds run with sh, whatever 'shell' is.
+vim.o.shell = '/no/such/shell'
+-- The function build hides the plugin from vim.loader's cache too.
+vim.loader.enable()
 
 local built = {}
 events.on('Build', function(d)
@@ -99,6 +103,7 @@ H.after_startup(function()
   H.eq(builder.state, 'pending', 'without loading it')
   H.eq(vim.g.builder_plugin, nil, 'its plugin/ did not run')
   H.eq(package.loaded['builder'], nil, 'and its modules are forgotten')
+  H.eq(pcall(require, 'builder'), false, 'and vim.loader does not find them either')
 
   H.wait(function()
     return H.plugin('beta.nvim').state == 'loaded'

@@ -73,7 +73,7 @@ H.after_startup(function()
   H.eq(H.noted('replaying FileType'), false, 'with no error')
 
   vim.cmd('Ghost')
-  H.eq(H.noted('Command not found: Ghost'), true, 'a command the plugin never defines fails once')
+  H.eq(H.noted('Not an editor command: Ghost$'), true, 'a command the plugin never defines fails once')
   H.eq(vim.api.nvim_get_commands({}).Ghost, nil, 'and the stub is gone')
 
   H.eq(vim.g.flag_armed, 'beta.nvim', 'a custom trigger is armed')

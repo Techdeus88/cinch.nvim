@@ -23,6 +23,7 @@ M.now_if_args = handler.now_if_args
 ---@field confirm? boolean ask before installing, vim.pack's prompt; default true
 ---@field budget? integer ms of `later` loading per event-loop tick; default 5
 ---@field defer? boolean when plugins are missing, install once the UI is up, not during init.lua; default true
+---@field build_timeout? integer seconds an async function build may take before it fails; default 300
 ---@field features? string[] modules under cinch.features to load; default { 'messages', 'stats', 'updates', 'ui' }
 ---@field [string] table a feature's options, under its name
 
@@ -32,6 +33,7 @@ local defaults = {
   confirm = true,
   budget = 5,
   defer = true,
+  build_timeout = 300,
   features = { 'messages', 'stats', 'updates', 'ui' },
 }
 
@@ -152,6 +154,32 @@ local function to_defer(install)
   return missing
 end
 
+--- `wait` plus every plugin of `install` that needs one of them, however deeply:
+--- one that loaded during init.lua would load without its dependency.
+---@param wait cinch.Plugin[]
+---@param install cinch.Plugin[]
+---@return cinch.Plugin[] in declaration order
+local function with_dependents(wait, install)
+  local held = {}
+  for _, p in ipairs(wait) do
+    held[p.name] = true
+  end
+  local grew = #wait > 0
+  while grew do
+    grew = false
+    for _, p in ipairs(install) do
+      if not held[p.name] and vim.iter(p.deps):any(function(d)
+        return held[d]
+      end) then
+        held[p.name], grew = true, true
+      end
+    end
+  end
+  return vim.tbl_filter(function(p)
+    return held[p.name]
+  end, install)
+end
+
 --- Install, init and arm new plugins, then load what can load now. Plugins that
 --- must wait for the UI do all of that on UIEnter instead.
 ---@param added cinch.Plugin[]
@@ -171,7 +199,7 @@ local function activate(added, confirm)
     vim.list_extend(deferred.plugins, install)
     return
   end
-  local wait = to_defer(install)
+  local wait = with_dependents(to_defer(install), install)
   local now = #wait == 0 and install
     or vim.tbl_filter(function(p)
       return not vim.list_contains(wait, p)
@@ -225,6 +253,7 @@ function M.setup(opts)
   end
   M.opts = vim.tbl_extend('force', defaults, opts or {})
   handler.budget = M.opts.budget
+  pack.timeout = M.opts.build_timeout * 1000
   load_features(M.opts)
   local t = hrtime()
   local added = spec.register(spec.collect(M.opts.spec, caller()))
@@ -298,6 +327,8 @@ function M.del(names, opts)
   names = type(names) == 'table' and names or { names }
   local ok, err = pack.del(names, opts)
   if not ok then
+    -- vim.pack says which plugins it kept only in its error text; the delete test
+    -- pins this wording, so a change upstream fails there, not silently here.
     local active = tostring(err):match('active and were not deleted: (.-)%. Remove')
     local why = ('delete failed: %s'):format((tostring(err):gsub('^[^:]*:%d+: ', '')))
     if active then

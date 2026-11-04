@@ -166,19 +166,39 @@ local function packadd(p)
   end
 end
 
+--- A build that must end before `p` loads: its own, or that of any dependency not
+--- loaded yet, however deep.
 ---@param p cinch.Plugin
----@return cinch.Plugin? building itself or a dependency with a build running
-local function building(p)
+---@param seen? table<cinch.Plugin, true>
+---@return cinch.Plugin?
+local function building(p, seen)
+  seen = seen or {}
+  if seen[p] then
+    return
+  end
+  seen[p] = true
   if p.activity == 'building' then
     return p
   end
   for _, name in ipairs(p.deps) do
     local d = state.plugins[name]
-    if d and d.activity == 'building' then
-      return d
+    local b = d and d.state ~= 'loaded' and building(d, seen)
+    if b then
+      return b
     end
   end
 end
+
+-- Why a dependency did not load, by its state.
+local dep_why = {
+  disabled = 'is disabled',
+  failed = 'failed to load',
+  registered = 'is not installed yet',
+  pending = 'did not load',
+}
+
+---@type table<cinch.Plugin, fun()[]> plugins waiting for a build, and who waits on each
+local waiting = {}
 
 ---@param p cinch.Plugin
 ---@param reason string
@@ -207,11 +227,23 @@ function M.load(p, reason, done)
   -- Its build makes something it needs: load once the build ends, never block.
   local b = building(p)
   if b then
+    -- Asked again while it waits, a completion on every keystroke say: one wait.
+    if waiting[p] then
+      table.insert(waiting[p], done)
+      return false
+    end
+    waiting[p] = { done }
     if events.has('LoadWait') then
       events.emit('LoadWait', { plugin = p, reason = reason, build = b })
     end
     pack.after_build(b, function()
-      M.load(p, reason, done)
+      local list = waiting[p]
+      waiting[p] = nil
+      M.load(p, reason, function()
+        for _, fn in ipairs(list) do
+          fn()
+        end
+      end)
     end)
     return false
   end
@@ -227,8 +259,14 @@ function M.load(p, reason, done)
     local d = state.plugins[name]
     if d.state == 'loading' then
       events.report(('dependency cycle: `%s` and `%s`'):format(p.name, name), vim.log.levels.WARN)
-    else
-      M.load(d, 'dep of ' .. p.name)
+    elseif not M.load(d, 'dep of ' .. p.name) then
+      -- No build is running anywhere below (checked above), so it will not load
+      -- later either: disabled, failed, cancelled or not installed. Loading without
+      -- it would only fail in a stranger way.
+      handler.disarm(p)
+      fail(p, reason, ('dependency `%s` %s'):format(name, dep_why[d.state] or d.state))
+      done()
+      return false
     end
   end
   -- Before packadd, so a stub never shadows or deletes what the plugin defines.

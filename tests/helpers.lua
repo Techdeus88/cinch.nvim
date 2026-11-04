@@ -128,6 +128,9 @@ function H.after_startup(fn)
         vim.schedule(function()
           local ok, err = xpcall(fn, debug.traceback)
           if ok then
+            -- The runner passes a case only with this line, so one that exits
+            -- early without running its checks fails.
+            io.stdout:write('cinch: case done\n')
             vim.cmd('qa!')
           else
             io.stderr:write(err, '\n', 'notes: ', vim.inspect(H.notes), '\n')

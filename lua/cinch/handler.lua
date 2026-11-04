@@ -42,6 +42,24 @@ function M.fire(p, reason, done)
   require('cinch.loader').load(p, reason, done)
 end
 
+--- The plugins behind a trigger, in declaration order: kept in a table by name,
+--- which `pairs` walks in no particular order.
+---@param set? table<string, cinch.Plugin>
+---@return cinch.Plugin[]
+local function ordered(set)
+  local res = vim.tbl_values(set or {})
+  if #res > 1 then
+    local at = {}
+    for i, p in ipairs(require('cinch.state').list) do
+      at[p] = i
+    end
+    table.sort(res, function(a, b)
+      return (at[a] or 0) < (at[b] or 0)
+    end)
+  end
+  return res
+end
+
 --- Load several plugins, then run `replay` once, after the last one.
 ---@param plugins cinch.Plugin[]
 ---@param reason string
@@ -129,11 +147,22 @@ local function replay_event(event, args, seen)
           end)
         end
       elseif type(au.callback) == 'function' then
-        try('replaying ' .. event, au.callback, args)
+        -- Called directly, so what Neovim does after a callback is up to us: delete
+        -- a `once` autocmd, or one whose callback returns true.
+        local ok, res = pcall(au.callback, vim.tbl_extend('force', args, { id = au.id, group = au.group }))
+        if not ok then
+          events.report(('replaying %s: %s'):format(event, res), vim.log.levels.ERROR)
+        end
+        if au.id and (au.once or (ok and res == true)) then
+          pcall(api.nvim_del_autocmd, au.id)
+        end
       elseif au.command and au.command ~= '' then
         try('replaying ' .. event, api.nvim_buf_call, args.buf, function()
           vim.cmd(au.command)
         end)
+        if au.id and au.once then
+          pcall(api.nvim_del_autocmd, au.id)
+        end
       end
     end
   end
@@ -172,7 +201,7 @@ local function on_event(key, args)
   local event = args.event
   local seen = autocmd_ids(event)
   local ftdetect = event == 'FileType' and api.nvim_get_runtime_file('ftdetect/*.{vim,lua}', true)
-  fire_all(vim.tbl_values(a.plugins), 'event ' .. key, function()
+  fire_all(ordered(a.plugins), 'event ' .. key, function()
     replay_event(event, args, seen)
     if ftdetect then
       refresh_filetype(args.match, ftdetect)
@@ -232,20 +261,19 @@ local cmd_desc = 'cinch: load on :'
 ---@param name string
 ---@param args vim.api.keyset.create_user_command.command_args
 local function on_cmd(name, args)
-  fire_all(vim.tbl_values(cmds[name] or {}), 'cmd ' .. name, function()
-    local range
-    if args.range == 2 then
-      range = { args.line1, args.line2 }
-    elseif args.range == 1 then
-      range = { args.line1 }
-    end
-    try(':' .. name, vim.cmd --[[@as function]], {
-      cmd = name,
-      args = args.fargs,
-      bang = args.bang,
-      range = range,
-      mods = args.smods,
-    })
+  fire_all(ordered(cmds[name]), 'cmd ' .. name, function()
+    local range = args.range == 2 and (args.line1 .. ',' .. args.line2)
+      or args.range == 1 and tostring(args.line1)
+      or ''
+    -- As text, the way it was typed: fargs would lose escaped spaces and a register.
+    local line = ('%s%s%s%s%s'):format(
+      args.mods ~= '' and (args.mods .. ' ') or '',
+      range,
+      name,
+      args.bang and '!' or '',
+      args.args ~= '' and (' ' .. args.args) or ''
+    )
+    try(':' .. name, vim.cmd --[[@as function]], line)
   end)
 end
 
@@ -260,9 +288,15 @@ M.handlers.cmd = {
         nargs = '*',
         bang = true,
         range = true,
-        -- Completing the command loads the plugin, then asks again.
+        -- Completing the command loads the plugin, then asks the real command.
         complete = function(_, line)
-          fire_all(vim.tbl_values(cmds[name] or {}), 'cmd ' .. name, function() end)
+          fire_all(ordered(cmds[name]), 'cmd ' .. name, function() end)
+          -- Still this stub (a build is running, or LoadPre cancelled the load):
+          -- asking again would land here, forever.
+          local def = api.nvim_get_commands({})[name]
+          if not def or def.desc == cmd_desc .. name then
+            return {}
+          end
           return vim.fn.getcompletion(line, 'cmdline')
         end,
         desc = cmd_desc .. name,
@@ -301,13 +335,24 @@ local map_options = { 'desc', 'silent', 'noremap', 'remap', 'nowait', 'expr', 'u
 ---@type table<string, table<string, cinch.Plugin>> "mode lhs" -> plugins
 local stubs = {}
 
+-- Modes where a register and a count can come before a key.
+local counted = { n = true, x = true, v = true, o = true }
+
 ---@param mode string
 ---@param lhs string
 local function on_key(mode, lhs)
-  local count = vim.v.count > 0 and tostring(vim.v.count) or ''
-  fire_all(vim.tbl_values(stubs[mode .. ' ' .. lhs] or {}), 'keys ' .. lhs, function()
+  -- What came before the key: "a, a count, and in operator-pending mode the
+  -- operator itself, which ends when this stub returns without a motion.
+  local prefix = ''
+  if counted[mode] then
+    prefix = '"' .. vim.v.register .. (vim.v.count > 0 and tostring(vim.v.count) or '')
+    if mode == 'o' then
+      prefix = prefix .. vim.v.operator
+    end
+  end
+  fire_all(ordered(stubs[mode .. ' ' .. lhs]), 'keys ' .. lhs, function()
     -- Fed again with remapping, so the mapping the plugin or its spec just made runs.
-    api.nvim_feedkeys(count .. vim.keycode(lhs), 'mit', false)
+    api.nvim_feedkeys(prefix .. vim.keycode(lhs), 'mit', false)
   end)
 end
 

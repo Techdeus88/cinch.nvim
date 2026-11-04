@@ -28,6 +28,11 @@ H.write('lua/plugins/e.lua', {
 
 local spec, state = require('cinch.spec'), require('cinch.state')
 local added = spec.register(spec.collect({ 'plugins' }, { file = 'init.lua' }))
+-- A table of your own, shared or read again later.
+local mine = { 'owner/mine', cmd = 'Mine', data = { opts = {} } }
+spec.register(spec.collect({ { mine } }, { file = 'init.lua' }))
+local keys_off =
+  spec.register(spec.collect({ { { 'owner/keyless', keys = false, cmd = false } } }, { file = 'init.lua' }))
 
 H.after_startup(function()
   local names = vim.tbl_map(function(p)
@@ -58,6 +63,13 @@ H.after_startup(function()
   H.eq(t.deps, { 'plenary.nvim', 'icons' }, 'deps: a spec and a name reference')
 
   H.eq(state.plugins['plenary.nvim'].load, 'trigger', 'only a dependency: loads with its dependent')
+  H.eq(
+    { mine[1], mine.cmd, mine.src, vim.tbl_keys(mine.data) },
+    { 'owner/mine', 'Mine', nil, { 'opts' } },
+    'your own spec table is left as you wrote it'
+  )
+  H.eq(state.plugins['mine'].data.cmd, 'Mine', 'while cinch reads it the same')
+  H.eq(keys_off[1].load, 'later', '`keys = false`, `cmd = false`: no trigger, so later')
   H.eq(state.plugins['plenary.nvim'].dep_only, true, 'marked as such')
 
   local w = state.plugins['which.nvim']

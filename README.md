@@ -74,7 +74,7 @@ cinch fields can sit at the top level, as above, or inside `data`, the way `vim.
 | `deps` | Plugins that load before this one. `'owner/repo'` or a table is a spec. A bare name like `'plenary.nvim'` refers to a spec declared elsewhere. `dependencies` works too |
 | `enabled`, `cond` | `false`, or a function returning `false`, turns the plugin off: it is not installed and never loads. A function that raises leaves the plugin on, with a warning |
 | `init` | `function(plugin)`, run at every startup before the plugin loads |
-| `build` | Runs after an install or an update. A shell command runs in the background from the plugin's folder. `':Cmd'` runs an Ex command once the plugin has loaded. `function(plugin)` runs with the plugin on the runtimepath but not loaded, and `function(plugin, done)` finishes when it calls `done(ok, msg)` |
+| `build` | Runs after an install or an update. A shell command runs in the background from the plugin's folder, with `sh -c` on Unix whatever your `'shell'` is. `':Cmd'` runs an Ex command once the plugin has loaded. `function(plugin)` runs with the plugin on the runtimepath but not loaded, and `function(plugin, done)` finishes when it calls `done(ok, msg)`, or fails after `build_timeout` |
 | `opts` | A table, or `function(plugin, opts)` that returns one or fills in the table it is given |
 | `main` | The module whose `setup()` gets `opts`. cinch guesses it from the plugin's name, or takes the only module in its `lua/` folder |
 | `config` | `function(plugin, opts)`, run after the plugin loads, in place of `require(main).setup(opts)`. `config = true` calls `setup()` with no opts |
@@ -121,6 +121,7 @@ require('cinch').setup({
   confirm = true,                -- ask before installing, with vim.pack's prompt
   budget = 5,                    -- ms of `later` loading per event-loop tick
   defer = true,                  -- install missing plugins once the UI is up
+  build_timeout = 300,           -- seconds an async function build may take before it fails
   features = { 'messages', 'stats', 'updates', 'ui' },
 
   -- each feature's options, under its name
@@ -304,6 +305,10 @@ cinch.trigger(name, def)
 - Lua modules cannot be unloaded. Updating a plugin that has already loaded takes effect when you restart, and cinch says so.
 - A `':Cmd'` build needs the plugin's own command, so cinch loads the plugin first. During startup that waits for `VimEnter`.
 - A build that fails, or is cut off by quitting, runs again at the next startup.
+- A plugin loads only once everything it depends on has, however deep. It waits for a build running anywhere below it, and fails with the reason when a dependency is disabled, failed, cancelled or not installed yet. On a start that installs a new dependency once the UI is up, the plugins that need it wait too.
+- `keys = false`, `cmd = false` and the like turn that trigger off, as in lazy.nvim. With no trigger left, the plugin loads `later`.
+- Plugins behind the same trigger load in the order you declared them. A key replayed in operator-pending mode keeps its operator, count and register, and a command keeps the exact text you typed.
+- cinch copies your spec tables before it reads them, so a table you share or read again is left as you wrote it.
 
 ## Development
 
@@ -314,4 +319,4 @@ luacheck lua plugin tests
 VIMRUNTIME=$(nvim --clean --headless +'lua io.write(vim.env.VIMRUNTIME)' +qa) lua-language-server --check . --checklevel=Warning
 ```
 
-The cases live in `tests/cases/`. The runner builds local git repos to install from, so the suite needs no network, and gives every case its own data, state and config folders. A first line of `-- phases: N` runs a case N times over the same folders, to test what carries from one session to the next. A header line of `-- args: notes.md` opens that file, as if you passed it on the command line.
+The cases live in `tests/cases/`. The runner builds local git repos to install from, so the suite needs no network, and gives every case its own data, state and config folders. A case passes only when it exits after all its checks ran. A first line of `-- phases: N` runs a case N times over the same folders, to test what carries from one session to the next. A header line of `-- args: notes.md` opens that file, as if you passed it on the command line.

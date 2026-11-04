@@ -114,6 +114,16 @@ local function resolve_version(s, notes)
   end
 end
 
+---@param t table
+---@return table
+local function shallow(t)
+  local c = {}
+  for k, v in pairs(t) do
+    c[k] = v
+  end
+  return c
+end
+
 --- Move cinch fields from the top level into `data`.
 ---@param s table
 ---@return string[] notes about ignored keys
@@ -156,6 +166,12 @@ function M.normalize(s)
   if type(s) ~= 'table' then
     return
   end
+  -- A copy, and of its data, so your own tables stay as you wrote them: a spec
+  -- table you share, or read again later, is not rearranged.
+  s = shallow(s)
+  if type(s.data) == 'table' then
+    s.data = shallow(s.data)
+  end
   if s.src == nil and type(s[1]) == 'string' then
     s.src, s[1] = expand(s[1]), nil
   end
@@ -176,7 +192,8 @@ end
 local function has_trigger(data)
   for k in pairs(M.triggers) do
     local v = data[k]
-    if v ~= nil and not (type(v) == 'table' and #v == 0) then
+    -- `keys = false`, as lazy.nvim configs write it, turns a trigger off.
+    if v ~= nil and v ~= false and not (type(v) == 'table' and #v == 0) then
       return true
     end
   end

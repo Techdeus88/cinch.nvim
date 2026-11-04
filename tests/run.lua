@@ -48,6 +48,17 @@ function! s:init() abort
   let b:vimmy = get(b:, 'vimmy', 0) + 1
 endfunction]],
   },
+  -- A `once` autocmd on the event that loads it.
+  ['oncy'] = {
+    ['plugin/oncy.lua'] = [[
+vim.api.nvim_create_autocmd('User', { pattern = 'OncyGo', once = true, callback = function()
+  vim.g.oncy = (vim.g.oncy or 0) + 1
+end })]],
+  },
+  -- An operator-pending mapping: L moves to the end of the line.
+  ['opy'] = {
+    ['plugin/opy.lua'] = "vim.keymap.set('o', 'L', '$')",
+  },
   ['delta.nvim'] = {
     ['lua/delta.lua'] = 'return { hit = function() vim.g.delta_hit = (vim.g.delta_hit or 0) + 1 end }',
     ['plugin/delta.lua'] = "vim.keymap.set('n', 'gD', function() vim.g.delta_own = (vim.g.delta_own or 0) + 1 end)",
@@ -138,8 +149,9 @@ for _, case in ipairs(cases) do
       env.CINCH_PHASE = tostring(phase)
       local cmd = vim.list_extend({ 'nvim', '--headless', '-i', 'NONE', '-u', case }, args)
       local r = vim.system(cmd, { env = env, text = true, timeout = 30000 }):wait()
-      if r.code ~= 0 then
-        ok, out = false, ('phase %d exit %d\n%s%s'):format(phase, r.code, r.stdout or '', r.stderr or '')
+      if r.code ~= 0 or not (r.stdout or ''):find('cinch: case done', 1, true) then
+        local why = r.code ~= 0 and ('exit ' .. r.code) or 'exited before its checks ran'
+        ok, out = false, ('phase %d %s\n%s%s'):format(phase, why, r.stdout or '', r.stderr or '')
         break
       end
     end
