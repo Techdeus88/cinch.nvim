@@ -246,12 +246,10 @@ local function row(c, t)
     chunks[#chunks + 1] = { ' ' .. table.concat(t.modes, ' '), 'CinchMuted' }
   end
   chunks[#chunks + 1] = { ' ' }
+  -- Every plugin its own dot, a space apart, however many there are.
   for i, p in ipairs(t.plugins) do
-    if i > 8 then
-      chunks[#chunks + 1] = { '+' .. (#t.plugins - 8), 'CinchMuted' }
-      break
-    end
-    chunks[#chunks + 1] = dot(p)
+    local d = dot(p)
+    chunks[#chunks + 1] = { (i > 1 and ' ' or '') .. d[1], d[2] }
   end
   local text, hl = status_text(t)
   chunks[#chunks + 1] = { ' ' .. text, hl }

@@ -15,6 +15,10 @@ require('cinch').setup({
       { H.src('early'), load = 'now' },
       { H.src('twomods'), load = 'now_if_args' },
     },
+    -- Ten plugins behind one event.
+    vim.tbl_map(function(i)
+      return { src = H.src('gamma'), name = 'many' .. i, event = 'User ManyGo' }
+    end, { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }),
   },
 })
 
@@ -38,7 +42,7 @@ H.after_startup(function()
   local c = view.list(100, ctx)
   local lines = c.lines
   local ev, ft, cmd, keys, sched =
-    at(lines, ' events 2'),
+    at(lines, ' events 3'),
     at(lines, ' filetypes 1'),
     at(lines, ' commands 1'),
     at(lines, ' keys 1'),
@@ -54,7 +58,12 @@ H.after_startup(function()
     'events, filetypes, commands, keys, then the schedule'
   )
   H.eq(lines[ev + 1]:find('○ BufReadPre ○ 1 waiting') ~= nil, true, 'waiting first: a light, a dot per plugin')
-  H.eq(lines[ev + 2]:find('● User BetaGo ● fired at') ~= nil, true, 'then fired, with when')
+  H.eq(
+    lines[ev + 2]:find('○ User ManyGo ' .. ('○ '):rep(10) .. '10 waiting', 1, true) ~= nil,
+    true,
+    'every plugin its own dot, a space apart'
+  )
+  H.eq(lines[ev + 3]:find('● User BetaGo ● fired at') ~= nil, true, 'then fired, with when')
   H.eq(lines[ft + 1]:find('◌ cnc ● never fired') ~= nil, true, 'one its plugins outran')
   H.eq(lines[cmd + 1]:find(':AlphaCmd ○ 1 waiting') ~= nil, true, 'a command, as you type it')
   H.eq(lines[keys + 1]:find('gD n x ● never fired') ~= nil, true, 'a key, with its modes')
