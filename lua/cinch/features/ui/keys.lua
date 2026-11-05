@@ -30,7 +30,7 @@ local M = {}
 
 --- The keys of each view, for the frame's bottom border.
 M.hints = {
-  plugins = ' / filter  l load  b build  u update  d delete  S-CR select  <C-d> details  ? keys  q close ',
+  plugins = ' / filter  l load  b build  u update  d delete  S-CR select  ? keys  q close ',
   triggers = ' <CR> fold  l load what waits  <C-d> <C-u> details  <Tab> next view  ? keys  q close ',
   stats = ' <Tab> next view  = size  ? keys  q close ',
   log = ' / filter  G newest  <Tab> next view  ? keys  q close ',

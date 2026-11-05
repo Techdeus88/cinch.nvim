@@ -122,6 +122,7 @@ require('cinch').setup({
   budget = 5,                    -- ms of `later` loading per event-loop tick
   defer = true,                  -- install missing plugins once the UI is up
   build_timeout = 300,           -- seconds an async function build may take before it fails
+  disable_runtime = {},          -- Neovim's own plugins not to load: { 'netrwPlugin', 'gzip', 'tutor' }
   self = true,                   -- update cinch itself as one of its plugins; a table pins it: { tag = 'v1.0.0' }
   features = { 'messages', 'stats', 'updates', 'ui' },
 
@@ -198,6 +199,7 @@ The **Plugins** view is two panes. The list on the left groups plugins into work
 | `U` | Apply every pending update |
 | `c` | Check for updates |
 | `d` | Delete the plugin under the cursor from disk, once you confirm |
+| `<S-CR>`, `<Space>` | Select the plugin under the cursor, shading its row; `l`, `b`, `u`, `c` and `d` then act on every selected plugin, and `<Esc>` lets go of them |
 | `<C-d>`, `<C-u>` | Scroll the details pane; the mouse wheel scrolls it too |
 | `gf` | Open the plugin's spec file at its line |
 | `r` | Read what `vim.pack` knows again |
@@ -249,6 +251,7 @@ end)
 | `PackPre`, `Pack` | `kind`, `name`, `plugin`, `spec`, `path`: from `PackChangedPre` and `PackChanged`, after cinch has updated its state |
 | `PackOpPre`, `PackOp` | `op`, `names`, and after the call `ok`, `ms`, `err` |
 | `Build` | `plugin`, `ok`, `ms`, `err`, `output` |
+| `Done` | setup() is done: specs read, `now` plugins loaded. Also `User CinchDone` |
 | `BuildOutput` | `plugin`, `lines`: new lines from a shell build as it runs |
 | `Phase` | `name`, `ms`: a startup step finished |
 | `Later` | The `later` queue is empty |
@@ -311,6 +314,9 @@ cinch.trigger(name, def)
 - A plugin loads only once everything it depends on has, however deep. It waits for a build running anywhere below it, and fails with the reason when a dependency is disabled, failed, cancelled or not installed yet. On a start that installs a new dependency once the UI is up, the plugins that need it wait too.
 - `keys = false`, `cmd = false` and the like turn that trigger off, as in lazy.nvim. With no trigger left, the plugin loads `later`.
 - Plugins behind the same trigger load in the order you declared them. A key replayed in operator-pending mode keeps its operator, count and register, and a command keeps the exact text you typed.
+- `disable_runtime` keeps Neovim's own plugins in `$VIMRUNTIME/plugin` from loading, by file name: `netrwPlugin`, `gzip`, `tarPlugin`, `zip`, `tutor`, `rplugin` and the rest. They share no switch to turn them off, so during startup a `SourceCmd` autocmd stands in for those files. After startup it is gone, and `:runtime` works as usual. Stats lists what is off.
+- In the Plugins view each way of loading has a chip of its own color: `now`, `later`, and every trigger kind. The value that fired is bold and underlined. A plugin that is only a dependency has its name in italics and a `dep` chip, then the plugins that need it. A plugin of yours that others also need shows how many.
+- Stats shows the moments of startup the way lazy.nvim does: CinchStart, CinchDone, UIEnter and when `later` is done, each with the time since the one before.
 - cinch copies your spec tables before it reads them, so a table you share or read again is left as you wrote it.
 
 ## Development

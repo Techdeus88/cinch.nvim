@@ -102,12 +102,12 @@ end
 
 ---@alias cinch.ui.Item { [1]: string, [2]?: string }[] chunks that stay together
 
---- A rounded chip in the kind's own color: its icon and its name, ` cmd`.
+--- A chip in the kind's own color: its icon and its name on a square shade, one
+--- space of padding each side, ` cmd `.
 ---@param kind string now, later, event, ft, cmd, keys, dep, or your own
 ---@return cinch.ui.Item
 function M.kind_chip(kind)
-  local text = glyph(kind) .. ' ' .. kind
-  return canvas.chip(text, (canvas.kind_hl(kind)), cells(text) + 2)
+  return { { ' ' .. glyph(kind) .. ' ' .. kind .. ' ', (canvas.kind_hl(kind)) } }
 end
 
 -- Triggers in this order, then any of your own by name.
