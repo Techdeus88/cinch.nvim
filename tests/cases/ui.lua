@@ -92,19 +92,40 @@ H.after_startup(function()
   vim.wait(50)
   H.eq(lines(w.list)[line_of(w.list, ' beta%.nvim ')]:find('↑1') ~= nil, true, 'pending commits on the row')
 
-  -- A row: the status light, the name, its load time and bar, then how it loads.
+  -- A row: the status light, the name, its load time and bar, then how it loads,
+  -- each kind on a chip of its own color.
   local icons = require('cinch.features.ui.plugins').icons
-  local alpha_row = lines(w.list)[line_of(w.list, ' alpha%.nvim ')]
+  ---@param l integer
+  ---@return table<string, true> the groups on that line of the list
+  local function groups(l)
+    local res = {}
+    local marks = api.nvim_buf_get_extmarks(
+      api.nvim_win_get_buf(w.list),
+      -1,
+      { l - 1, 0 },
+      { l - 1, -1 },
+      { details = true }
+    )
+    for _, m in ipairs(marks) do
+      res[m[4].hl_group or m[4].line_hl_group or ''] = true
+    end
+    return res
+  end
+  local alpha_at = line_of(w.list, ' alpha%.nvim ')
+  local alpha_row = lines(w.list)[alpha_at]
   H.eq(alpha_row:find('● alpha.nvim (', 1, true) ~= nil, true, 'the lit light left of the name, then its load time')
-  H.eq(vim.endswith(alpha_row, icons.later .. ' later'), true, 'later is its icon and name, with nothing after it')
-  local delta_row = lines(w.list)[line_of(w.list, ' delta%.nvim ')]
+  H.eq(alpha_row:find(icons.later .. ' later', 1, true) ~= nil, true, 'later: its icon and name')
+  H.eq(groups(alpha_at).CinchKindLater, true, 'on a chip of the later color')
+  local delta_at = line_of(w.list, ' delta%.nvim ')
+  H.eq(lines(w.list)[delta_at]:find(icons.cmd .. ' cmd .* DeltaGo') ~= nil, true, 'a trigger: its chip, then its value')
+  H.eq(groups(delta_at).CinchKindCmd, true, 'in the command color')
+  local gamma_at = line_of(w.list, ' gamma ')
   H.eq(
-    delta_row:find('○ delta.nvim ' .. icons.cmd .. ' cmd DeltaGo', 1, true) ~= nil,
+    lines(w.list)[gamma_at]:find(icons.dep .. ' dep .* delta%.nvim') ~= nil,
     true,
-    'a trigger: its icon and value'
+    'a dependency: dep, then who needs it'
   )
-  local gamma_row = lines(w.list)[line_of(w.list, ' gamma ')]
-  H.eq(gamma_row:find('gamma ' .. icons.dep .. ' delta.nvim', 1, true) ~= nil, true, 'a dependency: what needs it')
+  H.eq(groups(gamma_at).CinchDepName, true, 'its name in the dependency style')
   go(w.list, ' gamma ')
   H.eq(
     line_of(w.pane, '^ load +' .. icons.dep .. ' before its dependents$') ~= nil,
@@ -151,6 +172,24 @@ H.after_startup(function()
   H.wait(function()
     return line_of(w.pane, '^ branch +main') ~= nil
   end, 'the branch it follows, once vim.pack.get has answered')
+
+  -- Select two, and l loads both; the selection is done with after.
+  ---@return integer rows with the selection shade
+  local function shaded()
+    local marks = api.nvim_buf_get_extmarks(api.nvim_win_get_buf(w.list), -1, 0, -1, { details = true })
+    return #vim.tbl_filter(function(m)
+      return m[4].line_hl_group == 'CinchMarked'
+    end, marks)
+  end
+  go(w.list, ' alpha%.nvim ')
+  H.press('<S-CR>')
+  H.eq(shaded(), 1, '<S-CR> shades the plugin row it selects')
+  go(w.list, ' delta%.nvim ')
+  H.press('<S-CR>')
+  H.eq(shaded(), 2, 'and the next')
+  H.press('l')
+  H.eq(H.plugin('delta.nvim').state, 'loaded', 'l loads every selected plugin')
+  H.eq(shaded(), 0, 'and lets go of them')
 
   H.press('=')
   H.eq(api.nvim_win_get_config(w.frame).width, math.floor(vim.o.columns * 0.95), '= stretches to 95%')

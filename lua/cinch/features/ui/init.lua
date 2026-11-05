@@ -133,6 +133,10 @@ end
 ---@return { [1]: string, [2]: string }[]
 local function footer(width)
   local text = part('keys').hints[ui.ctx.install and 'install' or ui.help and 'help' or ui.view]
+  local marked = vim.tbl_count(ui.ctx.marked or {})
+  if ui.view == 'plugins' and marked > 0 and not ui.help then
+    text = (' %d selected · l load  b build  u update  c check  d delete · <Esc> lets go '):format(marked)
+  end
   return { { part('canvas').fit(text, math.min(part('canvas').cells(text), width - 2)), 'CinchMuted' } }
 end
 
@@ -197,6 +201,9 @@ local function paint(win, c)
   api.nvim_buf_clear_namespace(buf, ns, 0, -1)
   for _, h in ipairs(c.hls) do
     pcall(api.nvim_buf_set_extmark, buf, ns, h[1], h[2], { end_col = h[3], hl_group = h[4] })
+  end
+  for l, group in pairs(c.line_hls) do
+    pcall(api.nvim_buf_set_extmark, buf, ns, l - 1, 0, { line_hl_group = group })
   end
 end
 
@@ -604,6 +611,7 @@ function M.close()
     ui[k] = nil
   end
   ui.canvas, ui.canvas_of, ui.pane_of, ui.released, ui.trigger = nil, nil, nil, false, nil
+  ui.ctx.marked = {}
   pcall(api.nvim_del_augroup_by_name, 'cinch_ui')
   animate()
 end

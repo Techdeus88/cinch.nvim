@@ -32,6 +32,7 @@ M.highlights = {
   CinchLink = 'Underlined',
   CinchCommit = 'Constant',
   CinchBackdrop = 'CinchBackdropDefault',
+  CinchMarked = 'Visual',
 }
 
 -- Colors and rounded shapes ------------------------------------------------------
@@ -66,6 +67,41 @@ local function blend(fg, bg, a)
   return out
 end
 
+-- Each way a plugin loads has its own color, taken from the first of these groups
+-- the colorscheme sets: so `now`, `later`, an event, a filetype, a command, a key and
+-- a dependency each read apart at a glance.
+local kind_sources = {
+  now = { 'DiagnosticOk' },
+  later = { 'DiagnosticInfo' },
+  event = { 'DiagnosticWarn' },
+  ft = { 'Type', 'DiagnosticHint' },
+  cmd = { 'Keyword', 'Statement', 'Function' },
+  keys = { 'Constant', 'Number', 'Special' },
+  dep = { 'DiagnosticHint', 'Comment' },
+  trigger = { 'Special', 'DiagnosticWarn' },
+}
+-- Without colors to blend, the chips link to groups every colorscheme styles.
+local kind_links = {
+  now = 'DiagnosticVirtualTextOk',
+  later = 'DiagnosticVirtualTextInfo',
+  event = 'DiagnosticVirtualTextWarn',
+  ft = 'DiagnosticVirtualTextHint',
+  cmd = 'DiagnosticVirtualTextInfo',
+  keys = 'DiagnosticVirtualTextWarn',
+  dep = 'DiagnosticVirtualTextHint',
+  trigger = 'DiagnosticVirtualTextWarn',
+}
+
+--- The chip group and the text group of a kind: 'CinchKindCmd', 'CinchKindCmdText'.
+--- A trigger of your own has the `trigger` colors.
+---@param kind string now, later, event, ft, cmd, keys, dep, or your own
+---@return string chip, string text
+function M.kind_hl(kind)
+  local k = kind_sources[kind] and kind or 'trigger'
+  local name = 'CinchKind' .. k:sub(1, 1):upper() .. k:sub(2)
+  return name, name .. 'Text'
+end
+
 -- The chips' colors come from the diagnostic colors every colorscheme sets.
 local chip_sources = { CinchNow = 'DiagnosticOk', CinchLater = 'DiagnosticInfo', CinchTrigger = 'DiagnosticWarn' }
 
@@ -81,11 +117,33 @@ function M.define_colors(rounded)
   end
   local base = color('NormalFloat', 'bg') or color('Normal', 'bg')
   M.colored = vim.o.termguicolors and base ~= nil
+  -- A plugin that is only a dependency: its name in italics, so it reads as a supporting part.
+  set(0, 'CinchDepName', { fg = color('Comment', 'fg'), italic = true })
+  -- The trigger that loaded a plugin, among the others it waits on.
+  set(0, 'CinchFired', { fg = color('Normal', 'fg'), bold = true, underline = true })
   if not M.colored then
+    for kind, link in pairs(kind_links) do
+      local chip, text = M.kind_hl(kind)
+      set(0, chip, { link = link })
+      set(0, chip .. 'Cap', { link = link })
+      set(0, text, { link = kind_sources[kind][1] })
+    end
     M.rounded = false
     return
   end
   ---@cast base integer
+  for kind, sources in pairs(kind_sources) do
+    local fg
+    for _, source in ipairs(sources) do
+      fg = fg or color(source, 'fg')
+    end
+    fg = fg or color('Normal', 'fg') or 0xffffff
+    local chip, text = M.kind_hl(kind)
+    local bg = blend(fg, base, 0.2)
+    set(0, chip, { fg = fg, bg = bg })
+    set(0, chip .. 'Cap', { fg = bg })
+    set(0, text, { fg = fg })
+  end
   for group, source in pairs(chip_sources) do
     local fg = color(source, 'fg') or color('Normal', 'fg') or 0xffffff
     local bg = blend(fg, base, 0.2)
@@ -151,6 +209,7 @@ end
 ---@field hls { [1]: integer, [2]: integer, [3]: integer, [4]: string }[] 0-based line, start col, end col, group
 ---@field rows table<integer, string> 1-based line -> plugin name
 ---@field sections table<integer, string> 1-based line -> section key
+---@field line_hls table<integer, string> 1-based line -> group for the whole line
 ---@field width integer
 local Canvas = {}
 Canvas.__index = Canvas
@@ -158,12 +217,12 @@ Canvas.__index = Canvas
 ---@param width integer
 ---@return cinch.ui.Canvas
 function M.new(width)
-  return setmetatable({ lines = {}, hls = {}, rows = {}, sections = {}, width = width }, Canvas)
+  return setmetatable({ lines = {}, hls = {}, rows = {}, sections = {}, line_hls = {}, width = width }, Canvas)
 end
 
 --- Add one line from { text, group? } chunks.
 ---@param chunks { [1]: string, [2]?: string }[]
----@param at? { plugin?: string, section?: string } what the line belongs to
+---@param at? { plugin?: string, section?: string, line_hl?: string } what the line belongs to, and a shade over it
 function Canvas:add(chunks, at)
   local parts, col = {}, 0
   for _, c in ipairs(chunks) do
@@ -180,6 +239,9 @@ function Canvas:add(chunks, at)
   end
   if at and at.section then
     self.sections[#self.lines] = at.section
+  end
+  if at and at.line_hl then
+    self.line_hls[#self.lines] = at.line_hl
   end
 end
 

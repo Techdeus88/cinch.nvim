@@ -55,6 +55,30 @@ local function timeline(stats)
   return parts
 end
 
+--- The moments of startup, each with the time since Neovim started and since the
+--- one before: when cinch began, when it was done, and when the UI came up.
+---@param c cinch.ui.Canvas
+---@param m table the stats marks
+local function draw_marks(c, m)
+  c:blank()
+  local prev
+  for _, mark in ipairs({
+    { 'CinchStart', m.setup },
+    { 'CinchDone', m.done },
+    { 'UIEnter', m.uienter or m.vimenter },
+    { 'later done', m.later },
+  }) do
+    if mark[2] then
+      c:add({
+        { '   ' .. fit(mark[1], 12), 'CinchMuted' },
+        { canvas.ms(mark[2]), 'CinchName' },
+        { prev and (' (+' .. canvas.ms(mark[2] - prev) .. ')') or '', 'CinchMuted' },
+      })
+      prev = mark[2]
+    end
+  end
+end
+
 ---@param c cinch.ui.Canvas
 ---@param stats table
 local function draw_timeline(c, stats)
@@ -96,6 +120,11 @@ local function draw_timeline(c, stats)
     len = len + cells(sep .. l[1])
   end
   c:add(line)
+  draw_marks(c, stats.marks)
+  local off = (package.loaded['cinch'] or {}).runtime_off or {}
+  if #off > 0 then
+    c:add({ { '   ' .. fit('runtime off', 12), 'CinchMuted' }, { table.concat(off, ' · '), 'CinchName' } })
+  end
 end
 
 ---@param c cinch.ui.Canvas

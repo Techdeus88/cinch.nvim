@@ -30,6 +30,7 @@ M.names = {
   BuildOutput = true, -- { plugin, lines }               new output from a running shell build
   Phase = true, -- { name, ms }                         a startup step finished
   Later = true, -- {}                                   the later queue is drained
+  Done = true, -- {}                                    setup() is done: specs read, now plugins loaded
   Run = true, -- { when, where, ok, ms, err? }         one of your cinch.now/later functions ran
   Installing = true, -- { names }                       a batch of installs starts
   Installed = true, -- { names, failed, ms }            and ended; failed lists names not on disk
@@ -38,7 +39,7 @@ M.names = {
 
 -- Mirrored as `User Cinch<Name>` for config code that prefers autocmds.
 -- Disk events stay off this list: PackChanged already carries more.
-M.public = { Load = true, LoadError = true, Later = true }
+M.public = { Load = true, LoadError = true, Later = true, Done = true }
 
 ---@type table<string, cinch.Sub[]>
 local subs = {}

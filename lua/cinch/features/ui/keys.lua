@@ -30,7 +30,7 @@ local M = {}
 
 --- The keys of each view, for the frame's bottom border.
 M.hints = {
-  plugins = ' / filter  l load  b build  u update  d delete  <C-d> <C-u> details  ? keys  q close ',
+  plugins = ' / filter  l load  b build  u update  d delete  S-CR select  <C-d> details  ? keys  q close ',
   triggers = ' <CR> fold  l load what waits  <C-d> <C-u> details  <Tab> next view  ? keys  q close ',
   stats = ' <Tab> next view  = size  ? keys  q close ',
   log = ' / filter  G newest  <Tab> next view  ? keys  q close ',
@@ -65,6 +65,74 @@ function M.make(w)
     end
   end
 
+  --- What an action in the Plugins view applies to: the plugins you selected, in
+  --- declaration order, or else the one under the cursor.
+  ---@return string[]
+  local function targets()
+    if ui.view ~= 'plugins' then
+      return {}
+    end
+    local marked, names = ui.ctx.marked or {}, {}
+    if not next(marked) then
+      return ui.selected and { ui.selected } or {}
+    end
+    for _, p in ipairs(state.list) do
+      if marked[p.name] then
+        names[#names + 1] = p.name
+      end
+    end
+    for _, o in ipairs(ui.ctx.orphans or {}) do
+      if marked[o.name] then
+        names[#names + 1] = o.name
+      end
+    end
+    return names
+  end
+
+  --- An action on the targets, run from your editor window, after which the
+  --- selection is done with.
+  ---@param fn fun(names: string[])
+  local function act(fn)
+    return function()
+      local names = targets()
+      if #names == 0 then
+        return
+      end
+      w.in_editor(function()
+        fn(names)
+      end)
+      ui.ctx.marked = {}
+      w.redraw()
+    end
+  end
+
+  ---@param names string[]
+  ---@return string[] those your specs list
+  local function in_specs(names)
+    return vim.tbl_filter(function(name)
+      return state.plugins[name] ~= nil
+    end, names)
+  end
+
+  --- Select the row under the cursor, or let go of it, then move to the next row.
+  local function toggle()
+    local line = api.nvim_win_get_cursor(ui.list)[1]
+    local name = ui.view == 'plugins' and ui.canvas and ui.canvas.rows[line]
+    local p = name and state.plugins[name]
+    if not name or (p and p.self) then
+      return
+    end
+    ui.ctx.marked = ui.ctx.marked or {}
+    ui.ctx.marked[name] = not ui.ctx.marked[name] or nil
+    w.render()
+    for l = line + 1, #ui.canvas.lines do
+      if ui.canvas.rows[l] then
+        api.nvim_win_set_cursor(ui.list, { l, 0 })
+        break
+      end
+    end
+  end
+
   ---@param step integer
   local function cycle(step)
     return function()
@@ -95,32 +163,42 @@ function M.make(w)
     end)
   end
 
-  --- Delete the plugin under the cursor from disk, once you confirm. One your specs
-  --- list is in use, so it goes with force and installs again on the next start.
+  --- Delete the selected plugins, or the one under the cursor, once you confirm. One
+  --- your specs list is in use, so it goes with force and installs again on the next start.
   local function delete()
-    local name = ui.view == 'plugins' and ui.selected
-    if not name then
+    local names = vim.tbl_filter(function(name)
+      return state.plugins[name] ~= nil
+        or vim.iter(ui.ctx.orphans or {}):any(function(o) ---@param o cinch.Orphan
+          return o.name == name
+        end)
+    end, targets())
+    if #names == 0 then
       return
     end
-    local p = state.plugins[name]
-    local orphan = vim.iter(ui.ctx.orphans or {}):any(function(o) ---@param o cinch.Orphan
-      return o.name == name
-    end)
-    if not (p or orphan) then
-      return
-    elseif p and p.self then
-      return require('cinch').del({ name })
+    local p = state.plugins[names[1]]
+    if #names == 1 and p and p.self then
+      return require('cinch').del(names)
     end
-    local question = p
-        and ('`%s` is in your specs, so it installs again on the next start. Delete it from disk anyway?'):format(name)
-      or ('Delete `%s` from disk?'):format(name)
+    local specs = #in_specs(names)
+    local question
+    if #names == 1 then
+      question = p
+          and ('`%s` is in your specs, so it installs again on the next start. Delete it from disk anyway?'):format(
+            names[1]
+          )
+        or ('Delete `%s` from disk?'):format(names[1])
+    else
+      question = ('Delete %d plugins from disk?%s'):format(
+        #names,
+        specs > 0 and (' %d of them are in your specs and install again on the next start.'):format(specs) or ''
+      )
+    end
     if vim.fn.confirm(question, '&Yes\n&No', 2) ~= 1 then
       return
     end
-    w.in_editor(function()
-      require('cinch').del({ name }, { force = p ~= nil })
-    end)
-    w.redraw()
+    act(function()
+      require('cinch').del(names, { force = specs > 0 })
+    end)()
   end
 
   local function goto_spec()
@@ -158,30 +236,33 @@ function M.make(w)
           end
           return
         end
-        on_plugin(function(p)
-          require('cinch').load(p.name)
+        act(function(names)
+          require('cinch').load(in_specs(names))
         end)()
       end,
-      'load the plugin now; in Triggers, what waits on the trigger',
+      'load the plugin now, or the ones selected; in Triggers, what waits on the trigger',
     },
     {
       { 'b' },
-      on_plugin(function(p)
-        require('cinch').build(p.name)
+      act(function(names)
+        require('cinch').build(in_specs(names))
       end),
-      'run its build again',
+      'run its build again, or theirs',
     },
     {
       { 'u' },
-      on_plugin(function(p)
+      act(function(names)
         local u = updates()
-        if u and u.results[p.name] then
-          u.apply({ p.name })
+        local pending = vim.tbl_filter(function(name)
+          return u ~= nil and u.results[name] ~= nil
+        end, names)
+        if u and #pending > 0 then
+          u.apply(pending)
         else
-          events.report(('no pending update for `%s`; c checks'):format(p.name))
+          events.report(('no pending update for %s; c checks'):format(table.concat(names, ', ')))
         end
       end),
-      'apply its pending update',
+      'apply its pending update, or theirs',
     },
     {
       { 'U' },
@@ -197,14 +278,19 @@ function M.make(w)
       { 'c' },
       function()
         local u = updates()
-        if u then
-          u.check(nil, { notify = true })
-          w.redraw()
+        if not u then
+          return
         end
+        -- The selected plugins, or else all of them.
+        local names = next(ui.ctx.marked or {}) and in_specs(targets()) or nil
+        u.check(names, { notify = true })
+        ui.ctx.marked = {}
+        w.redraw()
       end,
-      'check for updates in the background',
+      'check for updates in the background: the selected plugins, or all',
     },
-    { { 'd' }, delete, 'delete the plugin from disk, once you confirm' },
+    { { 'd' }, delete, 'delete the plugin, or the ones selected, from disk, once you confirm' },
+    { { '<S-CR>', '<Space>' }, toggle, 'select the plugin under the cursor for l b u c d, or let it go' },
     {
       { '<C-d>' },
       function()
@@ -256,7 +342,18 @@ function M.make(w)
       end,
       'switch between 75% and 95% of the editor',
     },
-    { { 'q', 'Q', '<Esc>' }, w.close, 'close' },
+    { { 'q', 'Q' }, w.close, 'close' },
+    {
+      { '<Esc>' },
+      function()
+        if next(ui.ctx.marked or {}) then
+          ui.ctx.marked = {}
+          return w.render()
+        end
+        w.close()
+      end,
+      'let go of the selection, or close',
+    },
   }
 end
 

@@ -237,7 +237,7 @@ end
 ---@param t cinch.ui.Trigger
 local function row(c, t)
   local s = status(t)
-  local light = s == 'queue' and { glyph(t.raw), t.raw == 'now' and 'CinchIconNow' or 'CinchIconLater' } or lights[s]
+  local light = s == 'queue' and { glyph(t.raw), select(2, canvas.kind_hl(t.raw)) } or lights[s]
   local chunks = {
     { '   ' .. light[1] .. ' ', light[2] },
     { shown(t), s == 'never' and 'CinchMuted' or 'CinchName' },
@@ -279,7 +279,8 @@ end
 ---@param icon string
 ---@param title string
 ---@param list cinch.ui.Trigger[]
-local function section(c, ctx, key, icon, title, list)
+---@param kind string whose color the title takes
+local function section(c, ctx, key, icon, title, list, kind)
   if #list == 0 then
     return
   end
@@ -291,7 +292,8 @@ local function section(c, ctx, key, icon, title, list)
     return status(t) == 'waiting'
   end, list)
   c:add({
-    { (open and ' ▾ ' or ' ▸ ') .. icon .. ' ' .. title, 'CinchSection' },
+    { open and ' ▾ ' or ' ▸ ', 'CinchSection' },
+    { icon .. ' ' .. title, select(2, canvas.kind_hl(kind)) },
     { ' ' .. #list, 'CinchMuted' },
     { waiting > 0 and ('  %d waiting to fire'):format(waiting) or '', 'CinchWaiting' },
   }, { section = key })
@@ -324,12 +326,12 @@ function M.list(width, ctx)
   for _, kind in ipairs(vim.list_extend(order, own)) do
     local list = by[kind] or {}
     table.sort(list, before)
-    section(c, ctx, 'triggers:' .. kind, glyph(kind), titles[kind] or kind, list)
+    section(c, ctx, 'triggers:' .. kind, glyph(kind), titles[kind] or kind, list, kind)
   end
   if #c.lines == 0 then
     c:add({ { ' none of your plugins waits for a trigger', 'CinchMuted' } })
   end
-  section(c, ctx, 'triggers:queue', glyph('now'), 'schedule', by.queue or {})
+  section(c, ctx, 'triggers:queue', glyph('now'), 'schedule', by.queue or {}, 'now')
   return c
 end
 
@@ -490,7 +492,7 @@ function M.pane(id, width)
   local chip_w = canvas.chip_width(cells(word) + 2)
   local is_queue = t.kind == 'queue'
   local head = {
-    { ' ' .. glyph(is_queue and t.raw or t.kind) .. ' ', is_queue and 'CinchIconNow' or 'CinchIconTrigger' },
+    { ' ' .. glyph(is_queue and t.raw or t.kind) .. ' ', select(2, canvas.kind_hl(is_queue and t.raw or t.kind)) },
     { fit(is_queue and t.value or (t.kind .. ' ' .. shown(t)), math.max(1, c.width - chip_w - 5)), 'CinchTitle' },
   }
   c:add(vim.list_extend(head, canvas.chip(word, hl, cells(word) + 2)))

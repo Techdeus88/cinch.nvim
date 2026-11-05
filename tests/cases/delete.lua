@@ -8,7 +8,7 @@ local phase = tonumber(vim.env.CINCH_PHASE)
 local specs = { { H.src('alpha.nvim') }, { H.src('beta.nvim') } }
 if phase == 1 then
   -- Installed now; phase 2 drops them from the specs.
-  vim.list_extend(specs, { { H.src('gamma') }, { H.src('delta.nvim') } })
+  vim.list_extend(specs, { { H.src('gamma') }, { H.src('delta.nvim') }, { H.src('early') }, { H.src('cmdy') } })
 end
 require('cinch').setup({ confirm = false, spec = { specs } })
 
@@ -53,7 +53,7 @@ H.after_startup(function()
     return o.name
   end, pack.orphans())
   table.sort(orphans)
-  H.eq(orphans, { 'delta.nvim', 'gamma' }, 'on disk and in no spec')
+  H.eq(orphans, { 'cmdy', 'delta.nvim', 'early', 'gamma' }, 'on disk and in no spec')
 
   -- In your specs: vim.pack keeps it unless forced, and cinch says why.
   local beta = H.plugin('beta.nvim')
@@ -63,7 +63,28 @@ H.after_startup(function()
   H.eq(beta.activity, nil, 'it is not left "deleting"')
 
   vim.cmd('Cinch')
-  H.eq(vim.list_contains(list_lines(), ' ▾ not in your specs 2'), true, 'the window lists them')
+  H.eq(vim.list_contains(list_lines(), ' ▾ not in your specs 4'), true, 'the window lists them')
+
+  -- Several at once: select them, then d.
+  local w = require('cinch.features.ui').windows()
+  go(' · early ')
+  H.press('<S-CR>')
+  local marked = vim
+    .iter(api.nvim_buf_get_extmarks(api.nvim_win_get_buf(w.list), -1, 0, -1, { details = true }))
+    :filter(function(m)
+      return m[4].line_hl_group == 'CinchMarked'
+    end)
+    :totable()
+  H.eq(#marked, 1, '<S-CR> shades the row it selects')
+  go(' · cmdy ')
+  H.press('<Space>')
+  local footer = table.concat(vim.tbl_map(function(c)
+    return c[1]
+  end, api.nvim_win_get_config(w.frame).footer))
+  H.eq(footer:find('2 selected', 1, true) ~= nil, true, 'the footer counts the selection')
+  H.press('d')
+  H.eq({ on_disk('early'), on_disk('cmdy') }, { false, false }, 'd deletes every selected plugin')
+  H.eq(on_disk('gamma'), true, 'and only those')
   go(' · gamma ')
   H.press('d')
   H.eq(on_disk('gamma'), false, 'd deletes one')

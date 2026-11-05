@@ -301,6 +301,9 @@ function M.setup(opts)
   events.on('Later', function()
     M.marks.later = M.now()
   end)
+  events.on('Done', function()
+    M.marks.done = M.now()
+  end)
 
   local group = vim.api.nvim_create_augroup('cinch_stats', { clear = true })
   vim.api.nvim_create_autocmd('VimEnter', {

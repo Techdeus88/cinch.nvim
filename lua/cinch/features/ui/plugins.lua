@@ -31,6 +31,7 @@ end
 ---@field spec_lines table<string, integer> line of each plugin's spec in its file
 ---@field install? cinch.ui.Install set while a first start installs
 ---@field orphans? cinch.Orphan[] on disk, in no spec
+---@field marked? table<string, true> plugins selected for an action
 
 -- Sections, in the order they are shown: what is happening now first, so it is in
 -- view while it changes, then what went wrong. section_of() puts a plugin in one,
@@ -101,6 +102,14 @@ end
 
 ---@alias cinch.ui.Item { [1]: string, [2]?: string }[] chunks that stay together
 
+--- A rounded chip in the kind's own color: its icon and its name, ` cmd`.
+---@param kind string now, later, event, ft, cmd, keys, dep, or your own
+---@return cinch.ui.Item
+function M.kind_chip(kind)
+  local text = glyph(kind) .. ' ' .. kind
+  return canvas.chip(text, (canvas.kind_hl(kind)), cells(text) + 2)
+end
+
 -- Triggers in this order, then any of your own by name.
 local trigger_order = { event = 1, ft = 2, cmd = 3, keys = 4 }
 
@@ -116,38 +125,39 @@ local function trigger_items(p)
   end)
   local out = {}
   for _, kind in ipairs(kinds) do
-    local item = { { glyph(kind) .. ' ' .. kind, 'CinchIconTrigger' } }
+    local item = M.kind_chip(kind)
     for _, v in ipairs(p.triggers[kind]) do
       local value = type(v) == 'table' and v.lhs or tostring(v)
       -- What the handler says when it fires: 'event FileType lua', 'cmd Foo', 'keys <lhs>'.
       local fired_as = ((kind == 'event' or kind == 'ft') and 'event' or kind) .. ' ' .. value
       local shown = kind == 'ft' and value:gsub('^FileType ', '') or value
+      local fired = p.reason == fired_as and p.state ~= 'pending'
       item[#item + 1] = { ' ' }
-      if p.reason == fired_as and p.state ~= 'pending' then
-        vim.list_extend(item, canvas.chip(shown, 'CinchTrigger', cells(shown) + 2))
-      else
-        item[#item + 1] = { shown, 'CinchTriggerValue' }
-      end
+      item[#item + 1] = { shown, fired and 'CinchFired' or 'CinchTriggerValue' }
     end
     out[#out + 1] = item
   end
   return out
 end
 
---- How a plugin loads: an icon and its name for now and later, each trigger type
---- with its values, and for a plugin that is only a dependency the plugins that need it.
+--- How a plugin loads: a chip for now and later, a chip per trigger type with its
+--- values after it, and for a plugin that is only a dependency a dep chip and the
+--- plugins that need it. A plugin of its own that others also need says how many.
 ---@param p cinch.Plugin
 ---@param needed_by string[]
 ---@return cinch.ui.Item[]
 local function load_items(p, needed_by)
   if p.dep_only then
-    return vim.tbl_map(function(name)
-      return { { glyph('dep') .. ' ' .. name, 'CinchDep' } }
-    end, needed_by)
-  elseif p.when == 'trigger' then
-    return trigger_items(p)
+    local item = M.kind_chip('dep')
+    item[#item + 1] = { ' ' .. table.concat(needed_by, ', '), 'CinchMuted' }
+    return { item }
   end
-  return { { { glyph(p.when) .. ' ' .. p.when, p.when == 'now' and 'CinchIconNow' or 'CinchIconLater' } } }
+  local items = p.when == 'trigger' and trigger_items(p) or { M.kind_chip(p.when) }
+  if #needed_by > 0 then
+    local _, text = canvas.kind_hl('dep')
+    items[#items + 1] = { { glyph('dep') .. ' ' .. #needed_by, text } }
+  end
+  return items
 end
 
 --- Who needs each plugin: name -> the plugins that list it in deps.
@@ -224,6 +234,7 @@ end
 ---@field up? integer pending commits
 ---@field msg? string
 ---@field msg_hl? string
+---@field marked? boolean selected for an action: the row gets a shade
 
 --- One plugin's line, each part right after the last, cut at the list's edge:
 ---   ● <name> (<load time>) <bar> <how it loads> <↑updates> <message>
@@ -233,7 +244,7 @@ end
 local function add_row(c, p, r)
   local items = {
     { { ' ' .. r.mark, r.mark_hl } },
-    { { p.name, p.state == 'disabled' and 'CinchMuted' or 'CinchName' } },
+    { { p.name, p.state == 'disabled' and 'CinchMuted' or p.dep_only and 'CinchDepName' or 'CinchName' } },
   }
   if r.ms then
     local filled, empty = canvas.bar(r.ms, r.slowest, 6)
@@ -247,7 +258,7 @@ local function add_row(c, p, r)
   if r.msg then
     items[#items + 1] = { { r.msg, r.msg_hl } }
   end
-  c:add(canvas.clip(join(items), c.width - 1), { plugin = p.name })
+  c:add(canvas.clip(join(items), c.width - 1), { plugin = p.name, line_hl = r.marked and 'CinchMarked' or nil })
 end
 
 ---@param ctx cinch.ui.Ctx
@@ -374,6 +385,7 @@ function M.list(width, ctx)
             up = pending(p),
             msg = msg,
             msg_hl = msg_hl,
+            marked = ctx.marked and ctx.marked[p.name],
           })
         end
       end
@@ -391,7 +403,7 @@ function M.list(width, ctx)
     for _, o in ipairs(open and orphans or {}) do
       c:add(
         { { ' · ' .. o.name .. ' ', 'CinchMuted' }, { 'on disk · d deletes it', 'CinchWarn' } },
-        { plugin = o.name }
+        { plugin = o.name, line_hl = ctx.marked and ctx.marked[o.name] and 'CinchMarked' or nil }
       )
     end
   end
@@ -431,7 +443,7 @@ end
 ---@return { [1]: string, [2]?: string }[]
 local function load_line(p)
   if p.dep_only then
-    return { { glyph('dep') .. ' before its dependents', 'CinchDep' } }
+    return { { glyph('dep') .. ' before its dependents', select(2, canvas.kind_hl('dep')) } }
   elseif p.when == 'trigger' then
     return join(trigger_items(p))
   end
@@ -442,7 +454,7 @@ local function load_line(p)
     .. (p.load == 'now_if_args' and (', so ' .. p.when) or '')
     .. ' · '
     .. words
-  return { { text, p.when == 'now' and 'CinchIconNow' or 'CinchIconLater' } }
+  return { { text, select(2, canvas.kind_hl(p.when)) } }
 end
 
 ---@param c cinch.ui.Canvas

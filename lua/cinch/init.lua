@@ -24,6 +24,7 @@ M.now_if_args = handler.now_if_args
 ---@field budget? integer ms of `later` loading per event-loop tick; default 5
 ---@field defer? boolean when plugins are missing, install once the UI is up, not during init.lua; default true
 ---@field build_timeout? integer seconds an async function build may take before it fails; default 300
+---@field disable_runtime? string[] Neovim's own plugins not to load: 'netrwPlugin', 'gzip', 'tutor'; default {}
 ---@field self? boolean|{ version?: any, tag?: string, branch?: string, commit?: string } update cinch as one of its
 ---plugins when it lives in vim.pack's folder; a table pins it, as in a spec; default true: its default branch
 ---@field features? string[] modules under cinch.features to load; default { 'messages', 'stats', 'updates', 'ui' }
@@ -36,12 +37,68 @@ local defaults = {
   budget = 5,
   defer = true,
   build_timeout = 300,
+  disable_runtime = {},
   self = true,
   features = { 'messages', 'stats', 'updates', 'ui' },
 }
 
 ---@type cinch.Opts? set by setup()
 M.opts = nil
+
+--- Neovim's own plugins that disable_runtime kept from loading, by name.
+---@type string[]
+M.runtime_off = {}
+
+--- Keep the plugins of $VIMRUNTIME/plugin that you name from loading at startup:
+--- 'netrwPlugin', 'gzip', 'tarPlugin', 'zip', 'tutor', 'tohtml', 'rplugin' and so on,
+--- by file name. They have no common switch to turn them off, so for startup's own
+--- pass a SourceCmd autocmd stands in for each of those files and sources only the
+--- others. After startup it is gone: :runtime and :source work as usual.
+---@param names string[]
+local function disable_runtime(names)
+  if #names == 0 then
+    return
+  end
+  if vim.v.vim_did_init == 1 then
+    return events.report('disable_runtime works only from init.lua, before Neovim loads its plugins', levels.WARN)
+  end
+  local dir = vim.fs.joinpath(vim.env.VIMRUNTIME, 'plugin')
+  local known, off = {}, {}
+  for _, f in ipairs(vim.fn.glob(dir .. '/*.{vim,lua}', false, true)) do
+    known[vim.fn.fnamemodify(f, ':t:r')] = true
+  end
+  for _, name in ipairs(names) do
+    if known[name] then
+      off[name] = true
+      M.runtime_off[#M.runtime_off + 1] = name
+    else
+      local all = vim.tbl_keys(known)
+      table.sort(all)
+      events.report(
+        ('disable_runtime: no runtime plugin `%s`; there are %s'):format(name, table.concat(all, ', ')),
+        levels.WARN
+      )
+    end
+  end
+  if #M.runtime_off == 0 then
+    return
+  end
+  local id = vim.api.nvim_create_autocmd('SourceCmd', {
+    pattern = dir .. '/*',
+    desc = 'cinch: skip the runtime plugins in disable_runtime',
+    callback = function(ev)
+      if not off[vim.fn.fnamemodify(ev.match, ':t:r')] then
+        vim.cmd.source({ ev.match, magic = { file = false } })
+      end
+    end,
+  })
+  vim.api.nvim_create_autocmd('VimEnter', {
+    once = true,
+    callback = function()
+      pcall(vim.api.nvim_del_autocmd, id)
+    end,
+  })
+end
 
 --- cinch's own folder: three levels up from this file.
 M.own_dir = vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(debug.getinfo(1, 'S').source:sub(2))))
@@ -309,6 +366,7 @@ function M.setup(opts)
   end
   M.opts = vim.tbl_extend('force', defaults, opts or {})
   handler.budget = M.opts.budget
+  disable_runtime(M.opts.disable_runtime)
   pack.timeout = M.opts.build_timeout * 1000
   load_features(M.opts)
   local t = hrtime()
@@ -316,6 +374,8 @@ function M.setup(opts)
   adopt_self(added)
   phase('specs', t)
   activate(added, M.opts.confirm)
+  -- User CinchDone, for config code that runs once cinch has set everything up.
+  events.emit('Done', {})
 end
 
 --- Add plugins, the way vim.pack.add does: a list of specs, cinch fields allowed.
