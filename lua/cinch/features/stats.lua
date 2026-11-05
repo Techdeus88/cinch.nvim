@@ -20,8 +20,8 @@ M.opts = { persist = true, history = 50 }
 M.file = vim.fs.joinpath(vim.fn.stdpath('state') --[[@as string]], 'cinch', 'stats.json')
 
 -- When Neovim started. It has no API for that, so ask the OS: on macOS sysctl,
--- on Linux /proc. Elsewhere, or if that fails, fall back to the CPU time used so
--- far, which reads a few ms late. From packman's clock.lua.
+-- on Linux /proc, on Windows GetProcessTimes. Elsewhere, or if that fails, fall back
+-- to the CPU time used so far, which reads a few ms late. From packman's clock.lua.
 
 ---@return number ms since the epoch
 local function wall_ms()
@@ -29,7 +29,14 @@ local function wall_ms()
   return sec * 1e3 + usec / 1e3
 end
 
---- macOS: kinfo_proc starts with the process start time, a timeval.
+-- sizeof(struct kinfo_proc) on macOS: 648 bytes, checked on macOS 27 with a C probe
+-- (sizeof, offsetof and sysctl agree). Its first field is p_starttime, a timeval.
+local KINFO_PROC_SIZE = 648
+
+--- macOS: sysctl KERN_PROC_PID fills in one kinfo_proc. The offsets are read only when
+--- the kernel wrote exactly the size they were checked against; any other size is a
+--- layout this code does not know, so it falls back. (A length query with no buffer
+--- is only an estimate for process lists, so the size is checked on the real reply.)
 ---@return number? ms since the process started
 local function darwin()
   local ffi = require('ffi')
@@ -41,14 +48,37 @@ local function darwin()
   ]]
   )
   local mib = ffi.new('int[4]', { 1, 14, 1, ffi.C.getpid() }) -- CTL_KERN, KERN_PROC, KERN_PROC_PID
-  local size = 1024 -- sizeof(struct kinfo_proc) is 648
-  local buf, len = ffi.new('uint8_t[?]', size), ffi.new('size_t[1]', size)
-  if ffi.C.sysctl(mib, 4, buf, len, nil, 0) ~= 0 or len[0] < 16 then
+  local buf, len = ffi.new('uint8_t[?]', KINFO_PROC_SIZE), ffi.new('size_t[1]', KINFO_PROC_SIZE)
+  if ffi.C.sysctl(mib, 4, buf, len, nil, 0) ~= 0 or len[0] ~= KINFO_PROC_SIZE then
     return
   end
   local sec = tonumber(ffi.cast('int64_t *', buf)[0])
   local usec = tonumber(ffi.cast('int32_t *', buf + 8)[0])
   return wall_ms() - (sec * 1e3 + usec / 1e3)
+end
+
+--- Windows: GetProcessTimes gives the creation time of this process as a FILETIME,
+--- 100 ns ticks since 1601-01-01 UTC. Converted to the Unix epoch, as wall_ms is.
+---@return number? ms since the process started
+local function windows()
+  local ffi = require('ffi')
+  pcall(
+    ffi.cdef,
+    [[
+    typedef struct { uint32_t dwLowDateTime; uint32_t dwHighDateTime; } FILETIME;
+    void *__stdcall GetCurrentProcess(void);
+    int __stdcall GetProcessTimes(void *proc, FILETIME *created, FILETIME *exited, FILETIME *kernel, FILETIME *user);
+  ]]
+  )
+  local k32 = ffi.load('kernel32')
+  local created, exited = ffi.new('FILETIME'), ffi.new('FILETIME')
+  local kernel, user = ffi.new('FILETIME'), ffi.new('FILETIME')
+  if k32.GetProcessTimes(k32.GetCurrentProcess(), created, exited, kernel, user) == 0 then
+    return
+  end
+  local ms_since_1601 = (tonumber(created.dwHighDateTime) * 4294967296 + tonumber(created.dwLowDateTime)) / 1e4
+  -- 1601-01-01 to 1970-01-01 is 11644473600 seconds.
+  return wall_ms() - (ms_since_1601 - 11644473600000)
 end
 
 --- Linux: field 22 of /proc/self/stat is the start time in clock ticks after boot.
@@ -80,7 +110,10 @@ M.source = 'cpu'
 local start ---@type integer hrtime when Neovim started
 do
   local sysname = uv.os_uname().sysname
-  local get = sysname == 'Darwin' and darwin or sysname == 'Linux' and linux or nil
+  local get = sysname == 'Darwin' and darwin
+    or sysname == 'Linux' and linux
+    or sysname == 'Windows_NT' and windows
+    or nil
   local ok, ms = false, nil
   if get then
     ok, ms = pcall(get)
