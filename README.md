@@ -129,7 +129,7 @@ require('cinch').setup({
   -- each feature's options, under its name
   messages = { level = vim.log.levels.INFO, progress = true, history = 1000 },
   stats = { persist = true, history = 50 },
-  updates = { fresh = 300 },     -- seconds before opening the window checks again
+  updates = { fresh = 300, every = 86400 }, -- seconds before opening the window checks again; a background check every `every` seconds (false: none)
   ui = {
     size = 0.75,                 -- share of the editor
     wide = 0.95,                 -- share after `=`
@@ -174,9 +174,11 @@ An error in one of these functions is reported with the file and line where you 
 | `:Cinch build {names}` | Run their builds again |
 | `:Cinch check [names]` | Check for updates in the background |
 | `:Cinch update [names]` | Update with `vim.pack`'s review tab. `:Cinch update!` applies without it |
+| `:Cinch restore [names]` | Put plugins back on the revisions the lockfile records, after a checkout moved on its own. `:Cinch restore!` does not ask |
 | `:Cinch del {names}` | Delete plugins from disk. One your specs list is in use, so it needs `:Cinch del!`, and it installs again on the next start |
 | `:Cinch clean` | Delete every plugin on disk that no spec names |
 | `:Cinch stats` | Print this session's stats |
+| `:checkhealth cinch` | Neovim, git, the lockfile, plugin states, orphans, features, and whether startup timing came from the OS |
 
 ## The window
 
@@ -219,7 +221,7 @@ The core installs, loads and updates plugins on its own. Everything else is a fe
 | --- | --- |
 | `messages` | Takes over every message cinch sends and `vim.pack`'s output while cinch calls it. Progress updates in place. Every step cinch takes, notices, and git warnings go to the log |
 | `stats` | Counts, startup phases, load times, `:Cinch stats`, and one summary per session in `stdpath('state')/cinch/stats.json` |
-| `updates` | `:Cinch check`, and applying updates from the window |
+| `updates` | `:Cinch check`, applying updates from the window, and a background check every `every` seconds that reports only what is pending |
 | `ui` | The window, and the first start shown in it |
 
 stats asks the OS when Neovim started. Its startup time is a few milliseconds higher than `--startuptime`, which starts its clock after the binary has loaded.

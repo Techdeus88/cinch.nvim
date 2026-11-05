@@ -468,17 +468,49 @@ function M.get(names, opts)
   return call('get', names, vim.pack.get, names, opts)
 end
 
---- The plugin's checked-out commit. vim.pack keeps every repo on a detached
---- HEAD, so `.git/HEAD` holds the hash; read once and kept until it changes.
+--- The commit a ref names in the git dir: its loose ref file, else packed-refs.
+---@param git string the .git directory
+---@param ref string such as refs/heads/main
+---@return string?
+local function resolve_ref(git, ref)
+  local f = io.open(vim.fs.joinpath(git, ref))
+  if f then
+    local line = f:read('*l') or ''
+    f:close()
+    if line:match('^%x+$') then
+      return line
+    end
+  end
+  f = io.open(vim.fs.joinpath(git, 'packed-refs'))
+  if not f then
+    return nil
+  end
+  for line in f:lines() do
+    local sha, name = line:match('^(%x+) (.+)$')
+    if name == ref then
+      f:close()
+      return sha
+    end
+  end
+  f:close()
+  return nil
+end
+
+--- The plugin's checked-out commit. `.git/HEAD` holds the hash when it is detached,
+--- which is how vim.pack leaves a repo, or `ref: refs/heads/<branch>` when a branch
+--- is checked out, and then the commit is the one that ref names. Read once and kept
+--- until it changes.
 ---@param p cinch.Plugin
 ---@return string?
 function M.rev(p)
   if p.rev == nil and p.path then
-    local f = io.open(vim.fs.joinpath(p.path, '.git', 'HEAD'))
+    local git = vim.fs.joinpath(p.path, '.git')
+    local f = io.open(vim.fs.joinpath(git, 'HEAD'))
     if f then
       local line = f:read('*l') or ''
       f:close()
-      p.rev = line:match('^%x+$')
+      local ref = line:match('^ref: (.+)$')
+      p.rev = ref and resolve_ref(git, ref) or line:match('^%x+$')
     end
   end
   return p.rev

@@ -55,6 +55,13 @@ H.after_startup(function()
   H.eq(seen.open_at_installing, true, 'the window is open before vim.pack.add starts')
   H.eq(seen.first_lines[1]:find('Setting up 5 plugins', 1, true) ~= nil, true, 'in its install phase')
   H.eq(table.concat(seen.first_lines, '\n'):find('cloning…', 1, true) ~= nil, true, 'every row cloning')
+  local bar = seen.first_lines[2]
+  H.eq(
+    { bar:find('━', 1, true) ~= nil, (bar:gsub('━', '')) },
+    { true, ' ' },
+    'the progress bar: a thin line across the list'
+  )
+  H.eq(vim.list_contains(seen.first_lines, ' ▾ installing 5'), true, 'the rows under their section header')
   H.eq(#seen.progress >= 3, true, 'progress arrives for each plugin')
   H.eq(seen.progress[1].handled, true, 'and the window takes it over from the command line')
   H.eq(seen.colors_at_installed, 'colory', 'the colorscheme applied before the batch ended')

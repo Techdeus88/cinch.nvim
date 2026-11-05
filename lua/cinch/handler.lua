@@ -60,23 +60,26 @@ local function ordered(set)
   return res
 end
 
---- Load several plugins, then run `replay` once, after the last one.
+--- Load several plugins, then run `replay` once, after the last one. A plugin that
+--- stays pending was vetoed (LoadPre) or waits for nothing else: its trigger is still
+--- armed, so replaying it would land on the same stub again. The replay runs only when
+--- some plugin got past pending, which is when the trigger has something real to run.
 ---@param plugins cinch.Plugin[]
 ---@param reason string
 ---@param replay fun()
 local function fire_all(plugins, reason, replay)
-  local left = #plugins
+  local left, moved = #plugins, false
   if left == 0 then
     return replay()
   end
-  local function one()
-    left = left - 1
-    if left == 0 then
-      replay()
-    end
-  end
   for _, p in ipairs(plugins) do
-    M.fire(p, reason, one)
+    M.fire(p, reason, function()
+      left = left - 1
+      moved = moved or p.state ~= 'pending'
+      if left == 0 and moved then
+        replay()
+      end
+    end)
   end
 end
 

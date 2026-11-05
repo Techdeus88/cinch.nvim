@@ -19,7 +19,7 @@ local M = {}
 ---@field border? string|string[] default: 'winborder', or rounded when that is empty
 ---@field open_on_install? boolean open the window when plugins install, default true
 ---@field colorscheme? string applied the moment a plugin that ships it is on disk, on a first start
----@field rounded? boolean rounded ends on chips and bars, drawn with Nerd Font glyphs; default true
+---@field rounded? boolean rounded ends on chips, drawn with Nerd Font glyphs; default true
 ---@field icons? table<string, string> your own Nerd Font icons: now, later, event, ft, cmd, keys, dep, trigger
 ---@field backdrop? integer|false how much the editor shows through the dark backdrop, 0-100; default 60, false: none
 

@@ -10,7 +10,7 @@ H.after_startup(function()
   local command = require('cinch.command')
   H.eq(
     command.complete('', 'Cinch '),
-    { 'build', 'check', 'clean', 'del', 'load', 'open', 'stats', 'update' },
+    { 'build', 'check', 'clean', 'del', 'load', 'open', 'restore', 'stats', 'update' },
     'every subcommand'
   )
   H.eq(command.complete('a', 'Cinch load a'), { 'alpha.nvim' }, 'plugin names')
@@ -28,6 +28,10 @@ H.after_startup(function()
   H.eq(H.noted('subcommands'), false, 'update! is update with a bang')
 
   vim.cmd('Cinch nope')
-  H.eq(H.noted('subcommands: build, check, clean, del, load, open, stats, update'), true, 'an unknown one lists them')
+  H.eq(
+    H.noted('subcommands: build, check, clean, del, load, open, restore, stats, update'),
+    true,
+    'an unknown one lists them'
+  )
   H.eq(require('cinch.command') ~= nil, true, 'loaded on first use')
 end)

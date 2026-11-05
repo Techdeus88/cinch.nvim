@@ -65,7 +65,7 @@ local function own_update(c)
   end
 end
 
---- Install progress for a first start: one line of status and a bar across the list.
+--- Install progress for a first start: one line of status and a thin bar across the list.
 ---@param c cinch.ui.Canvas
 ---@param install cinch.ui.Install
 local function install_header(c, install)
@@ -99,7 +99,14 @@ local install_look = {
 ---@param ctx cinch.ui.Ctx
 local function install_rows(c, ctx)
   local needed = dependents()
-  for _, p in ipairs(visible(ctx)) do
+  local list = visible(ctx)
+  -- Under a header like every other group of rows, and folds the same way.
+  local open = not ctx.folded.installing
+  c:add({
+    { (open and ' ▾ ' or ' ▸ ') .. 'installing', 'CinchSection' },
+    { ' ' .. #list, 'CinchMuted' },
+  }, { section = 'installing' })
+  for _, p in ipairs(open and list or {}) do
     local look = install_look[ctx.install.status[p.name] or (p.state == 'disabled' and 'disabled' or 'on_disk')]
     add_row(c, p, {
       mark = look[1] or canvas.spinner[ctx.tick % #canvas.spinner + 1],

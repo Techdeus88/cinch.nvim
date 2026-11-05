@@ -20,6 +20,8 @@ M.highlights = {
   CinchUpdate = 'DiagnosticWarn',
   CinchBar = 'DiagnosticInfo',
   CinchBarEmpty = 'NonText',
+  CinchPillFill = 'DiagnosticOk',
+  CinchPillTrack = 'NonText',
   CinchRule = 'FloatBorder',
   CinchNow = 'DiagnosticVirtualTextOk',
   CinchLater = 'DiagnosticVirtualTextInfo',
@@ -153,12 +155,11 @@ function M.define_colors(rounded)
   end
   -- A link reads as one: underlined, in the color of a directory name.
   set(0, 'CinchLink', { fg = color('Directory', 'fg') or color('Underlined', 'fg'), underline = true })
-  local fill = color('DiagnosticInfo', 'fg') or color('Function', 'fg') or 0x7aa2f7
-  local track = blend(fill, base, 0.18)
-  set(0, 'CinchPillFill', { bg = fill })
-  set(0, 'CinchPillTrack', { bg = track })
-  set(0, 'CinchPillFillCap', { fg = fill })
-  set(0, 'CinchPillTrackCap', { fg = track })
+  -- The progress bar: a thin line in the green of an installed plugin's ✓, on a
+  -- faint track of the same green.
+  local fill = color('DiagnosticOk', 'fg') or color('String', 'fg') or 0x9ece6a
+  set(0, 'CinchPillFill', { fg = fill })
+  set(0, 'CinchPillTrack', { fg = blend(fill, base, 0.25) })
   M.rounded = rounded
 end
 
@@ -182,26 +183,16 @@ function M.chip_width(inner)
   return inner + (M.rounded and 2 or 0)
 end
 
---- A progress bar `cells` wide, filled for value/max: a rounded pill when colors
---- allow, else block characters.
+--- A progress bar `cells` wide, filled for value/max: a thin line, colored up to
+--- value/max and faint after it.
 ---@param value number
 ---@param max number
 ---@param cells integer
 ---@return { [1]: string, [2]: string }[]
 function M.pill(value, max, cells)
-  if not M.colored then
-    local filled, empty = M.bar(value, max, cells)
-    return { { filled, 'CinchBar' }, { empty, 'CinchBarEmpty' } }
-  end
-  local inner = M.rounded and cells - 2 or cells
-  local n = max > 0 and math.floor(value / max * inner + 0.5) or 0
-  n = math.max(value > 0 and 1 or 0, math.min(inner, n))
-  local out = { { (' '):rep(n), 'CinchPillFill' }, { (' '):rep(inner - n), 'CinchPillTrack' } }
-  if M.rounded then
-    table.insert(out, 1, { cap_left, n > 0 and 'CinchPillFillCap' or 'CinchPillTrackCap' })
-    out[#out + 1] = { cap_right, n < inner and 'CinchPillTrackCap' or 'CinchPillFillCap' }
-  end
-  return out
+  local n = max > 0 and math.floor(value / max * cells + 0.5) or 0
+  n = math.max(value > 0 and 1 or 0, math.min(cells, n))
+  return { { ('━'):rep(n), 'CinchPillFill' }, { ('━'):rep(cells - n), 'CinchPillTrack' } }
 end
 
 ---@class cinch.ui.Canvas

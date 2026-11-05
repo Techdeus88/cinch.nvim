@@ -9,14 +9,17 @@ local pack = require('cinch.pack')
 local state = require('cinch.state')
 
 local levels = vim.log.levels
+local uv = vim.uv
 
 local M = {}
 
 ---@class cinch.updates.Opts
 ---@field fresh? integer seconds a check stays fresh: opening the UI checks again only after. Default 300
+---@field every? integer|false seconds between background checks while Neovim runs, quiet unless
+---something is pending. Default 86400 (a day), false: none
 
 ---@type cinch.updates.Opts
-M.opts = { fresh = 300 }
+M.opts = { fresh = 300, every = 86400 }
 
 ---@class cinch.Update
 ---@field rev string checked-out commit
@@ -196,6 +199,38 @@ M.commands = {
   },
 }
 
+---@type uv.uv_timer_t? the background check timer, while `every` is set
+M.timer = nil
+
+--- Check every `every` seconds, in the background. Quiet unless updates are pending;
+--- a tick that finds a check running or vim.pack busy waits for the next one.
+local function schedule()
+  local every = M.opts.every
+  if not every or every <= 0 then
+    return
+  end
+  M.timer = uv.new_timer()
+  M.timer:start(
+    every * 1000,
+    every * 1000,
+    vim.schedule_wrap(function()
+      if M.checking or not pack.idle() then
+        return
+      end
+      M.check(nil, {
+        on_done = function(results)
+          local n = vim.tbl_count(results)
+          if n > 0 then
+            events.report(('%d update%s available · `:Cinch check` lists them'):format(n, n == 1 and '' or 's'))
+          end
+        end,
+      })
+    end)
+  )
+  -- Only while Neovim runs: a pending timer must not keep it open.
+  M.timer:unref()
+end
+
 ---@param opts? cinch.updates.Opts
 function M.setup(opts)
   M.opts = vim.tbl_extend('force', M.opts, opts or {})
@@ -210,6 +245,7 @@ function M.setup(opts)
       events.emit('Updates', { results = M.results })
     end
   end)
+  schedule()
 end
 
 return M

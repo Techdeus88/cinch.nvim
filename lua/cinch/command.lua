@@ -40,6 +40,14 @@ M.commands = {
     end,
     complete = names,
   },
+  -- Back to the revisions the lockfile records, after a checkout moved on its own.
+  -- With !, without vim.pack's confirmation.
+  restore = {
+    run = function(args, bang)
+      cinch.update(#args > 0 and args or nil, { force = bang, target = 'lockfile' })
+    end,
+    complete = names,
+  },
   -- With !, also plugins your specs list; they install again on the next start.
   del = {
     run = function(args, bang)
