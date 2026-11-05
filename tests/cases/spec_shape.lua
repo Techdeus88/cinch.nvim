@@ -33,6 +33,13 @@ local mine = { 'owner/mine', cmd = 'Mine', data = { opts = {} } }
 spec.register(spec.collect({ { mine } }, { file = 'init.lua' }))
 local keys_off =
   spec.register(spec.collect({ { { 'owner/keyless', keys = false, cmd = false } } }, { file = 'init.lua' }))
+local very_lazy = spec.register(spec.collect({
+  {
+    { 'owner/vl-list', event = { 'VeryLazy', 'BufReadPre' } },
+    { 'owner/vl-alone', event = { 'VeryLazy' } },
+    { 'owner/vl-now', event = { 'VeryLazy', 'BufReadPre' }, load = 'now' },
+  },
+}, { file = 'init.lua' }))
 
 H.after_startup(function()
   local names = vim.tbl_map(function(p)
@@ -74,6 +81,14 @@ H.after_startup(function()
 
   local w = state.plugins['which.nvim']
   H.eq(w.load, 'later', 'VeryLazy means later')
+  H.eq(w.very_lazy, nil, 'alone, it is plain later')
+  H.eq(
+    { very_lazy[1].load, very_lazy[1].data.event, very_lazy[1].very_lazy },
+    { 'trigger', { 'BufReadPre' }, true },
+    'VeryLazy beside other events: their trigger, and later as well'
+  )
+  H.eq({ very_lazy[2].load, very_lazy[2].very_lazy }, { 'later', nil }, 'a list of only VeryLazy is later')
+  H.eq({ very_lazy[3].load, very_lazy[3].very_lazy }, { 'now', nil }, 'an explicit load still wins')
   H.eq(w.version, 'abc1234', 'commit beats tag')
   H.eq(H.noted('sets `commit` and `tag`; using `commit`'), true, 'the losing pin warns')
   H.eq(H.noted('unknown field `bogus`'), true, 'unknown fields warn')

@@ -18,7 +18,7 @@ local M = {}
 ---@field cond? boolean|fun(p: cinch.Plugin): boolean same as enabled; both exist for lazy.nvim specs
 ---@field load? cinch.Load default: 'trigger' with a trigger, else 'later'
 ---@field deps? (string|cinch.Spec)[] a name like 'plenary.nvim' refers to another spec
----@field event? string|string[] "Event" or "Event pattern"; 'VeryLazy' means load = 'later'
+---@field event? string|string[] "Event" or "Event pattern"; 'VeryLazy' means later, or a deadline beside others
 ---@field ft? string|string[]
 ---@field cmd? string|string[]
 ---@field keys? string|(string|cinch.Key)[]
@@ -204,16 +204,20 @@ end
 ---@param data cinch.Data
 ---@param dep_only boolean
 ---@param notes string[]
----@return cinch.Load load, cinch.When when
+---@return cinch.Load load, cinch.When when, boolean very_lazy
 local function resolve_load(data, dep_only, notes)
   -- lazy.nvim's VeryLazy is the moment after startup, which is what `later` is.
-  -- Dropping it leaves no trigger, so the default below makes it `later`.
+  -- Dropping it leaves no trigger, so the default below makes it `later`. Beside
+  -- other events it is a deadline: whichever comes first loads the plugin.
+  local very_lazy = false
   if data.event == 'VeryLazy' then
     data.event = nil
   elseif type(data.event) == 'table' then
+    local n = #data.event
     data.event = vim.tbl_filter(function(e)
       return e ~= 'VeryLazy'
     end, data.event --[[@as string[] ]])
+    very_lazy = #data.event < n
   end
   local triggered = has_trigger(data)
   local load = data.load
@@ -237,7 +241,8 @@ local function resolve_load(data, dep_only, notes)
   if load == 'now_if_args' then
     when = vim.fn.argc(-1) > 0 and 'now' or 'later'
   end
-  return load, when --[[@as cinch.When]]
+  ---@cast when cinch.When
+  return load, when, very_lazy and when == 'trigger'
 end
 
 ---@param p table
@@ -249,7 +254,9 @@ local function fill(p, spec, origin, dep_only, notes)
   p.spec, p.data, p.origin = spec, spec.data, origin
   p.src, p.version = spec.src, spec.version
   p.dep_only = dep_only or nil
-  p.load, p.when = resolve_load(spec.data, dep_only, notes)
+  local very_lazy
+  p.load, p.when, very_lazy = resolve_load(spec.data, dep_only, notes)
+  p.very_lazy = very_lazy or nil
 end
 
 ---@param name string

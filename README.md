@@ -94,7 +94,7 @@ When `load` is not set:
 | Nothing, and it is only ever named as another plugin's dependency | `trigger`, with no triggers of its own: when the plugin that needs it loads |
 | Anything else | `later` |
 
-`event = 'VeryLazy'` from lazy.nvim means `later`.
+`event = 'VeryLazy'` from lazy.nvim means `later`. Beside other events, as in `event = { 'VeryLazy', 'BufReadPre' }`, the plugin loads on whichever comes first: one of those events, or its turn in the `later` queue.
 
 An explicit `load` always wins. `load = 'now'` with a `cmd` loads at startup, and cinch warns that the `cmd` is ignored.
 

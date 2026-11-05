@@ -108,7 +108,8 @@ end
 ---@param p cinch.Plugin
 ---@param done? table<string, true> real paths already sourced
 local function source_after(p, done)
-  if not p.path then
+  -- Most plugins have no after/: skip the recursive glob for them.
+  if not p.path or not uv.fs_stat(p.path .. '/after') then
     return
   end
   for _, f in ipairs(vim.fn.glob(p.path .. '/after/plugin/**/*.{vim,lua}', false, true)) do
@@ -135,18 +136,12 @@ local function source_late()
   late = {}
 end
 
+--- Whether `path` is on the runtimepath as written there. A plain compare: realpath on
+--- every entry for every load cost ~40 ms over 50 plugins.
 ---@param path string
 ---@return boolean
 local function on_rtp(path)
-  local want = real(path)
-  for _, dir in
-    ipairs(vim.opt.rtp:get() --[[@as string[] ]])
-  do
-    if real(dir) == want then
-      return true
-    end
-  end
-  return false
+  return vim.list_contains(vim.opt.rtp:get() --[[@as string[] ]], path)
 end
 
 ---@param p cinch.Plugin

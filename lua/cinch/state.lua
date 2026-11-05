@@ -29,6 +29,7 @@ local M = {}
 ---@field load cinch.Load as declared
 ---@field when cinch.When resolved at startup: now_if_args becomes now or later
 ---@field deps string[] names, loaded before this one
+---@field very_lazy? true a trigger plugin also queued for `later`: VeryLazy beside other events
 ---@field triggers? table<string, any[]> handler name -> parsed values, see handler.lua
 ---@field armed? table<string, true> handlers set up and not yet removed
 ---@field origin? { file: string, index?: integer } where the spec was declared

@@ -564,16 +564,21 @@ local function call(hook, name, p)
   end
 end
 
+---@param p cinch.Plugin
+local function queue_later(p)
+  later_queue[#later_queue + 1] = p
+  if started and vim.v.vim_did_enter == 1 then
+    start_drain()
+  end
+end
+
 --- Set up what loads a pending plugin, by its `when`.
 ---@param p cinch.Plugin
 function M.arm(p)
   if p.when == 'now' then
     now_queue[#now_queue + 1] = p
   elseif p.when == 'later' then
-    later_queue[#later_queue + 1] = p
-    if started and vim.v.vim_did_enter == 1 then
-      start_drain()
-    end
+    queue_later(p)
   else
     -- No triggers: it loads when a plugin that depends on it does, or by hand.
     M.parse(p)
@@ -582,6 +587,11 @@ function M.arm(p)
       -- Marked first, so a partly failed arm is still undone.
       p.armed[name] = true
       call('arm', name, p)
+    end
+    -- VeryLazy beside other events: `later` loads it if none of them fired first.
+    -- The queue skips it once a trigger has loaded it.
+    if p.very_lazy then
+      queue_later(p)
     end
   end
 end
