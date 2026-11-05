@@ -18,7 +18,14 @@ cinch.ui_coming = function()
   return true
 end
 
-local seen = {}
+local seen = { done = {} }
+-- What had loaded when User CinchDone fired.
+vim.api.nvim_create_autocmd('User', {
+  pattern = 'CinchDone',
+  callback = function()
+    seen.done[#seen.done + 1] = { early = H.plugin('early').state, installed = seen.failed ~= nil }
+  end,
+})
 events.on('Installing', function(d)
   seen.installing = d.names
 end)
@@ -40,7 +47,16 @@ cinch.now(function()
 end)
 local after_setup = { early = H.plugin('early').state, alpha = H.plugin('alpha.nvim').state, now_ran = vim.g.now_saw }
 
+--- User CinchDone fired once, after the batch installed and its now plugins loaded.
+local function done_after_batch()
+  H.wait(function()
+    return #seen.done > 0
+  end, 'User CinchDone')
+  H.eq(seen.done, { { early = 'loaded', installed = true } }, 'CinchDone once the batch has installed and loaded')
+end
+
 local function ui_enter()
+  H.eq(seen.done, {}, 'no CinchDone while a batch waits for the UI')
   vim.api.nvim_exec_autocmds('UIEnter', {})
   H.wait(function()
     return seen.failed ~= nil and H.plugin('beta.nvim').state == 'loaded'
@@ -53,17 +69,20 @@ H.after_startup(function()
     H.eq(after_setup.early, 'loaded', 'what is on disk loads during init.lua as usual')
     H.eq(H.plugin('missing').state, 'registered', 'only the missing plugin waits')
     H.eq(after_setup.now_ran, 'loaded', 'and now() runs during init.lua as usual')
+    H.eq(seen.done, {}, 'CinchDone waits for the missing plugin too')
     vim.api.nvim_exec_autocmds('UIEnter', {})
     H.wait(function()
       return seen.failed ~= nil
     end, 'the missing plugin to be tried')
     H.eq(seen.installing, { 'missing' }, 'and is the only one installed on UIEnter')
+    done_after_batch()
     return
   elseif H.phase == 3 then
     H.eq(after_setup.early, 'registered', 'a locked plugin is missing: everything waits')
     H.eq(after_setup.now_ran, nil, 'now() too')
     ui_enter()
     H.eq(seen.installing, { 'beta.nvim', 'missing' }, 'the locked plugin is installed again')
+    done_after_batch()
     return
   end
 
@@ -77,6 +96,7 @@ H.after_startup(function()
     'one batch, the add() calls joined it'
   )
   H.eq(seen.failed, { 'missing' }, 'Installed names what did not install')
+  done_after_batch()
   H.eq(H.plugin('early').reason, 'now', 'now plugins load right after the batch')
   H.eq(vim.g.early_did_enter, 1, 'after VimEnter on a first start')
   vim.cmd('AlphaCmd go')

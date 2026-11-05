@@ -30,7 +30,8 @@ M.names = {
   BuildOutput = true, -- { plugin, lines }               new output from a running shell build
   Phase = true, -- { name, ms }                         a startup step finished
   Later = true, -- {}                                   the later queue is drained
-  Done = true, -- {}                                    setup() is done: specs read, now plugins loaded
+  Done = true, -- {}                                    setup() is done: specs read, now plugins loaded;
+  --                                                    with plugins missing, after their install on UIEnter
   Run = true, -- { when, where, ok, ms, err? }         one of your cinch.now/later functions ran
   Installing = true, -- { names }                       a batch of installs starts
   Installed = true, -- { names, failed, ms }            and ended; failed lists names not on disk

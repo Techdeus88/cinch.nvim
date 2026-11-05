@@ -244,8 +244,14 @@ function M.ui_coming()
   return not vim.list_contains(vim.v.argv, '--headless')
 end
 
----@type { plugins: cinch.Plugin[], confirm?: boolean }? a batch waiting for UIEnter
+---@type { plugins: cinch.Plugin[], confirm?: boolean, done?: boolean }? a batch waiting for UIEnter
 local deferred
+
+--- Done: setup() has read the specs and loaded the `now` plugins. When a batch
+--- waits for the UI, that is once the batch has installed and started.
+local function done()
+  events.emit('Done', {})
+end
 
 --- The plugins to hold until the UI is up, so the window can show them install:
 --- none when nothing is missing or no UI is coming; the missing ones; or all of
@@ -334,6 +340,9 @@ local function activate(added, confirm)
         install_all(d.plugins, d.confirm)
         handler.held = false
         start(d.plugins)
+        if d.done then
+          done()
+        end
       end),
     })
   end
@@ -374,8 +383,13 @@ function M.setup(opts)
   adopt_self(added)
   phase('specs', t)
   activate(added, M.opts.confirm)
-  -- User CinchDone, for config code that runs once cinch has set everything up.
-  events.emit('Done', {})
+  -- User CinchDone, for config code that runs once cinch has set everything up: now,
+  -- or once a batch that waits for the UI has installed and loaded too.
+  if deferred then
+    deferred.done = true
+  else
+    done()
+  end
 end
 
 --- Add plugins, the way vim.pack.add does: a list of specs, cinch fields allowed.

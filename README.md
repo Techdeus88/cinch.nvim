@@ -251,7 +251,7 @@ end)
 | `PackPre`, `Pack` | `kind`, `name`, `plugin`, `spec`, `path`: from `PackChangedPre` and `PackChanged`, after cinch has updated its state |
 | `PackOpPre`, `PackOp` | `op`, `names`, and after the call `ok`, `ms`, `err` |
 | `Build` | `plugin`, `ok`, `ms`, `err`, `output` |
-| `Done` | setup() is done: specs read, `now` plugins loaded. Also `User CinchDone` |
+| `Done` | setup() is done: specs read, `now` plugins loaded. When plugins were missing, that is after they installed and started on `UIEnter`. Also `User CinchDone` |
 | `BuildOutput` | `plugin`, `lines`: new lines from a shell build as it runs |
 | `Phase` | `name`, `ms`: a startup step finished |
 | `Later` | The `later` queue is empty |
