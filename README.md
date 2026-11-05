@@ -224,7 +224,7 @@ The core installs, loads and updates plugins on its own. Everything else is a fe
 | `updates` | `:Cinch check`, applying updates from the window, and a background check every `every` seconds that reports only what is pending |
 | `ui` | The window, and the first start shown in it |
 
-stats asks the OS when Neovim started. Its startup time is a few milliseconds higher than `--startuptime`, which starts its clock after the binary has loaded.
+stats asks the OS when Neovim started, so its startup time includes loading the binary, which `--startuptime` leaves out. On macOS with Neovim 0.13-dev it read 6 to 7.5 ms higher than `--startuptime` in the same run; other systems are unmeasured. Compare it with the `Embedded` section of a `--startuptime` file, the process that runs your config. The first section is the UI client, which finishes before any plugin loads.
 
 ## Events
 
