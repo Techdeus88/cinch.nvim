@@ -133,6 +133,41 @@ local function draw(d, n, depth, parent)
   end
 end
 
+--- The moments of startup in the order they happened, each with the time since Neovim
+--- started and since the one before.
+---@param c cinch.ui.Canvas
+---@param m table the stats marks
+local function draw_marks(c, m)
+  local list = {}
+  for _, mark in ipairs({
+    { 'VimEnter', m.vimenter },
+    { 'UIEnter', m.uienter },
+    { 'CinchStart', m.setup },
+    { 'CinchDone', m.done },
+    { 'later done', m.later },
+  }) do
+    if mark[2] then
+      list[#list + 1] = mark
+    end
+  end
+  if #list == 0 then
+    return
+  end
+  table.sort(list, function(a, b)
+    return a[2] < b[2]
+  end)
+  local prev
+  for _, mark in ipairs(list) do
+    c:add({
+      { '   ' .. fit(mark[1], 12), 'CinchMuted' },
+      { canvas.ms(mark[2]), 'CinchName' },
+      { prev and (' (+' .. canvas.ms(mark[2] - prev) .. ')') or '', 'CinchMuted' },
+    })
+    prev = mark[2]
+  end
+  c:blank()
+end
+
 --- The Profile view, `width` cells wide.
 ---@param width integer
 ---@param ctx cinch.ui.Ctx
@@ -151,12 +186,7 @@ function M.list(width, ctx)
   local tree = stats.profile()
   local by_time = ctx.profile_sort == 'time'
   local min = ctx.profile_min or 0
-  local enter = stats.marks.uienter or stats.marks.vimenter
-  local notes = {}
-  if enter then
-    notes[#notes + 1] = canvas.ms(enter) .. ' to ' .. (stats.marks.uienter and 'UIEnter' or 'VimEnter')
-  end
-  notes[#notes + 1] = by_time and 'by time' or 'in order'
+  local notes = { by_time and 'by time' or 'in order' }
   if min > 0 then
     notes[#notes + 1] = 'over ' .. canvas.ms(min)
   end
@@ -165,6 +195,7 @@ function M.list(width, ctx)
     c:add({ { ' / ' .. ctx.filter, 'CinchKey' } })
   end
   c:blank()
+  draw_marks(c, stats.marks)
   if #tree == 0 then
     c:add({ { '   nothing timed yet', 'CinchMuted' } })
     return c
