@@ -153,8 +153,8 @@ function M.define_colors(rounded)
   end
   -- A link reads as one: underlined, in the color of a directory name.
   set(0, 'CinchLink', { fg = color('Directory', 'fg') or color('Underlined', 'fg'), underline = true })
-  -- The progress bar: a thin line in the green of an installed plugin's ✓, on a
-  -- faint track of the same green.
+  -- Every bar, install progress and load times: a thin line in the green of an
+  -- installed plugin's ✓, on a faint track of the same green.
   local fill = color('DiagnosticOk', 'fg') or color('String', 'fg') or 0x9ece6a
   set(0, 'CinchPillFill', { fg = fill })
   set(0, 'CinchPillTrack', { fg = blend(fill, base, 0.25) })
