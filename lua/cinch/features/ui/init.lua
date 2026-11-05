@@ -56,7 +56,7 @@ local ui = {
 
 local ns = api.nvim_create_namespace('cinch_ui')
 
---- One of the window's files, loaded on first use: canvas, plugins, triggers, dashboard, keys.
+--- One of the window's files, loaded on first use: canvas, plugins, layout, triggers, dashboard, keys.
 ---@param name string
 local function part(name)
   return require('cinch.features.ui.' .. name)
@@ -96,93 +96,29 @@ end
 
 -- Layout ------------------------------------------------------------------------
 
-local border_line = { rounded = '─', single = '─', double = '═', bold = '━', solid = ' ', shadow = ' ' }
-
----@return string|string[]
-local function border()
-  return M.opts.border or (vim.o.winborder ~= '' and vim.o.winborder or 'rounded')
-end
-
---- The title row: name and counts on the left, the tabs on the right, the border's
---- own line between them.
----@param width integer
----@return { [1]: string, [2]: string }[]
-local function title(width)
-  local cv = part('canvas')
-  local stats = package.loaded['cinch.features.stats']
-  local startup = stats and (stats.marks.uienter or stats.marks.vimenter)
-  local left = {
-    { ' cinch ', 'CinchTitle' },
-    { ('· %d plugins%s '):format(#state.yours(), startup and (' · startup ' .. cv.ms(startup)) or ''), 'CinchMuted' },
-  }
-  local tabs = {}
-  for _, v in ipairs(M.views) do
-    tabs[#tabs + 1] = { ' ' .. v .. ' ', v == ui.view and not ui.help and 'CinchTab' or 'CinchMuted' }
-  end
-  local used = 0
-  for _, ch in ipairs(vim.list_extend(vim.list_slice(left), tabs)) do
-    used = used + cv.cells(ch[1])
-  end
-  local b = border()
-  local line = type(b) == 'string' and border_line[b] or '─'
-  local fill = math.max(1, width - used - 2)
-  return vim.list_extend(vim.list_extend(left, { { line:rep(fill), 'FloatBorder' } }), tabs)
-end
-
----@param width integer
----@return { [1]: string, [2]: string }[]
-local function footer(width)
+--- The keys in the bottom border: the view's own, or what the selection can do.
+---@return string
+local function footer_text()
   local text = part('keys').hints[ui.ctx.install and 'install' or ui.help and 'help' or ui.view]
   local marked = vim.tbl_count(ui.ctx.marked or {})
   if ui.view == 'plugins' and marked > 0 and not ui.help then
     text = (' %d selected · l load  b build  u update  c check  d delete · <Esc> lets go '):format(marked)
   end
-  return { { part('canvas').fit(text, math.min(part('canvas').cells(text), width - 2)), 'CinchMuted' } }
+  return text
 end
 
+--- The window's configs for what it shows now.
 ---@return table<string, vim.api.keyset.win_config>
 local function layout()
-  local share = ui.wide and M.opts.wide or M.opts.size
-  local lines = vim.o.lines - vim.o.cmdheight
-  local w = math.max(40, math.floor(vim.o.columns * share))
-  local h = math.max(10, math.floor(lines * share))
-  local row = math.max(0, math.floor((lines - h) / 2) - 1)
-  local col = math.max(0, math.floor((vim.o.columns - w) / 2) - 1)
-  local split = paned[ui.view] ~= nil and not ui.help
-  local frame = { relative = 'editor', row = row, col = col, width = w, height = h, zindex = 50, focusable = false }
-  frame.border = border()
-  -- Neovim allows a title and footer only on a float with a border.
-  if frame.border ~= 'none' then
-    frame.title, frame.title_pos = title(w), 'left'
-    frame.footer, frame.footer_pos = footer(w), 'left'
-  end
-  local list = { relative = 'editor', row = row + 1, col = col + 1, width = w, height = h, zindex = 51 }
-  -- Focusable, so the mouse wheel scrolls it.
-  local pane = { relative = 'editor', zindex = 51, hide = not split }
-  if w >= M.opts.side_by_side then
-    -- Wide enough: the pane beside the list, a rule between them.
-    list.width = split and math.floor(w * M.opts.split) or w
-    pane.row, pane.col = row + 1, col + 1 + list.width
-    pane.width, pane.height = math.max(1, w - list.width - 1), h
-    pane.border = { '', '', '', '', '', '', '', { '│', 'CinchRule' } }
-  else
-    -- Too narrow for two columns: the pane under the list, a rule between them.
-    list.height = split and math.max(3, math.floor(h * 0.55)) or h
-    pane.row, pane.col = row + 1 + list.height, col + 1
-    pane.width, pane.height = w, math.max(1, h - list.height - 1)
-    pane.border = { '', { '─', 'CinchRule' }, '', '', '', '', '', '' }
-  end
-  -- Under the frame, over everything else: the editor dimmed behind the window.
-  local backdrop = {
-    relative = 'editor',
-    row = 0,
-    col = 0,
-    width = vim.o.columns,
-    height = lines,
-    zindex = 49,
-    focusable = false,
-  }
-  return { backdrop = backdrop, frame = frame, list = list, pane = pane }
+  return part('layout').configs({
+    opts = M.opts,
+    wide = ui.wide,
+    split = paned[ui.view] ~= nil and not ui.help,
+    view = ui.view,
+    views = M.views,
+    help = ui.help,
+    footer = footer_text(),
+  })
 end
 
 -- Drawing -----------------------------------------------------------------------
