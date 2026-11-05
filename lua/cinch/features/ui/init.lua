@@ -1,6 +1,6 @@
 -- The cinch window: a bordered frame over the editor, 75% of it, 95% with `=`.
 -- Inside, the Plugins view is two panes: the list, which has the cursor, and the
--- detail pane, which follows it. Stats and Log use the whole width. The title and
+-- detail pane, which follows it. Stats, Profile and Log use the whole width. The title and
 -- tabs sit in the top border and the keys in the bottom one. At startup this file
 -- only declares `:Cinch open`; drawing code and subscriptions wait for the first open.
 
@@ -26,7 +26,7 @@ local M = {}
 ---@type cinch.ui.Opts
 M.opts = { size = 0.75, wide = 0.95, split = 0.58, side_by_side = 130, backdrop = 60 }
 
-M.views = { 'plugins', 'triggers', 'stats', 'log' }
+M.views = { 'plugins', 'triggers', 'stats', 'profile', 'log' }
 
 -- Views with the details pane, and the field of `ui` that holds what the cursor is on.
 local paned = { plugins = 'selected', triggers = 'trigger' }
@@ -56,7 +56,7 @@ local ui = {
 
 local ns = api.nvim_create_namespace('cinch_ui')
 
---- One of the window's files, loaded on first use: canvas, plugins, layout, triggers, dashboard, keys.
+--- One of the window's files, loaded on first use: canvas, plugins, layout, triggers, dashboard, profile, keys.
 ---@param name string
 local function part(name)
   return require('cinch.features.ui.' .. name)
@@ -216,6 +216,8 @@ local function render()
     c = part('triggers').list(width, ui.ctx)
   elseif ui.view == 'stats' then
     c = part('dashboard').stats(width)
+  elseif ui.view == 'profile' then
+    c = part('profile').list(width, ui.ctx)
   else
     c = part('dashboard').log(width, ui.ctx)
   end
@@ -437,7 +439,7 @@ local function float(focus, cfg)
 end
 
 --- Open the window, or switch an open one to `view`.
----@param view? 'plugins'|'triggers'|'stats'|'log'
+---@param view? 'plugins'|'triggers'|'stats'|'profile'|'log'
 function M.open(view)
   if view and vim.list_contains(M.views, view) then
     ui.view = view

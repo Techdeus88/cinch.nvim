@@ -157,7 +157,7 @@ end
 ---@param start integer hrtime
 local function phase(name, start)
   if events.has('Phase') then
-    events.emit('Phase', { name = name, ms = (hrtime() - start) / 1e6 })
+    events.emit('Phase', { name = name, ms = (hrtime() - start) / 1e6, start = start })
   end
 end
 

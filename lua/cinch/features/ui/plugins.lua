@@ -27,6 +27,8 @@ local M = {}
 ---@field install? cinch.ui.Install set while a first start installs
 ---@field orphans? cinch.Orphan[] on disk, in no spec
 ---@field marked? table<string, true> plugins selected for an action
+---@field profile_sort? 'time' the Profile view sorts siblings by time, not order
+---@field profile_min? number the Profile view hides what took less, in ms
 
 -- Drawn by rows.lua and details.lua, kept here under the names views and tests use.
 M.sections = rows.sections

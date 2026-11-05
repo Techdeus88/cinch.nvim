@@ -128,7 +128,7 @@ require('cinch').setup({
 
   -- each feature's options, under its name
   messages = { level = vim.log.levels.INFO, progress = true, history = 1000 },
-  stats = { persist = true, history = 50 },
+  stats = { persist = true, history = 50, profile = true }, -- profile: time phases, loads and sourced files for the Profile view
   updates = { fresh = 300, every = 86400 }, -- seconds before opening the window checks again; a background check every `every` seconds (false: none)
   ui = {
     size = 0.75,                 -- share of the editor
@@ -182,19 +182,19 @@ An error in one of these functions is reported with the file and line where you 
 
 ## The window
 
-A frame at 75% of the editor, over a dark backdrop that dims the editor behind it. The cursor stays in the window: moving to an editor window, with a click or `<C-w>`, comes back to the list, while a prompt or picker a plugin opens keeps focus. Its top border holds the plugin count, startup time, and the four views: plugins, triggers, stats and log. The bottom border holds the keys for the view you're in.
+A frame at 75% of the editor, over a dark backdrop that dims the editor behind it. The cursor stays in the window: moving to an editor window, with a click or `<C-w>`, comes back to the list, while a prompt or picker a plugin opens keeps focus. Its top border holds the plugin count, startup time, and the five views: plugins, triggers, stats, profile and log. The bottom border holds the keys for the view you're in.
 
 The **Plugins** view is two panes. The list on the left groups plugins into working, failed, loaded, waiting and disabled, with what is happening now on top. Each row puts its parts one after the other: a status light (lit once loaded, a spinner while it works), the name, its load time and a load-time bar once it has loaded, then how it loads: a Nerd Font icon and its name for `now` and `later`, and for a trigger plugin each trigger type with its icon and values, the value that loaded it on a chip. A plugin that is only a dependency shows the plugins that need it. Pending commits and a message come last, and only when there is something to say: an error, the newest line a build is printing, why it is off. The pane on the right follows the cursor and shows that plugin in full: how and when it loaded, its folder and url, the branch it follows or the version you pinned, the commit on disk, its readme, pending commits, its dependencies and what needs it, the config and opts it received, the last lines of its build output, live while it builds, and where its spec is. `gx` opens the url. Plugins still on disk that no spec names any more sit last, under "not in your specs", where `d` deletes them. In a frame narrower than 130 columns, where the list could not fit a whole row beside the pane, the pane sits under the list instead.
 
 **Triggers** shows what makes each plugin load, in two panes like Plugins. The list has a row per trigger, grouped into events, filetypes, commands, keys and your own, then the schedule: `now`, `later` and dependencies. A row shows a light (waiting to fire, fired, or never fired because its plugins loaded another way), the trigger, a dot per plugin behind it, and what happened. The pane follows the cursor: when that trigger fires in plain words, the `:help` topic for it, its plugins with their load times and whatever else would load them, and for `now` what it cost your startup. `l` loads every plugin still waiting on the trigger under the cursor.
 
-**Stats** shows a startup timeline split into Neovim's own time, each of cinch's phases and `later`, then counts, the slowest plugins, and startup times from past sessions. **Log** shows every step and message, oldest first.
+**Stats** shows a startup timeline split into Neovim's own time, each of cinch's phases and `later`, then counts, the slowest plugins, and startup times from past sessions. **Profile** shows where this session's time went, as a tree: cinch's phases with the plugins each one loaded, every plugin with its dependencies and the files it sourced, the `plugin/` files Neovim sourced at startup grouped by plugin, `runtime` and `config`, then the `later` queue and anything loaded after startup. Files are timed with `SourcePre` and `SourcePost`, during startup and later only while a plugin loads. **Log** shows every step and message, oldest first.
 
 | Key | Does |
 | --- | --- |
 | `j`, `k` | Move between plugins; the pane follows |
-| `<CR>` | Fold or open the section under the cursor |
-| `/` | Filter plugins by name, or the log by text. An empty filter clears it |
+| `<CR>` | Fold or open the section, or the Profile entry, under the cursor |
+| `/` | Filter plugins by name, Profile entries by name or path, or the log by text. An empty filter clears it |
 | `l` | Load the plugin under the cursor |
 | `b` | Run its build |
 | `u` | Apply its pending update |
@@ -206,6 +206,8 @@ The **Plugins** view is two panes. The list on the left groups plugins into work
 | `gf` | Open the plugin's spec file at its line |
 | `r` | Read what `vim.pack` knows again |
 | `G` | Jump to the newest log entry |
+| `<C-s>` | In Profile, sort each level by time taken, or back to the order things began |
+| `<C-f>` | In Profile, hide entries that took less than the ms you enter; empty shows them all |
 | `?` | Show every key |
 | `<Tab>`, `<S-Tab>` | Next or previous view |
 | `=` | Switch between 75% and 95% of the editor |
@@ -220,7 +222,7 @@ The core installs, loads and updates plugins on its own. Everything else is a fe
 | Feature | What it adds |
 | --- | --- |
 | `messages` | Takes over every message cinch sends and `vim.pack`'s output while cinch calls it. Progress updates in place. Every step cinch takes, notices, and git warnings go to the log |
-| `stats` | Counts, startup phases, load times, `:Cinch stats`, and one summary per session in `stdpath('state')/cinch/stats.json` |
+| `stats` | Counts, startup phases, load times, the Profile view's timings, `:Cinch stats`, and one summary per session in `stdpath('state')/cinch/stats.json` |
 | `updates` | `:Cinch check`, applying updates from the window, and a background check every `every` seconds that reports only what is pending |
 | `ui` | The window, and the first start shown in it |
 
@@ -255,7 +257,7 @@ end)
 | `Build` | `plugin`, `ok`, `ms`, `err`, `output` |
 | `Done` | setup() is done: specs read, `now` plugins loaded. When plugins were missing, that is after they installed and started on `UIEnter`. Also `User CinchDone` |
 | `BuildOutput` | `plugin`, `lines`: new lines from a shell build as it runs |
-| `Phase` | `name`, `ms`: a startup step finished |
+| `Phase` | `name`, `ms`, `start`: a startup step finished; `start` is its `vim.uv.hrtime()` |
 | `Later` | The `later` queue is empty |
 | `Run` | `when`, `where`, `ok`, `ms`, `err`: one of your `now`/`later` functions ran |
 | `Installing`, `Installed` | `names`, and after the batch `failed` and `ms`: a batch of installs starts and ends |

@@ -1,7 +1,8 @@
 -- Stats: what cinch did this session and what it cost. Everything comes from the
 -- bus; counts of plugins by state and by `when` are read from the registry when
 -- asked, so nothing is tracked twice. One summary per session is appended to a
--- history file at exit, and read only when asked for.
+-- history file at exit, and read only when asked for. For the Profile view it also
+-- times every phase, plugin load and sourced file, and nests them by time.
 
 local events = require('cinch.events')
 local state = require('cinch.state')
@@ -13,9 +14,10 @@ local M = {}
 ---@class cinch.stats.Opts
 ---@field persist? boolean keep one summary per session in stdpath('state')/cinch/stats.json. Default true
 ---@field history? integer sessions kept. Default 50
+---@field profile? boolean time every phase, plugin load and sourced file for the Profile view. Default true
 
 ---@type cinch.stats.Opts
-M.opts = { persist = true, history = 50 }
+M.opts = { persist = true, history = 50, profile = true }
 
 M.file = vim.fs.joinpath(vim.fn.stdpath('state') --[[@as string]], 'cinch', 'stats.json')
 
@@ -154,6 +156,20 @@ M.ops = {}
 ---@type table<string, integer> install, update, delete -> count
 M.disk = { install = 0, update = 0, delete = 0 }
 
+---@class cinch.stats.Span
+---@field kind 'phase'|'plugin'|'file'
+---@field name string the phase, the plugin, or the file's full path
+---@field start number ms since start
+---@field stop? number ms since start; nil while it runs
+---@field reason? string what loaded the plugin
+---@field failed? boolean the plugin failed to load
+
+--- Everything the Profile view shows, in the order it began.
+---@type cinch.stats.Span[]
+M.spans = {}
+-- Enough for any startup; past it, nothing more is kept.
+local MAX_SPANS = 5000
+
 --- The kind of thing that loaded a plugin: now, later, event, ft, cmd, keys, dep, manual.
 ---@param reason string
 ---@return string
@@ -218,6 +234,244 @@ function M.history()
   local ok, list = pcall(vim.json.decode, f:read('*a'))
   f:close()
   return ok and type(list) == 'table' and list or {}
+end
+
+-- Profile ------------------------------------------------------------------------
+
+---@class cinch.stats.Node
+---@field kind 'group'|'owner'|'phase'|'plugin'|'file'
+---@field name string what it is: a phase, plugin, owner or group name, or a file's path
+---@field label string how it reads: a file relative to its owner
+---@field start number ms since start
+---@field ms number
+---@field reason? string what loaded the plugin
+---@field failed? boolean
+---@field children cinch.stats.Node[]
+
+--- Where a sourced file comes from, for grouping: a plugin by name, `runtime`, `config`,
+--- or the directory it sits in. Returns that owner and the file's path inside it.
+---@return fun(path: string): string, string
+local function owners()
+  local roots = {}
+  local function root(dir, name)
+    if dir and dir ~= '' then
+      roots[#roots + 1] = { dir = vim.fs.normalize(dir) .. '/', name = name }
+      local real = uv.fs_realpath(dir)
+      if real and real ~= dir then
+        roots[#roots + 1] = { dir = real .. '/', name = name }
+      end
+    end
+  end
+  for _, p in ipairs(state.list) do
+    root(p.path, p.name)
+  end
+  root(vim.env.VIMRUNTIME, 'runtime')
+  root(vim.fn.stdpath('config') --[[@as string]], 'config')
+  -- Longest first, so a plugin inside another root wins.
+  table.sort(roots, function(a, b)
+    return #a.dir > #b.dir
+  end)
+  return function(path)
+    for _, r in ipairs(roots) do
+      if vim.startswith(path, r.dir) then
+        return r.name, path:sub(#r.dir + 1)
+      end
+    end
+    -- Some other directory on the runtimepath: named after the one above plugin/.
+    for _, pat in ipairs({ '^(.*)/(after/plugin/.*)$', '^(.*)/(plugin/.*)$' }) do
+      local dir, rest = path:match(pat)
+      if dir then
+        return vim.fs.basename(dir), rest
+      end
+    end
+    return vim.fs.dirname(path), vim.fs.basename(path)
+  end
+end
+
+--- A node with `children` and no ms of its own: it costs what they cost.
+---@param of 'group'|'owner'
+---@param name string
+---@param children cinch.stats.Node[]
+---@return cinch.stats.Node
+local function bundle(of, name, children)
+  local ms = 0
+  for _, c in ipairs(children) do
+    ms = ms + c.ms
+  end
+  return { kind = of, name = name, label = name, start = children[1].start, ms = ms, children = children }
+end
+
+--- Sourced files with no parent, grouped by owner in the order each owner first appears.
+---@param files cinch.stats.Node[]
+---@param owner_of fun(path: string): string, string
+---@return cinch.stats.Node[]
+local function by_owner(files, owner_of)
+  local order, of = {}, {}
+  for _, f in ipairs(files) do
+    local owner = owner_of(f.name)
+    if not of[owner] then
+      of[owner] = {}
+      order[#order + 1] = owner
+    end
+    table.insert(of[owner], f)
+  end
+  return vim.tbl_map(function(owner)
+    return bundle('owner', owner, of[owner])
+  end, order)
+end
+
+--- This session as a tree: each span inside the one it ran within, then the top level
+--- in four groups: cinch's own startup, the plugin/ files Neovim sourced at startup,
+--- the `later` queue, and everything after.
+---@return cinch.stats.Node[]
+function M.profile()
+  local now = M.now()
+  local owner_of = owners()
+  ---@type cinch.stats.Node[]
+  local nodes = {}
+  for _, s in ipairs(M.spans) do
+    local stop = s.stop or now
+    local label = s.name
+    if s.kind == 'file' then
+      local _, rel = owner_of(s.name)
+      label = rel
+    end
+    nodes[#nodes + 1] = {
+      kind = s.kind,
+      name = s.name,
+      label = label,
+      start = s.start,
+      stop = stop,
+      ms = stop - s.start,
+      reason = s.reason,
+      failed = s.failed,
+      children = {},
+    }
+  end
+  -- Earlier first; of two that start together, the longer holds the other.
+  table.sort(nodes, function(a, b)
+    if a.start ~= b.start then
+      return a.start < b.start
+    end
+    return a.stop > b.stop
+  end)
+  local roots, stack = {}, {}
+  for _, n in ipairs(nodes) do
+    while #stack > 0 and n.stop > stack[#stack].stop do
+      stack[#stack] = nil
+    end
+    local parent = stack[#stack]
+    table.insert(parent and parent.children or roots, n)
+    stack[#stack + 1] = n
+  end
+  for _, n in ipairs(nodes) do
+    n.stop = nil
+  end
+
+  local enter = M.marks.uienter or M.marks.vimenter
+  local cinch, startup_files, later, after = {}, {}, {}, {}
+  for _, n in ipairs(roots) do
+    if n.kind == 'phase' and not (M.marks.done and n.start > M.marks.done) then
+      cinch[#cinch + 1] = n
+    elseif n.kind == 'file' and not (M.marks.vimenter and n.start > M.marks.vimenter) then
+      startup_files[#startup_files + 1] = n
+    elseif n.kind == 'plugin' and n.reason == 'later' and not (M.marks.later and n.start > M.marks.later) then
+      later[#later + 1] = n
+    else
+      after[#after + 1] = n
+    end
+  end
+  local out = {}
+  if #cinch > 0 then
+    out[#out + 1] = bundle('group', 'cinch', cinch)
+  end
+  if #startup_files > 0 then
+    out[#out + 1] = bundle('group', 'plugin files at startup', by_owner(startup_files, owner_of))
+  end
+  if #later > 0 then
+    local g = bundle('group', 'later', later)
+    g.start = enter or g.start
+    out[#out + 1] = g
+  end
+  if #after > 0 then
+    local plugins, files = {}, {}
+    for _, n in ipairs(after) do
+      table.insert(n.kind == 'file' and files or plugins, n)
+    end
+    vim.list_extend(plugins, by_owner(files, owner_of))
+    table.sort(plugins, function(a, b)
+      return a.start < b.start
+    end)
+    out[#out + 1] = bundle('group', 'after startup', plugins)
+  end
+  return out
+end
+
+--- Time phases, plugin loads, and every file sourced during startup or while a plugin
+--- loads, for M.profile().
+local function record()
+  local spans = M.spans
+  ---@param span cinch.stats.Span
+  ---@return boolean kept
+  local function keep(span)
+    if #spans >= MAX_SPANS then
+      return false
+    end
+    spans[#spans + 1] = span
+    return true
+  end
+
+  events.on('Phase', function(d)
+    local stop = M.now()
+    keep({ kind = 'phase', name = d.name, start = d.start and (d.start - start) / 1e6 or stop - d.ms, stop = stop })
+  end)
+
+  local loading = {} ---@type table<cinch.Plugin, cinch.stats.Span>
+  local busy = 0 -- plugins loading right now
+  events.on('State', function(d)
+    local p = d.plugin
+    if d.to == 'loading' and not p.self then
+      local span = { kind = 'plugin', name = p.name, start = M.now(), reason = d.reason }
+      if keep(span) then
+        loading[p], busy = span, busy + 1
+      end
+    elseif d.from == 'loading' and loading[p] then
+      loading[p].stop, loading[p].failed = M.now(), d.to == 'failed' or nil
+      loading[p], busy = nil, busy - 1
+    end
+  end)
+
+  -- Files sourced during startup, and later only while a plugin loads: an ftplugin a
+  -- buffer sources an hour in is not cinch's to show.
+  local open = {} ---@type cinch.stats.Span[] files being sourced, innermost last
+  local group_id = vim.api.nvim_create_augroup('cinch_stats_profile', { clear = true })
+  vim.api.nvim_create_autocmd('SourcePre', {
+    group = group_id,
+    callback = function(ev)
+      if M.marks.later and busy == 0 then
+        return
+      end
+      local span = { kind = 'file', name = ev.match, start = M.now() }
+      if keep(span) then
+        open[#open + 1] = span
+      end
+    end,
+  })
+  vim.api.nvim_create_autocmd('SourcePost', {
+    group = group_id,
+    callback = function(ev)
+      -- SourcePost comes even when the file fails; match it to its SourcePre.
+      for i = #open, 1, -1 do
+        if open[i].name == ev.match then
+          open[i].stop = M.now()
+          for j = #open, i, -1 do
+            open[j] = nil
+          end
+          return
+        end
+      end
+    end,
+  })
 end
 
 local function save()
@@ -337,6 +591,9 @@ function M.setup(opts)
   events.on('Done', function()
     M.marks.done = M.now()
   end)
+  if M.opts.profile then
+    record()
+  end
 
   local group = vim.api.nvim_create_augroup('cinch_stats', { clear = true })
   vim.api.nvim_create_autocmd('VimEnter', {

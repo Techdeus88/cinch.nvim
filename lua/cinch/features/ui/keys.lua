@@ -33,6 +33,7 @@ M.hints = {
   plugins = ' / filter  l load  b build  u update  d delete  S-CR select  ? keys  q close ',
   triggers = ' <CR> fold  l load what waits  <C-d> <C-u> details  <Tab> next view  ? keys  q close ',
   stats = ' <Tab> next view  = size  ? keys  q close ',
+  profile = ' <CR> fold  <C-s> sort  <C-f> hide under ms  / filter  <Tab> next view  ? keys  q close ',
   log = ' / filter  G newest  <Tab> next view  ? keys  q close ',
   help = ' ? goes back  q close ',
   install = " installing · keys you press now run when it's done · q hides this ",
@@ -201,6 +202,30 @@ function M.make(w)
     end)()
   end
 
+  --- Profile: siblings in the order they began, or slowest first.
+  local function profile_sort()
+    if ui.view == 'profile' then
+      ui.ctx.profile_sort = ui.ctx.profile_sort ~= 'time' and 'time' or nil
+      w.render()
+    end
+  end
+
+  --- Profile: hide entries that took less than a number of ms; empty shows them all.
+  local function profile_min()
+    if ui.view ~= 'profile' then
+      return
+    end
+    local now = ui.ctx.profile_min
+    vim.ui.input({ prompt = 'hide entries under (ms): ', default = now and tostring(now) or '' }, function(text)
+      if text == nil then
+        return
+      end
+      local ms = tonumber(text)
+      ui.ctx.profile_min = ms and ms > 0 and ms or nil
+      vim.schedule(w.render)
+    end)
+  end
+
   local function goto_spec()
     local p = ui.selected and state.plugins[ui.selected]
     if not (p and p.origin and p.origin.file) then
@@ -324,6 +349,8 @@ function M.make(w)
       'read what vim.pack knows again',
     },
     { { 'G' }, w.newest, 'jump to the newest log entry' },
+    { { '<C-s>' }, profile_sort, 'in Profile, sort by time taken or by when each began' },
+    { { '<C-f>' }, profile_min, 'in Profile, hide entries that took less than some ms' },
     {
       { '?' },
       function()

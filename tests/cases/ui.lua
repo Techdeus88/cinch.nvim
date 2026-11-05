@@ -79,7 +79,7 @@ H.after_startup(function()
     return c[1]
   end, frame.title))
   H.eq(
-    title:find('cinch', 1, true) ~= nil and title:find('plugins  triggers  stats  log', 1, true) ~= nil,
+    title:find('cinch', 1, true) ~= nil and title:find('plugins  triggers  stats  profile  log', 1, true) ~= nil,
     true,
     'title and tabs'
   )
@@ -265,6 +265,33 @@ H.after_startup(function()
   H.press('<Tab>')
   H.eq(api.nvim_win_get_config(w.pane).hide, true, 'stats uses the whole width')
   H.eq(line_of(w.list, '^ startup') ~= nil and line_of(w.list, '^ slowest') ~= nil, true, 'then stats')
+  H.press('<Tab>')
+  H.eq(api.nvim_win_get_config(w.pane).hide, true, 'profile uses the whole width')
+  H.eq(line_of(w.list, '^ profile ') ~= nil and line_of(w.list, '^ ▾ cinch ') ~= nil, true, 'then profile')
+  H.eq(line_of(w.list, '^ ▾ plugin files at startup ') ~= nil, true, 'with the files sourced at startup')
+  H.eq(line_of(w.list, '^   ▾ .*alpha%.nvim  later') ~= nil, true, 'a later plugin under later')
+  H.eq(line_of(w.list, '^       plugin/alpha%.lua ') ~= nil, true, 'holding the files it sourced')
+  H.press('<C-s>')
+  H.eq(line_of(w.list, ' by time') ~= nil, true, '<C-s> sorts by time')
+  H.press('<C-s>')
+  H.eq(line_of(w.list, ' in order') ~= nil, true, 'and back to order')
+  vim.ui.input = function(_, cb)
+    cb('100000')
+  end
+  H.press('<C-f>')
+  vim.wait(20)
+  H.eq(line_of(w.list, 'alpha%.nvim') == nil and line_of(w.list, ' over ') ~= nil, true, '<C-f> hides what took less')
+  vim.ui.input = function(_, cb)
+    cb('')
+  end
+  H.press('<C-f>')
+  vim.wait(20)
+  H.eq(line_of(w.list, 'alpha%.nvim') ~= nil, true, 'empty shows it all again')
+  go(w.list, '^ ▾ later ')
+  H.press('<CR>')
+  H.eq(line_of(w.list, '^ ▸ later ') ~= nil and line_of(w.list, 'alpha%.nvim') == nil, true, '<CR> folds a node')
+  H.press('<CR>')
+  H.eq(line_of(w.list, 'alpha%.nvim') ~= nil, true, 'and opens it')
   H.press('<Tab>')
   H.eq(line_of(w.list, '^ %d%d:%d%d:%d%d ') ~= nil, true, 'then log')
   H.press('<Tab>')

@@ -28,7 +28,7 @@ M.names = {
   PackOp = true, -- { op, names, ok, ms, err? }         after it returns
   Build = true, -- { plugin, ok, ms, err?, output? }
   BuildOutput = true, -- { plugin, lines }               new output from a running shell build
-  Phase = true, -- { name, ms }                         a startup step finished
+  Phase = true, -- { name, ms, start }                  a startup step finished; start is its hrtime()
   Later = true, -- {}                                   the later queue is drained
   Done = true, -- {}                                    setup() is done: specs read, now plugins loaded;
   --                                                    with plugins missing, after their install on UIEnter
