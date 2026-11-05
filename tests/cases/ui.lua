@@ -111,15 +111,15 @@ H.after_startup(function()
     end
     return res
   end
-  local alpha_at = line_of(w.list, ' alpha%.nvim ')
+  local alpha_at = assert(line_of(w.list, ' alpha%.nvim '))
   local alpha_row = lines(w.list)[alpha_at]
   H.eq(alpha_row:find('● alpha.nvim (', 1, true) ~= nil, true, 'the lit light left of the name, then its load time')
   H.eq(alpha_row:find(icons.later .. ' later', 1, true) ~= nil, true, 'later: its icon and name')
   H.eq(groups(alpha_at).CinchKindLater, true, 'on a chip of the later color')
-  local delta_at = line_of(w.list, ' delta%.nvim ')
+  local delta_at = assert(line_of(w.list, ' delta%.nvim '))
   H.eq(lines(w.list)[delta_at]:find(icons.cmd .. ' cmd .* DeltaGo') ~= nil, true, 'a trigger: its chip, then its value')
   H.eq(groups(delta_at).CinchKindCmd, true, 'in the command color')
-  local gamma_at = line_of(w.list, ' gamma ')
+  local gamma_at = assert(line_of(w.list, ' gamma '))
   H.eq(
     lines(w.list)[gamma_at]:find(icons.dep .. ' dep .* delta%.nvim') ~= nil,
     true,
