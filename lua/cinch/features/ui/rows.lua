@@ -226,9 +226,8 @@ local function add_row(c, p, r)
     { { p.name, p.state == 'disabled' and 'CinchMuted' or p.dep_only and 'CinchDepName' or 'CinchName' } },
   }
   if r.ms then
-    local filled, empty = canvas.bar(r.ms, r.slowest, 6)
     items[#items + 1] = { { '(' .. canvas.ms(r.ms) .. ')', 'CinchMuted' } }
-    items[#items + 1] = { { filled, 'CinchBar' }, { empty, 'CinchBarEmpty' } }
+    items[#items + 1] = canvas.pill(r.ms, r.slowest, 6)
   end
   vim.list_extend(items, load_items(p, r.needed_by))
   if r.up then

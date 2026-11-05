@@ -80,7 +80,6 @@ local function install_header(c, install)
     )
   c:add({ { ' ' .. msg, 'CinchTitle' } })
   c:add(vim.list_extend({ { ' ' } }, canvas.pill(install.done, install.total, c.width - 3)))
-  c:blank()
 end
 
 -- Each install status: its mark (nil: the spinner), its color, the message.

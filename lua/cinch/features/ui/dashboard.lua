@@ -203,14 +203,13 @@ local function draw_slowest(c, stats)
   local why_w = math.max(8, free - bar_w)
   for i = 1, math.min(8, #list) do
     local r = list[i]
-    local filled, empty = canvas.bar(r.ms, list[1].ms, bar_w)
-    c:add({
-      { '   ' .. fit(r.name, name_w) .. ' ', 'CinchName' },
-      { filled, 'CinchBar' },
-      { empty, 'CinchBarEmpty' },
+    local line = { { '   ' .. fit(r.name, name_w) .. ' ', 'CinchName' } }
+    vim.list_extend(line, canvas.pill(r.ms, list[1].ms, bar_w))
+    vim.list_extend(line, {
       { right(canvas.ms(r.ms), 9) .. '  ', 'CinchMuted' },
       { fit(('%s · config %s'):format(r.reason, canvas.ms(r.config)), why_w), 'CinchMuted' },
     })
+    c:add(line)
   end
 end
 

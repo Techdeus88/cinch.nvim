@@ -18,8 +18,6 @@ M.highlights = {
   CinchWarn = 'DiagnosticWarn',
   CinchActive = 'DiagnosticInfo',
   CinchUpdate = 'DiagnosticWarn',
-  CinchBar = 'DiagnosticInfo',
-  CinchBarEmpty = 'NonText',
   CinchPillFill = 'DiagnosticOk',
   CinchPillTrack = 'NonText',
   CinchRule = 'FloatBorder',
@@ -318,17 +316,6 @@ end
 function M.right(s, w)
   local n = M.cells(s)
   return n >= w and M.fit(s, w) or (' '):rep(w - n) .. s
-end
-
---- A horizontal bar of `cells`, filled for value/max: returns the filled and empty parts.
----@param value number
----@param max number
----@param cells integer
----@return string filled, string empty
-function M.bar(value, max, cells)
-  local n = max > 0 and math.floor(value / max * cells + 0.5) or 0
-  n = math.max(value > 0 and 1 or 0, math.min(cells, n))
-  return ('▇'):rep(n), ('▁'):rep(cells - n)
 end
 
 local spark_chars = { '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█' }
