@@ -171,6 +171,7 @@ An error in one of these functions is reported with the file and line where you 
 | `:Cinch` | Open the window |
 | `:Cinch open [plugins\|triggers\|stats\|log]` | Open it on a view |
 | `:Cinch load {names}` | Load plugins now |
+| `:Cinch install [names]` | Install plugins your specs list that aren't on disk: a failed install, or one deleted this session. They then load as their specs say |
 | `:Cinch build {names}` | Run their builds again |
 | `:Cinch check [names]` | Check for updates in the background |
 | `:Cinch update [names]` | Update with `vim.pack`'s review tab. `:Cinch update!` applies without it |
@@ -196,6 +197,7 @@ The **Plugins** view is two panes. The list on the left groups plugins into work
 | `<CR>` | Fold or open the section, or the Profile entry, under the cursor |
 | `/` | Filter plugins by name, Profile entries by name or path, or the log by text. An empty filter clears it |
 | `l` | Load the plugin under the cursor |
+| `i` | Install it, or the ones selected, when not on disk |
 | `b` | Run its build |
 | `u` | Apply its pending update |
 | `U` | Apply every pending update |
@@ -299,6 +301,7 @@ local cinch = require('cinch')
 cinch.setup(opts)
 cinch.add(specs, { confirm = false })
 cinch.load(names, reason)
+cinch.install(names, { confirm = false }) -- what your specs list that isn't on disk; all of it without names
 cinch.build(names)
 cinch.get(name)           -- one plugin record, or all of them
 cinch.update(names, opts) -- vim.pack.update through cinch

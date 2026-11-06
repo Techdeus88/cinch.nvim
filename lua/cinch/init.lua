@@ -439,6 +439,39 @@ function M.load(names, reason)
   end
 end
 
+--- Install plugins your specs list that are not on disk: those whose install failed,
+--- or that you deleted this session. All of them, or those named. Each then loads as
+--- its spec says, the way it would have at startup.
+---@param names? string|string[]
+---@param opts? { confirm?: boolean }
+---@return cinch.Plugin[] missing what it tried to install
+function M.install(names, opts)
+  local missing = vim.tbl_filter(function(p)
+    return not p.self and p.state ~= 'disabled' and not vim.uv.fs_stat(vim.fs.joinpath(pack.dir, p.name))
+  end, names and resolve(names) or state.list)
+  if #missing == 0 then
+    events.report(names and 'already installed' or 'nothing to install: every plugin is on disk')
+    return {}
+  end
+  if deferred then
+    events.report('plugins install once the UI is up; these are in that batch')
+    return {}
+  end
+  local confirm = opts and opts.confirm
+  if confirm == nil then
+    confirm = (M.opts or defaults).confirm
+  end
+  for _, p in ipairs(missing) do
+    -- A failed install goes back through the disk check, like a new plugin.
+    if p.state == 'failed' then
+      p.err = nil
+      state.set(p, 'registered')
+    end
+  end
+  activate(missing, confirm)
+  return missing
+end
+
 --- Run plugins' builds again.
 ---@param names string|string[]
 function M.build(names)

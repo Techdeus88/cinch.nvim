@@ -28,6 +28,22 @@ M.commands = {
     end,
     complete = names,
   },
+  -- Plugins your specs list that are not on disk: all of them, or those named.
+  install = {
+    run = function(args)
+      cinch.install(#args > 0 and args or nil)
+    end,
+    complete = function()
+      return vim.tbl_map(
+        function(p)
+          return p.name
+        end,
+        vim.tbl_filter(function(p)
+          return not p.path
+        end, state.list)
+      )
+    end,
+  },
   build = {
     run = function(args)
       cinch.build(args)

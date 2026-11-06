@@ -30,7 +30,7 @@ local M = {}
 
 --- The keys of each view, for the frame's bottom border.
 M.hints = {
-  plugins = ' / filter  l load  b build  u update  d delete  S-CR select  ? keys  q close ',
+  plugins = ' / filter  l load  i install  b build  u update  d delete  S-CR select  ? keys  q close ',
   triggers = ' <CR> fold  l load what waits  <C-d> <C-u> details  <Tab> next view  ? keys  q close ',
   stats = ' <Tab> next view  = size  ? keys  q close ',
   profile = ' <CR> fold  <C-s> sort  <C-f> hide under ms  / filter  <Tab> next view  ? keys  q close ',
@@ -266,6 +266,13 @@ function M.make(w)
         end)()
       end,
       'load the plugin now, or the ones selected; in Triggers, what waits on the trigger',
+    },
+    {
+      { 'i' },
+      act(function(names)
+        require('cinch').install(in_specs(names))
+      end),
+      'install the plugin, or the ones selected, when not on disk: a failed install, or one you deleted',
     },
     {
       { 'b' },
