@@ -526,8 +526,9 @@ local function functions(owner_of)
 end
 
 --- This session as a tree: each span inside the one it ran within, then the top level
---- in four groups: cinch's own startup, the plugin/ files Neovim sourced at startup,
---- the `later` queue, and everything after.
+--- in groups: cinch's own startup, the `now` plugins and functions, the plugin/ files
+--- Neovim sourced at startup, the `later` queue, everything after, builds and vim.pack
+--- runs, and with profile = 'functions' every Lua function.
 ---@return cinch.stats.Node[]
 function M.profile()
   local now = M.now()
@@ -582,9 +583,12 @@ function M.profile()
   end
 
   local enter = M.marks.uienter or M.marks.vimenter
-  local cinch, startup_files, later, after = {}, {}, {}, {}
+  local cinch, now_, startup_files, later, after = {}, {}, {}, {}, {}
   for _, n in ipairs(roots) do
-    if n.kind == 'phase' and not (M.marks.done and n.start > M.marks.done) then
+    if n.kind == 'phase' and n.name == 'now' then
+      -- One of the four ways a plugin loads, like `later`: a group of its own.
+      now_[#now_ + 1] = n
+    elseif n.kind == 'phase' and not (M.marks.done and n.start > M.marks.done) then
       cinch[#cinch + 1] = n
     elseif n.kind == 'file' and not (M.marks.vimenter and n.start > M.marks.vimenter) then
       startup_files[#startup_files + 1] = n
@@ -601,6 +605,15 @@ function M.profile()
   local out = {}
   if #cinch > 0 then
     out[#out + 1] = bundle('group', 'cinch', cinch)
+  end
+  if #now_ > 0 then
+    -- The phase's own time, which counts cinch's work between the plugins too.
+    local g = { kind = 'group', name = 'now', label = 'now', start = now_[1].start, ms = 0, children = {} }
+    for _, phase in ipairs(now_) do
+      g.ms = g.ms + phase.ms
+      vim.list_extend(g.children, phase.children)
+    end
+    out[#out + 1] = g
   end
   if #startup_files > 0 then
     out[#out + 1] = bundle('group', 'plugin files at startup', by_owner(startup_files, owner_of))
