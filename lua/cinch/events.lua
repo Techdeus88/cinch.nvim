@@ -35,6 +35,8 @@ M.names = {
   Done = true, -- {}                                    setup() is done: specs read, now plugins loaded;
   --                                                    with plugins missing, after their install on UIEnter
   Run = true, -- { when, where, ok, ms, err? }         one of your cinch.now/later functions ran
+  Time = true, -- { name, start, ms, ok, err? }         a function wrapped with cinch.time() returned;
+  --                                                    start is its hrtime()
   Installing = true, -- { names }                       a batch of installs starts
   Installed = true, -- { names, failed, ms }            and ended; failed lists names not on disk
   Report = true, -- { msg, level }                      cinch has something to tell the user

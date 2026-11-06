@@ -164,6 +164,17 @@ cinch.now_if_args(function() vim.cmd.colorscheme('tokyonight') end)
 
 An error in one of these functions is reported with the file and line where you defined it, and the others still run. Each one that runs is in the log.
 
+### Timing your own functions
+
+`cinch.time(name, fn)` returns `fn` wrapped so every call is timed. Arguments, results and errors pass through unchanged, so it can replace the function it wraps, a method included:
+
+```lua
+local builtin = require('telescope.builtin')
+builtin.find_files = cinch.time('find_files', builtin.find_files)
+```
+
+The Profile view lists each name under **timed**: how long all its calls took together, how many there were, the slowest one, and whether any raised. Each call also fires the `Time` event with its `start` and `ms`, for timings of your own. Calls made before `setup()`, or with the stats feature off, are not timed. The wrapper only times until `fn` returns, so work it hands to a callback or a job is not counted.
+
 ## Commands
 
 | Command | Does |
@@ -189,7 +200,7 @@ The **Plugins** view is two panes. The list on the left groups plugins into work
 
 **Triggers** shows what makes each plugin load, in two panes like Plugins. The list has a row per trigger, grouped into events, filetypes, commands, keys and your own, then the schedule: `now`, `later` and dependencies. A row shows a light (waiting to fire, fired, or never fired because its plugins loaded another way), the trigger, a dot per plugin behind it, and what happened. The pane follows the cursor: when that trigger fires in plain words, the `:help` topic for it, its plugins with their load times and whatever else would load them, and for `now` what it cost your startup. `l` loads every plugin still waiting on the trigger under the cursor.
 
-**Stats** shows a startup timeline split into Neovim's own time, each of cinch's phases and `later`, then counts, the slowest plugins, and startup times from past sessions. **Profile** opens with the moments of startup in the order they happened (VimEnter, UIEnter, CinchStart, CinchDone and when `later` is done), each with the time since the one before, then shows where this session's time went, as a tree, one group for each way plugins load: cinch's own phases with the `init` hooks, then `now` with its plugins and your `cinch.now` functions, every plugin with its dependencies and the steps of its load (`packadd`, `opts`, `config`, `after`), each step with the files it sourced, the `plugin/` files Neovim sourced at startup grouped by plugin, `runtime` and `config`, then the `later` queue with your `cinch.later` functions, and anything loaded after startup. Builds and vim.pack runs (install, update, get) follow in a group of their own, since they run beside everything else. Files are timed with `SourcePre` and `SourcePost`, during startup and later only while a plugin loads. With `stats = { profile = 'functions' }` a last group times every Lua function that ran in those same windows, by plugin: its own time, its time with what it called, and how many times it ran, the slowest 40 per plugin. It hooks every call, so startup takes about twice as long while it is on. **Log** shows every step and message, oldest first.
+**Stats** shows a startup timeline split into Neovim's own time, each of cinch's phases and `later`, then counts, the slowest plugins, and startup times from past sessions. **Profile** opens with the moments of startup in the order they happened (VimEnter, UIEnter, CinchStart, CinchDone and when `later` is done), each with the time since the one before, then shows where this session's time went, as a tree, one group for each way plugins load: cinch's own phases with the `init` hooks, then `now` with its plugins and your `cinch.now` functions, every plugin with its dependencies and the steps of its load (`packadd`, `opts`, `config`, `after`), each step with the files it sourced, the `plugin/` files Neovim sourced at startup grouped by plugin, `runtime` and `config`, then the `later` queue with your `cinch.later` functions, and anything loaded after startup. Functions you wrapped with `cinch.time()` follow under **timed**, then builds and vim.pack runs (install, update, get) in a group of their own, since they run beside everything else. Files are timed with `SourcePre` and `SourcePost`, during startup and later only while a plugin loads. With `stats = { profile = 'functions' }` a last group times every Lua function that ran in those same windows, by plugin: its own time, its time with what it called, and how many times it ran, the slowest 40 per plugin. It hooks every call, so startup takes about twice as long while it is on. **Log** shows every step and message, oldest first.
 
 | Key | Does |
 | --- | --- |
@@ -263,6 +274,7 @@ end)
 | `Phase` | `name`, `ms`, `start`: a startup step finished; `start` is its `vim.uv.hrtime()` |
 | `Later` | The `later` queue is empty |
 | `Run` | `when`, `where`, `ok`, `ms`, `err`: one of your `now`/`later` functions ran |
+| `Time` | `name`, `start`, `ms`, `ok`, `err`: a function wrapped with `cinch.time()` returned; `start` is its `vim.uv.hrtime()` |
 | `Installing`, `Installed` | `names`, and after the batch `failed` and `ms`: a batch of installs starts and ends |
 | `Report` | `msg`, `level`: something for you to read |
 
@@ -310,6 +322,7 @@ cinch.clean()             -- delete every plugin on disk that no spec names
 cinch.now(fn)
 cinch.later(fn)
 cinch.now_if_args(fn)
+cinch.time(name, fn)      -- fn, wrapped so each call is timed for the Profile view
 cinch.on(event, fn, { priority = 50, once = false })
 cinch.trigger(name, def)
 ```

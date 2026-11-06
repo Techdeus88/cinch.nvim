@@ -167,6 +167,18 @@ M.disk = { install = 0, update = 0, delete = 0 }
 ---@field failed? boolean it failed
 ---@field async? boolean a build or vim.pack op: runs beside everything else, so it holds nothing
 
+---@class cinch.stats.Timed
+---@field first number ms since start of its first call
+---@field calls integer
+---@field ms number all its calls together
+---@field max number its slowest call
+---@field failed integer calls that raised
+
+--- Functions wrapped with cinch.time(), by name: totals, not one span a call, so one
+--- that runs on every keystroke cannot crowd out the rest.
+---@type table<string, cinch.stats.Timed>
+M.timed = {}
+
 --- Everything the Profile view shows, in the order it began.
 ---@type cinch.stats.Span[]
 M.spans = {}
@@ -242,7 +254,7 @@ end
 -- Profile ------------------------------------------------------------------------
 
 ---@class cinch.stats.Node
----@field kind 'group'|'owner'|'phase'|'plugin'|'file'|'step'|'run'|'build'|'op'|'func'
+---@field kind 'group'|'owner'|'phase'|'plugin'|'file'|'step'|'run'|'build'|'op'|'func'|'timed'
 ---@field name string what it is: a phase, plugin, owner or group name, or a file's path
 ---@field label string how it reads: a file relative to its owner
 ---@field start number ms since start
@@ -251,6 +263,7 @@ end
 ---@field failed? boolean
 ---@field calls? integer for a function: how many times it ran
 ---@field total? number for a function: ms with what it called; `ms` is its own time
+---@field max? number for a timed function: its slowest call; `ms` is all of them
 ---@field stop? number ms since start, only while the tree is built
 ---@field children cinch.stats.Node[]
 
@@ -634,6 +647,26 @@ function M.profile()
     end)
     out[#out + 1] = bundle('group', 'after startup', plugins)
   end
+  local timed = {}
+  for name, r in pairs(M.timed) do
+    timed[#timed + 1] = {
+      kind = 'timed',
+      name = name,
+      label = name,
+      start = r.first,
+      ms = r.ms,
+      calls = r.calls,
+      max = r.max,
+      failed = r.failed > 0 or nil,
+      children = {},
+    }
+  end
+  if #timed > 0 then
+    table.sort(timed, function(a, b)
+      return a.start < b.start
+    end)
+    out[#out + 1] = bundle('group', 'timed', timed)
+  end
   if #disk > 0 then
     out[#out + 1] = bundle('group', 'builds and vim.pack', disk)
   end
@@ -677,6 +710,15 @@ local function record()
   end)
   events.on('Run', function(d)
     ended({ kind = 'run', name = d.where, reason = d.when, failed = not d.ok or nil }, d.ms)
+  end)
+  events.on('Time', function(d)
+    local r = M.timed[d.name]
+    if not r then
+      r = { first = (d.start - start) / 1e6, calls = 0, ms = 0, max = 0, failed = 0 }
+      M.timed[d.name] = r
+    end
+    r.calls, r.ms, r.max = r.calls + 1, r.ms + d.ms, math.max(r.max, d.ms)
+    r.failed = r.failed + (d.ok and 0 or 1)
   end)
   events.on('Build', function(d)
     ended({ kind = 'build', name = 'build ' .. d.plugin.name, failed = not d.ok or nil, async = true }, d.ms)

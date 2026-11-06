@@ -24,10 +24,11 @@ local look = {
   build = 'CinchName',
   op = 'CinchName',
   func = 'CinchName',
+  timed = 'CinchName',
 }
 
 -- Groups whose time is not the session's startup: left out of the bars' scale.
-local unscaled = { ['builds and vim.pack'] = true }
+local unscaled = { ['builds and vim.pack'] = true, timed = true }
 
 --- The kind of thing that loaded a plugin, for its icon: now, later, event, ft, cmd, keys, dep.
 ---@param reason? string
@@ -75,6 +76,14 @@ end
 ---@return string
 local function func_note(n)
   return ('  %d call%s · total %s'):format(n.calls, n.calls == 1 and '' or 's', canvas.ms(n.total))
+end
+
+--- What follows a cinch.time() name: how often it ran, its slowest call, and failures.
+---@param n cinch.stats.Node
+---@return string
+local function timed_note(n)
+  local s = ('  %d call%s · slowest %s'):format(n.calls, n.calls == 1 and '' or 's', canvas.ms(n.max))
+  return n.failed and s .. ' · failed' or s
 end
 
 --- What follows a plugin's name: what loaded it and its own packadd and config time.
@@ -130,6 +139,7 @@ local function draw(d, n, depth, parent)
   local label = n.label
   local note = n.kind == 'plugin' and plugin_note(n, d.stats)
     or n.kind == 'func' and func_note(n)
+    or n.kind == 'timed' and timed_note(n)
     or n.failed and '  failed'
     or ''
   local w = math.max(4, d.label_w - used)
@@ -213,7 +223,8 @@ function M.list(width, ctx)
   if min > 0 then
     notes[#notes + 1] = 'over ' .. canvas.ms(min)
   end
-  c:add({ { ' profile', 'CinchSection' }, { '  ' .. table.concat(notes, ' · '), 'CinchMuted' } })
+  -- How the tree is shown; the view's name is already on the frame.
+  c:add({ { ' ' .. table.concat(notes, ' · '), 'CinchMuted' } })
   if ctx.filter then
     c:add({ { ' / ' .. ctx.filter, 'CinchKey' } })
   end

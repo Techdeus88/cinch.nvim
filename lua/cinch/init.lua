@@ -18,6 +18,31 @@ M.now = handler.now
 M.later = handler.later
 M.now_if_args = handler.now_if_args
 
+--- `fn`, wrapped so each call is timed: the Profile view totals it under `name`, and
+--- the Time event carries each call. Arguments, results and errors pass through as
+--- they are. With nothing listening, the wrapper only calls `fn`.
+---@generic F: function
+---@param name string
+---@param fn F
+---@return F
+function M.time(name, fn)
+  vim.validate('name', name, 'string')
+  vim.validate('fn', fn, 'callable')
+  return function(...)
+    if not events.has('Time') then
+      return fn(...)
+    end
+    local t = hrtime()
+    local res = vim.F.pack_len(pcall(fn, ...))
+    local ok = res[1]
+    events.emit('Time', { name = name, start = t, ms = (hrtime() - t) / 1e6, ok = ok, err = not ok and res[2] or nil })
+    if not ok then
+      error(res[2], 0)
+    end
+    return unpack(res, 2, res.n)
+  end
+end
+
 ---@class cinch.Opts
 ---@field spec? (string|cinch.Spec|cinch.Spec[])[] module paths, directories or specs; default { 'plugins' }
 ---@field confirm? boolean ask before installing, vim.pack's prompt; default true
