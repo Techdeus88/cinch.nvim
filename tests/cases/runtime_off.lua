@@ -27,6 +27,24 @@ H.after_startup(function()
   H.eq(vim.fn.exists(':Explore'), 0, 'netrw is off')
   H.eq(require('cinch').runtime_off, { 'gzip', 'netrwPlugin' }, 'what is off')
   H.eq(H.noted('no runtime plugin `nosuch`; there are .*gzip'), true, 'a name that is not there says what is')
+  local runtime
+  for _, g in ipairs(require('cinch.features.stats').profile()) do
+    for _, o in ipairs(g.children) do
+      if g.name == 'plugin files at startup' and o.name == 'runtime' then
+        runtime = o
+      end
+    end
+  end
+  local files = runtime
+      and table.concat(
+        vim.tbl_map(function(f)
+          return f.label
+        end, runtime.children),
+        ' '
+      )
+    or ''
+  H.eq(files:find('plugin/matchit.vim', 1, true) ~= nil, true, 'the rest are in Profile, under runtime')
+  H.eq(files:find('plugin/gzip.vim', 1, true), nil, 'and the ones you name are not')
   vim.cmd('runtime plugin/gzip.vim')
   H.eq(vim.g.loaded_gzip ~= nil, true, 'after startup, :runtime works as usual')
 

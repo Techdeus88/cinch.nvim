@@ -21,6 +21,8 @@ M.names = {
   LoadWait = true, -- { plugin, reason, build }          waits for a build to end: its own or a dep's
   LoadPre = true, -- { plugin, reason }                 set cancel = true and cancel_reason to stop it
   Load = true, -- { plugin, reason, ms }                ms = { packadd, config }
+  Step = true, -- { plugin, name, start, ms, ok }       one part of a load: init, packadd, opts, config, after;
+  --                                                    start is its hrtime()
   LoadError = true, -- { plugin, reason, err }
   PackPre = true, -- { kind, name, plugin?, spec, path } from PackChangedPre, after state is updated
   Pack = true, -- { kind, name, plugin?, spec, path }   from PackChanged, after state is updated

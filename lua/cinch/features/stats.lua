@@ -14,7 +14,9 @@ local M = {}
 ---@class cinch.stats.Opts
 ---@field persist? boolean keep one summary per session in stdpath('state')/cinch/stats.json. Default true
 ---@field history? integer sessions kept. Default 50
----@field profile? boolean time every phase, plugin load and sourced file for the Profile view. Default true
+---@field profile? boolean|'functions' time every phase, plugin load, step and sourced file for the Profile
+--- view. 'functions' also times every Lua function that runs during startup and plugin loads,
+--- which makes those slower. Default true
 
 ---@type cinch.stats.Opts
 M.opts = { persist = true, history = 50, profile = true }
@@ -157,12 +159,13 @@ M.ops = {}
 M.disk = { install = 0, update = 0, delete = 0 }
 
 ---@class cinch.stats.Span
----@field kind 'phase'|'plugin'|'file'
----@field name string the phase, the plugin, or the file's full path
+---@field kind 'phase'|'plugin'|'file'|'step'|'run'|'build'|'op'
+---@field name string the phase, plugin, step, file's full path, function's place or op
 ---@field start number ms since start
 ---@field stop? number ms since start; nil while it runs
----@field reason? string what loaded the plugin
----@field failed? boolean the plugin failed to load
+---@field reason? string what loaded the plugin; for a step, its plugin; for a run, now or later
+---@field failed? boolean it failed
+---@field async? boolean a build or vim.pack op: runs beside everything else, so it holds nothing
 
 --- Everything the Profile view shows, in the order it began.
 ---@type cinch.stats.Span[]
@@ -239,13 +242,16 @@ end
 -- Profile ------------------------------------------------------------------------
 
 ---@class cinch.stats.Node
----@field kind 'group'|'owner'|'phase'|'plugin'|'file'
+---@field kind 'group'|'owner'|'phase'|'plugin'|'file'|'step'|'run'|'build'|'op'|'func'
 ---@field name string what it is: a phase, plugin, owner or group name, or a file's path
 ---@field label string how it reads: a file relative to its owner
 ---@field start number ms since start
 ---@field ms number
 ---@field reason? string what loaded the plugin
 ---@field failed? boolean
+---@field calls? integer for a function: how many times it ran
+---@field total? number for a function: ms with what it called; `ms` is its own time
+---@field stop? number ms since start, only while the tree is built
 ---@field children cinch.stats.Node[]
 
 --- Where a sourced file comes from, for grouping: a plugin by name, `runtime`, `config`,
@@ -277,8 +283,8 @@ local function owners()
         return r.name, path:sub(#r.dir + 1)
       end
     end
-    -- Some other directory on the runtimepath: named after the one above plugin/.
-    for _, pat in ipairs({ '^(.*)/(after/plugin/.*)$', '^(.*)/(plugin/.*)$' }) do
+    -- Some other directory on the runtimepath: named after the one above plugin/ or lua/.
+    for _, pat in ipairs({ '^(.*)/(after/plugin/.*)$', '^(.*)/(plugin/.*)$', '^(.*)/(lua/.*)$' }) do
       local dir, rest = path:match(pat)
       if dir then
         return vim.fs.basename(dir), rest
@@ -320,6 +326,205 @@ local function by_owner(files, owner_of)
   end, order)
 end
 
+-- Functions ----------------------------------------------------------------------
+
+---@class cinch.stats.Func
+---@field source string the file, or what load() was given
+---@field line integer where it is defined
+---@field name? string what its first caller called it
+---@field first number ms since start it first ran
+---@field calls integer
+---@field self integer ns in it, less what it called
+---@field total integer ns in it, with what it called; recursion counted once
+
+--- Every Lua function that ran while the profiler was on, by function. false: not
+--- timed (a C function).
+---@type table<function, cinch.stats.Func|false>
+M.funcs = {}
+-- Shown per owner, the slowest first; the rest are summed into one entry.
+local FUNCS_SHOWN = 40
+
+local hrtime, getinfo = uv.hrtime, debug.getinfo
+
+---@class cinch.stats.Frame
+---@field f function
+---@field r cinch.stats.Func
+---@field t integer hrtime it began
+---@field child integer ns spent in what it called
+
+local frames = {} ---@type cinch.stats.Frame[]
+local depth = {} ---@type table<function, integer> times on the stack, for recursion
+
+--- Pop the frames above `i`, and `i`, as ended at `t`.
+---@param i integer
+---@param t integer
+local function close(i, t)
+  for j = #frames, i, -1 do
+    local fr = frames[j]
+    frames[j] = nil
+    local dt = t - fr.t
+    fr.r.self = fr.r.self + dt - fr.child
+    local d = depth[fr.f] - 1
+    depth[fr.f] = d
+    if d == 0 then
+      fr.r.total = fr.r.total + dt
+    end
+    local parent = frames[j - 1]
+    if parent then
+      parent.child = parent.child + dt
+    end
+  end
+end
+
+--- The call and return hook. LuaJIT fires `call` but no `return` for a tail call, so a
+--- call whose caller is a timed function lower on the stack first ends what sits above it.
+---@param e 'call'|'return'
+local function on_call(e)
+  local t = hrtime()
+  local info = getinfo(2, 'f')
+  local f = info and info.func
+  if not f then
+    return
+  end
+  local r = M.funcs[f]
+  if e ~= 'call' then
+    if r then
+      for i = #frames, 1, -1 do
+        if frames[i].f == f then
+          return close(i, t)
+        end
+      end
+    end
+    return
+  end
+  if r == false then
+    return
+  end
+  if not r then
+    local i = getinfo(2, 'nS')
+    if i.what == 'C' then
+      M.funcs[f] = false
+      return
+    end
+    r = {
+      source = i.source,
+      line = i.linedefined,
+      name = i.name,
+      first = (t - start) / 1e6,
+      calls = 0,
+      self = 0,
+      total = 0,
+    }
+    M.funcs[f] = r
+  end
+  local up = getinfo(3, 'f')
+  local caller = up and up.func
+  local top = frames[#frames]
+  if top and caller and top.f ~= caller and M.funcs[caller] then
+    for i = #frames - 1, 1, -1 do
+      if frames[i].f == caller then
+        close(i + 1, t)
+        break
+      end
+    end
+  end
+  r.calls = r.calls + 1
+  depth[f] = (depth[f] or 0) + 1
+  -- After the hook's own work, so that is not counted as the function's.
+  frames[#frames + 1] = { f = f, r = r, t = hrtime(), child = 0 }
+end
+
+local hooked = false
+local window ---@type fun() turns the function hook on or off for what is happening now
+
+---@param on boolean
+local function hook(on)
+  if on == hooked then
+    return
+  end
+  hooked = on
+  if on then
+    debug.sethook(on_call, 'cr')
+  else
+    debug.sethook()
+    close(1, hrtime())
+  end
+end
+
+--- The functions as owner nodes, each holding its slowest functions by their own time.
+---@param owner_of fun(path: string): string, string
+---@return cinch.stats.Node[]
+local function functions(owner_of)
+  local of, order = {}, {}
+  local at = {} ---@type table<string, cinch.stats.Node> closures made at one place are one entry
+  for _, r in pairs(M.funcs) do
+    local key = r and ('%s:%d'):format(r.source, r.line) or ''
+    local same = at[key]
+    if not r then
+      -- A C function: never timed.
+    elseif same then
+      same.ms, same.total, same.calls = same.ms + r.self / 1e6, same.total + r.total / 1e6, same.calls + r.calls
+      same.start = math.min(same.start, r.first)
+    elseif r.calls > 0 then
+      local path = r.source:match('^@(.*)') or r.source
+      local owner, rel = 'other', r.source
+      if path:find('^/') or path:find('^%a:[/\\]') then
+        owner, rel = owner_of(vim.fs.normalize(path))
+      elseif path:find('^vim[/.]') then
+        -- Neovim's own modules, built into the binary: vim/_core/shared and the like.
+        owner, rel = 'runtime', path
+      end
+      if not of[owner] then
+        of[owner] = {}
+        order[#order + 1] = owner
+      end
+      at[key] = {
+        kind = 'func',
+        name = key,
+        label = ('%s  %s:%d'):format(r.line == 0 and 'main chunk' or r.name or '?', rel, r.line),
+        start = r.first,
+        ms = r.self / 1e6,
+        total = r.total / 1e6,
+        calls = r.calls,
+        children = {},
+      }
+      table.insert(of[owner], at[key])
+    end
+  end
+  local out = {}
+  for _, owner in ipairs(order) do
+    local list = of[owner]
+    table.sort(list, function(a, b)
+      return a.ms > b.ms
+    end)
+    if #list > FUNCS_SHOWN then
+      local dropped = #list - FUNCS_SHOWN
+      local rest =
+        { kind = 'func', name = owner .. ' rest', start = math.huge, ms = 0, total = 0, calls = 0, children = {} }
+      for i = FUNCS_SHOWN + 1, #list do
+        local n = list[i]
+        rest.ms, rest.total, rest.calls = rest.ms + n.ms, rest.total + n.total, rest.calls + n.calls
+        rest.start = math.min(rest.start, n.start)
+        list[i] = nil
+      end
+      rest.label = ('%d more'):format(dropped)
+      table.sort(list, function(a, b)
+        return a.start < b.start
+      end)
+      list[#list + 1] = rest
+    else
+      table.sort(list, function(a, b)
+        return a.start < b.start
+      end)
+    end
+    out[#out + 1] = bundle('owner', owner, list)
+  end
+  table.sort(out, function(a, b)
+    return a.start < b.start
+  end)
+  return out
+end
+
 --- This session as a tree: each span inside the one it ran within, then the top level
 --- in four groups: cinch's own startup, the plugin/ files Neovim sourced at startup,
 --- the `later` queue, and everything after.
@@ -328,15 +533,20 @@ function M.profile()
   local now = M.now()
   local owner_of = owners()
   ---@type cinch.stats.Node[]
-  local nodes = {}
+  local nodes, disk = {}, {}
   for _, s in ipairs(M.spans) do
     local stop = s.stop or now
     local label = s.name
     if s.kind == 'file' then
       local _, rel = owner_of(s.name)
       label = rel
+    elseif s.kind == 'run' then
+      label = s.reason .. ' ' .. s.name
+    elseif s.kind == 'step' and s.name == 'init' then
+      -- Under the init phase, not its plugin: say whose it is.
+      label = 'init ' .. s.reason
     end
-    nodes[#nodes + 1] = {
+    table.insert(s.async and disk or nodes, {
       kind = s.kind,
       name = s.name,
       label = label,
@@ -346,7 +556,7 @@ function M.profile()
       reason = s.reason,
       failed = s.failed,
       children = {},
-    }
+    })
   end
   -- Earlier first; of two that start together, the longer holds the other.
   table.sort(nodes, function(a, b)
@@ -367,6 +577,9 @@ function M.profile()
   for _, n in ipairs(nodes) do
     n.stop = nil
   end
+  for _, n in ipairs(disk) do
+    n.stop = nil
+  end
 
   local enter = M.marks.uienter or M.marks.vimenter
   local cinch, startup_files, later, after = {}, {}, {}, {}
@@ -375,7 +588,11 @@ function M.profile()
       cinch[#cinch + 1] = n
     elseif n.kind == 'file' and not (M.marks.vimenter and n.start > M.marks.vimenter) then
       startup_files[#startup_files + 1] = n
-    elseif n.kind == 'plugin' and n.reason == 'later' and not (M.marks.later and n.start > M.marks.later) then
+    elseif
+      (n.kind == 'plugin' or n.kind == 'run')
+      and n.reason == 'later'
+      and not (M.marks.later and n.start > M.marks.later)
+    then
       later[#later + 1] = n
     else
       after[#after + 1] = n
@@ -404,6 +621,13 @@ function M.profile()
     end)
     out[#out + 1] = bundle('group', 'after startup', plugins)
   end
+  if #disk > 0 then
+    out[#out + 1] = bundle('group', 'builds and vim.pack', disk)
+  end
+  local funcs = functions(owner_of)
+  if #funcs > 0 then
+    out[#out + 1] = bundle('group', 'functions', funcs)
+  end
   return out
 end
 
@@ -426,8 +650,40 @@ local function record()
     keep({ kind = 'phase', name = d.name, start = d.start and (d.start - start) / 1e6 or stop - d.ms, stop = stop })
   end)
 
+  -- A finished piece of work, `ms` long, that ended just now.
+  ---@param span table a cinch.stats.Span but for its start and stop
+  ---@param ms number
+  local function ended(span, ms)
+    span.stop = M.now()
+    span.start = span.stop - ms
+    keep(span --[[@as cinch.stats.Span]])
+  end
+  events.on('Step', function(d)
+    local s = (d.start - start) / 1e6
+    keep({ kind = 'step', name = d.name, reason = d.plugin.name, start = s, stop = s + d.ms, failed = not d.ok or nil })
+  end)
+  events.on('Run', function(d)
+    ended({ kind = 'run', name = d.where, reason = d.when, failed = not d.ok or nil }, d.ms)
+  end)
+  events.on('Build', function(d)
+    ended({ kind = 'build', name = 'build ' .. d.plugin.name, failed = not d.ok or nil, async = true }, d.ms)
+  end)
+  events.on('PackOp', function(d)
+    local n = d.names and #d.names
+    local what = not n and 'all' or n == 1 and d.names[1] or ('%d plugins'):format(n)
+    ended({ kind = 'op', name = ('%s %s'):format(d.op, what), failed = not d.ok or nil, async = true }, d.ms)
+  end)
+
   local loading = {} ---@type table<cinch.Plugin, cinch.stats.Span>
   local busy = 0 -- plugins loading right now
+
+  -- Functions are timed when files are: during startup, then while a plugin loads.
+  local fns = M.opts.profile == 'functions'
+  function window()
+    hook(fns and not (M.marks.later and busy == 0))
+  end
+  window()
+  events.on('Later', window)
   events.on('State', function(d)
     local p = d.plugin
     if d.to == 'loading' and not p.self then
@@ -439,6 +695,7 @@ local function record()
       loading[p].stop, loading[p].failed = M.now(), d.to == 'failed' or nil
       loading[p], busy = nil, busy - 1
     end
+    window()
   end)
 
   -- Files sourced during startup, and later only while a plugin loads: an ftplugin a

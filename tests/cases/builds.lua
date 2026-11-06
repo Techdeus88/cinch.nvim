@@ -97,6 +97,13 @@ H.after_startup(function()
     return vim.uv.fs_stat(alpha.path .. '/built.txt') ~= nil and alpha.activity == nil
   end, 'the shell build')
   H.eq(vim.uv.fs_stat(alpha.path .. '/.git/cinch-build'), nil, 'a build that worked is unmarked')
+  local row
+  for _, g in ipairs(require('cinch.features.stats').profile()) do
+    for _, n in ipairs(g.name == 'builds and vim.pack' and g.children or {}) do
+      row = row or (n.name == 'build alpha.nvim' and n)
+    end
+  end
+  H.eq(row and row.kind, 'build', 'the build is in Profile, with builds and vim.pack')
 
   local builder = H.plugin('builder')
   H.eq({ vim.g.builder_saw, vim.g.builder_made }, { true, true }, 'a function build can require the plugin')

@@ -14,6 +14,17 @@ local M = {}
 -- Load sequence number, for the order plugins loaded in.
 local count = 0
 
+--- Announce one part of a load, begun at hrtime `t`, for the Profile view.
+---@param p cinch.Plugin
+---@param name 'init'|'packadd'|'opts'|'config'|'after'
+---@param t integer hrtime
+---@param ok boolean
+function M.step(p, name, t, ok)
+  if events.has('Step') then
+    events.emit('Step', { plugin = p, name = name, start = t, ms = (uv.hrtime() - t) / 1e6, ok = ok })
+  end
+end
+
 --- Call a spec hook in protected mode.
 ---@param p cinch.Plugin
 ---@param name 'init'|'opts'|'config'|'after'
@@ -23,7 +34,9 @@ function M.hook(p, name, ...)
   if type(fn) ~= 'function' then
     return true, nil
   end
+  local t = uv.hrtime()
   local ok, res = xpcall(fn, debug.traceback, p, ...)
+  M.step(p, name, t, ok)
   if not ok then
     res = ('%s: %s'):format(name, res)
   end
@@ -83,7 +96,8 @@ local function configure(p)
     return M.hook(p, 'config', opts or {})
   end
   if d.config == true or opts ~= nil then
-    return xpcall(function()
+    local t = uv.hrtime()
+    local ok, err = xpcall(function()
       local main = main_module(p)
       p.main_used = main
       local mod = require(main)
@@ -94,6 +108,8 @@ local function configure(p)
     end, function(e)
       return 'config: ' .. tostring(e)
     end)
+    M.step(p, 'config', t, ok)
+    return ok, err
   end
   return true
 end
@@ -289,6 +305,7 @@ function M.load(p, reason, done)
 
   local t0 = uv.hrtime()
   local ok, err = pcall(packadd, p)
+  M.step(p, 'packadd', t0, ok)
   local t1 = uv.hrtime()
   if ok then
     ok, err = configure(p)

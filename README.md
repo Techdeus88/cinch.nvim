@@ -128,7 +128,7 @@ require('cinch').setup({
 
   -- each feature's options, under its name
   messages = { level = vim.log.levels.INFO, progress = true, history = 1000 },
-  stats = { persist = true, history = 50, profile = true }, -- profile: time phases, loads and sourced files for the Profile view
+  stats = { persist = true, history = 50, profile = true }, -- profile: time phases, loads, their steps and sourced files for the Profile view; 'functions' also times every Lua function
   updates = { fresh = 300, every = 86400 }, -- seconds before opening the window checks again; a background check every `every` seconds (false: none)
   ui = {
     size = 0.75,                 -- share of the editor
@@ -188,7 +188,7 @@ The **Plugins** view is two panes. The list on the left groups plugins into work
 
 **Triggers** shows what makes each plugin load, in two panes like Plugins. The list has a row per trigger, grouped into events, filetypes, commands, keys and your own, then the schedule: `now`, `later` and dependencies. A row shows a light (waiting to fire, fired, or never fired because its plugins loaded another way), the trigger, a dot per plugin behind it, and what happened. The pane follows the cursor: when that trigger fires in plain words, the `:help` topic for it, its plugins with their load times and whatever else would load them, and for `now` what it cost your startup. `l` loads every plugin still waiting on the trigger under the cursor.
 
-**Stats** shows a startup timeline split into Neovim's own time, each of cinch's phases and `later`, then counts, the slowest plugins, and startup times from past sessions. **Profile** opens with the moments of startup in the order they happened (VimEnter, UIEnter, CinchStart, CinchDone and when `later` is done), each with the time since the one before, then shows where this session's time went, as a tree: cinch's phases with the plugins each one loaded, every plugin with its dependencies and the files it sourced, the `plugin/` files Neovim sourced at startup grouped by plugin, `runtime` and `config`, then the `later` queue and anything loaded after startup. Files are timed with `SourcePre` and `SourcePost`, during startup and later only while a plugin loads. **Log** shows every step and message, oldest first.
+**Stats** shows a startup timeline split into Neovim's own time, each of cinch's phases and `later`, then counts, the slowest plugins, and startup times from past sessions. **Profile** opens with the moments of startup in the order they happened (VimEnter, UIEnter, CinchStart, CinchDone and when `later` is done), each with the time since the one before, then shows where this session's time went, as a tree: cinch's phases with the `init` hooks and plugins each one ran, every plugin with its dependencies and the steps of its load (`packadd`, `opts`, `config`, `after`), each step with the files it sourced, the `plugin/` files Neovim sourced at startup grouped by plugin, `runtime` and `config`, then the `later` queue with your `cinch.later` functions, and anything loaded after startup. Builds and vim.pack runs (install, update, get) follow in a group of their own, since they run beside everything else. Files are timed with `SourcePre` and `SourcePost`, during startup and later only while a plugin loads. With `stats = { profile = 'functions' }` a last group times every Lua function that ran in those same windows, by plugin: its own time, its time with what it called, and how many times it ran, the slowest 40 per plugin. It hooks every call, so startup takes about twice as long while it is on. **Log** shows every step and message, oldest first.
 
 | Key | Does |
 | --- | --- |
@@ -251,6 +251,7 @@ end)
 | `LoadWait` | `plugin`, `reason`, `build`: the load waits for `build`'s build to end, the plugin's own or a dependency's |
 | `LoadPre` | `plugin`, `reason`. Set `cancel = true` to stop the load |
 | `Load` | `plugin`, `reason`, `ms = { packadd, config }` |
+| `Step` | `plugin`, `name` (`init`, `packadd`, `opts`, `config` or `after`), `start` (its `hrtime()`), `ms`, `ok`: one part of a load |
 | `LoadError` | `plugin`, `reason`, `err` |
 | `PackPre`, `Pack` | `kind`, `name`, `plugin`, `spec`, `path`: from `PackChangedPre` and `PackChanged`, after cinch has updated its state |
 | `PackOpPre`, `PackOp` | `op`, `names`, and after the call `ok`, `ms`, `err` |

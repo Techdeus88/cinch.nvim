@@ -87,8 +87,17 @@ local function disable_runtime(names)
     pattern = dir .. '/*',
     desc = 'cinch: skip the runtime plugins in disable_runtime',
     callback = function(ev)
-      if not off[vim.fn.fnamemodify(ev.match, ':t:r')] then
-        vim.cmd.source({ ev.match, magic = { file = false } })
+      if off[vim.fn.fnamemodify(ev.match, ':t:r')] then
+        return
+      end
+      -- A SourceCmd stands in for Neovim's own sourcing, which fires these; without
+      -- them the Profile view and anything else listening never sees the file.
+      local autocmd = { pattern = ev.match, modeline = false }
+      vim.api.nvim_exec_autocmds('SourcePre', autocmd)
+      local ok, err = pcall(vim.cmd.source, { ev.match, magic = { file = false } })
+      vim.api.nvim_exec_autocmds('SourcePost', autocmd)
+      if not ok then
+        error(err, 0)
       end
     end,
   })

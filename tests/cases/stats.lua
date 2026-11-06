@@ -4,8 +4,15 @@ local H = dofile(vim.env.CINCH_ROOT .. '/tests/helpers.lua')
 
 require('cinch').setup({
   confirm = false,
-  spec = { { { H.src('early'), load = 'now' }, { H.src('beta.nvim') }, { H.src('alpha.nvim'), cmd = 'AlphaCmd' } } },
+  spec = {
+    {
+      { H.src('early'), load = 'now', init = function() end },
+      { H.src('beta.nvim'), config = function() end },
+      { H.src('alpha.nvim'), cmd = 'AlphaCmd' },
+    },
+  },
 })
+require('cinch').later(function() end)
 
 H.after_startup(function()
   local stats = require('cinch.features.stats')
@@ -45,8 +52,13 @@ H.after_startup(function()
   H.eq(find(find(startup_files, 'early').children, 'plugin/early.lua').kind, 'file', 'its plugin/ file under its name')
   H.eq(find(startup_files, 'runtime').kind, 'owner', "Neovim's own plugin files under runtime")
   local beta = find(find(tree, 'later').children, 'beta.nvim')
-  H.eq(find(beta.children, 'plugin/beta.lua').kind, 'file', 'a later plugin holds the files it sourced')
-  H.eq(beta.ms >= beta.children[1].ms, true, 'and took at least as long as they did')
+  local packadd = find(beta.children, 'packadd')
+  H.eq(packadd.kind, 'step', 'a plugin holds the steps of its load')
+  H.eq(find(packadd.children, 'plugin/beta.lua').kind, 'file', 'packadd holds the files it sourced')
+  H.eq(find(beta.children, 'config').kind, 'step', 'then its config')
+  H.eq(beta.ms >= packadd.ms, true, 'and the plugin took at least as long as its steps')
+  H.eq(find(find(tree, 'cinch').children, 'init').children[1].label, 'init early', 'init hooks under the init phase')
+  H.eq(find(find(tree, 'later').children, 'later stats.lua:15').kind, 'run', 'a later function, by where it is')
 
   local spans = #stats.spans
   local tmp = vim.fn.tempname() .. '.lua'
@@ -56,7 +68,17 @@ H.after_startup(function()
   vim.cmd('AlphaCmd')
   local alpha = find(find(stats.profile(), 'after startup').children, 'alpha.nvim')
   H.eq(alpha.reason, 'cmd AlphaCmd', 'a trigger load after startup')
-  H.eq(find(alpha.children, 'plugin/alpha.lua').kind, 'file', 'with the files it sourced')
+  H.eq(find(find(alpha.children, 'packadd').children, 'plugin/alpha.lua').kind, 'file', 'with the files it sourced')
+  H.eq(
+    vim.tbl_contains(
+      vim.tbl_map(function(n)
+        return n.name
+      end, stats.profile()),
+      'functions'
+    ),
+    false,
+    'no functions unless asked for'
+  )
 
   local history = stats.history()
   if H.phase == 1 then

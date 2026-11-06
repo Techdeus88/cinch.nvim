@@ -1,6 +1,8 @@
 -- The Profile view: where this session's time went, as a tree. cinch's phases hold the
--- plugins they loaded, a plugin holds its dependencies and the files it sourced, and
--- the plugin/ files Neovim sourced at startup sit under their owner. Siblings run in
+-- plugins they loaded, a plugin holds its dependencies and the steps of its load
+-- (init, packadd, opts, config, after), each step the files it sourced, and the
+-- plugin/ files Neovim sourced at startup sit under their owner. Builds and vim.pack
+-- runs come after, and with stats = { profile = 'functions' } every Lua function. Siblings run in
 -- the order they began, or by time with <C-s>; <C-f> hides what took less than a
 -- threshold, and / keeps what matches the filter.
 
@@ -17,7 +19,15 @@ local look = {
   phase = 'CinchKey',
   plugin = 'CinchName',
   file = 'CinchMuted',
+  step = 'CinchKey',
+  run = 'CinchName',
+  build = 'CinchName',
+  op = 'CinchName',
+  func = 'CinchName',
 }
+
+-- Groups whose time is not the session's startup: left out of the bars' scale.
+local unscaled = { ['builds and vim.pack'] = true }
 
 --- The kind of thing that loaded a plugin, for its icon: now, later, event, ft, cmd, keys, dep.
 ---@param reason? string
@@ -58,6 +68,13 @@ local function sorted(list, by_time)
     return a.ms > b.ms
   end)
   return list
+end
+
+--- What follows a function's name: how often it ran and its time with what it called.
+---@param n cinch.stats.Node
+---@return string
+local function func_note(n)
+  return ('  %d call%s · total %s'):format(n.calls, n.calls == 1 and '' or 's', canvas.ms(n.total))
 end
 
 --- What follows a plugin's name: what loaded it and its own packadd and config time.
@@ -111,7 +128,10 @@ local function draw(d, n, depth, parent)
     used = used + cells(line[#line][1])
   end
   local label = n.label
-  local note = n.kind == 'plugin' and plugin_note(n, d.stats) or ''
+  local note = n.kind == 'plugin' and plugin_note(n, d.stats)
+    or n.kind == 'func' and func_note(n)
+    or n.failed and '  failed'
+    or ''
   local w = math.max(4, d.label_w - used)
   local hl = n.failed and 'CinchFailed' or look[n.kind]
   if cells(label) >= w then
@@ -187,6 +207,9 @@ function M.list(width, ctx)
   local by_time = ctx.profile_sort == 'time'
   local min = ctx.profile_min or 0
   local notes = { by_time and 'by time' or 'in order' }
+  if stats.opts.profile == 'functions' then
+    notes[#notes + 1] = 'functions on'
+  end
   if min > 0 then
     notes[#notes + 1] = 'over ' .. canvas.ms(min)
   end
@@ -202,7 +225,9 @@ function M.list(width, ctx)
   end
   local max = 0
   for _, n in ipairs(tree) do
-    max = math.max(max, n.ms)
+    if not unscaled[n.name] then
+      max = math.max(max, n.ms)
+    end
   end
   -- Bars only when there is room for them beside the names.
   local bar_w = width >= 70 and math.min(20, math.floor(width / 6)) or 0
