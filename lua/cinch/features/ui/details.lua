@@ -248,7 +248,7 @@ function M.pane(name, width, ctx)
       pane_output(c, p)
     end
   elseif sec == 'disabled' then
-    kv(c, 'off', { { p.reason == 'cond' and 'cond returned false' or 'enabled = false' } })
+    kv(c, 'off', { { rows.off_reason(p) } })
   else
     kv(c, 'load', load_line(p))
   end

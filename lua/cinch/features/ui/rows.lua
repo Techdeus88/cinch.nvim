@@ -53,7 +53,17 @@ M.icons = {
   keys = '\u{f11c}',
   dep = '\u{f487}',
   trigger = '\u{f013}',
+  off = '\u{f011}',
 }
+
+--- Why a plugin is off, as its spec says it: `cond = false`, or `cond() returned false`
+--- when the field is a function.
+---@param p cinch.Plugin
+---@return string
+function M.off_reason(p)
+  local k = p.reason == 'cond' and 'cond' or 'enabled'
+  return type(p.data[k]) == 'function' and k .. '() returned false' or k .. ' = false'
+end
 
 ---@param name string
 ---@return string
@@ -85,7 +95,7 @@ end
 
 --- A chip in the kind's own color: its icon and its name on a square shade, one
 --- space of padding each side, ` cmd `.
----@param kind string now, later, event, ft, cmd, keys, dep, or your own
+---@param kind string now, later, event, ft, cmd, keys, dep, off, or your own
 ---@return cinch.ui.Item
 function M.kind_chip(kind)
   return { { ' ' .. glyph(kind) .. ' ' .. kind .. ' ', (canvas.kind_hl(kind)) } }
@@ -169,7 +179,7 @@ local function message(p)
     end
     return (p.activity or 'loading') .. '…', 'CinchActive'
   elseif sec == 'disabled' then
-    return p.reason == 'cond' and 'cond is false' or 'enabled = false', 'CinchMuted'
+    return M.off_reason(p), 'CinchMuted'
   elseif p.deleted then
     return 'deleted from disk', 'CinchWarn'
   end
@@ -221,15 +231,17 @@ end
 ---@param p cinch.Plugin
 ---@param r cinch.ui.Row
 local function add_row(c, p, r)
+  local off = p.state == 'disabled'
   local items = {
     { { ' ' .. r.mark, r.mark_hl } },
-    { { p.name, p.state == 'disabled' and 'CinchMuted' or p.dep_only and 'CinchDepName' or 'CinchName' } },
+    { { p.name, off and 'CinchOffName' or p.dep_only and 'CinchDepName' or 'CinchName' } },
   }
   if r.ms then
     items[#items + 1] = { { '(' .. canvas.ms(r.ms) .. ')', 'CinchMuted' } }
     items[#items + 1] = canvas.pill(r.ms, r.slowest, 6)
   end
-  vim.list_extend(items, load_items(p, r.needed_by))
+  -- Off: its own chip in place of how it loads, which it never arms.
+  vim.list_extend(items, off and { M.kind_chip('off') } or load_items(p, r.needed_by))
   if r.up then
     items[#items + 1] = { { '↑' .. r.up, 'CinchUpdate' } }
   end

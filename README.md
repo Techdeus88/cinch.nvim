@@ -139,7 +139,7 @@ require('cinch').setup({
     open_on_install = true,      -- open the window when plugins install
     colorscheme = nil,           -- e.g. 'tokyonight': applied as soon as its plugin is on disk
     backdrop = 60,               -- how much the editor shows through the dark backdrop, 0-100; false for none
-    icons = {},                  -- your own for any of: now, later, event, ft, cmd, keys, dep, trigger
+    icons = {},                  -- your own for any of: now, later, event, ft, cmd, keys, dep, trigger, off
   },
 })
 ```

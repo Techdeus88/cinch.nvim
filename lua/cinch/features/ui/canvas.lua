@@ -47,7 +47,7 @@ M.rounded = false
 M.colored = false
 
 ---@param name string
----@param key 'fg'|'bg'
+---@param key 'fg'|'bg'|'ctermfg'
 ---@return integer?
 local function color(name, key)
   return vim.api.nvim_get_hl(0, { name = name, link = false })[key]
@@ -79,6 +79,7 @@ local kind_sources = {
   keys = { 'Constant', 'Number', 'Special' },
   dep = { 'DiagnosticHint', 'Comment' },
   trigger = { 'Special', 'DiagnosticWarn' },
+  off = { 'Comment' },
 }
 -- Without colors to blend, the chips link to groups every colorscheme styles.
 local kind_links = {
@@ -90,11 +91,12 @@ local kind_links = {
   keys = 'DiagnosticVirtualTextWarn',
   dep = 'DiagnosticVirtualTextHint',
   trigger = 'DiagnosticVirtualTextWarn',
+  off = 'Comment',
 }
 
 --- The chip group and the text group of a kind: 'CinchKindCmd', 'CinchKindCmdText'.
 --- A trigger of your own has the `trigger` colors.
----@param kind string now, later, event, ft, cmd, keys, dep, or your own
+---@param kind string now, later, event, ft, cmd, keys, dep, off, or your own
 ---@return string chip, string text
 function M.kind_hl(kind)
   local k = kind_sources[kind] and kind or 'trigger'
@@ -119,6 +121,8 @@ function M.define_colors(rounded)
   M.colored = vim.o.termguicolors and base ~= nil
   -- A plugin that is only a dependency: its name in italics, so it reads as a supporting part.
   set(0, 'CinchDepName', { fg = color('Comment', 'fg'), italic = true })
+  -- A plugin that is off: dim like a comment, but upright, so it still reads as a name.
+  set(0, 'CinchOffName', { fg = color('Comment', 'fg'), ctermfg = color('Comment', 'ctermfg') })
   -- The trigger that loaded a plugin, among the others it waits on.
   set(0, 'CinchFired', { fg = color('Normal', 'fg'), bold = true, underline = true })
   if not M.colored then
