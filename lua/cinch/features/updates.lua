@@ -74,12 +74,16 @@ end
 ---@param plugins cinch.Plugin[]
 ---@param results table<string, cinch.Update>
 ---@param opts { notify?: boolean, on_done?: fun(results: table<string, cinch.Update>) }
-local function finish(plugins, results, opts)
+---@param failed? boolean the check could not read what was fetched: every earlier result stands
+local function finish(plugins, results, opts, failed)
   for _, p in ipairs(plugins) do
     if p.activity == 'checking' then
       state.activity(p, nil)
     end
-    M.results[p.name] = results[p.name]
+    -- A failed fetch learned nothing: what an earlier check found still stands.
+    if not (failed or M.failed[p.name]) then
+      M.results[p.name] = results[p.name]
+    end
   end
   M.checked_at, M.checking = os.time(), false
   for name, err in pairs(M.failed) do
@@ -104,7 +108,7 @@ local function resolve(plugins, opts)
   local ok, data = pack.get(names, { offline = true })
   if not ok then
     events.report(('update check failed: %s'):format(data), levels.ERROR)
-    return finish(plugins, {}, opts)
+    return finish(plugins, {}, opts, true)
   end
   ---@cast data vim.pack.PlugData[]
   local moving = vim.tbl_filter(function(d)

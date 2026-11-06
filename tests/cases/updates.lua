@@ -35,6 +35,17 @@ H.after_startup(function()
   H.eq(H.noted('2 updates available'), true, 'the outcome is reported')
   H.eq(u.fresh(), true, 'fresh now')
 
+  -- A fetch that fails later learns nothing, so what the last check found stands.
+  vim.fn.rename(beta_dir, beta_dir .. '-gone')
+  u.check()
+  H.wait(function()
+    return not u.checking
+  end, 'the second check')
+  H.eq(u.failed['beta.nvim'] ~= nil, true, 'beta could not be fetched this time')
+  H.eq(#u.results['beta.nvim'].commits, 1, 'and keeps the update the first check found')
+  H.eq(#u.results['alpha.nvim'].commits, 2, 'alpha is checked again as usual')
+  vim.fn.rename(beta_dir .. '-gone', beta_dir)
+
   local alpha = H.plugin('alpha.nvim')
   local before = pack.rev(alpha)
   u.apply({ 'alpha.nvim' })

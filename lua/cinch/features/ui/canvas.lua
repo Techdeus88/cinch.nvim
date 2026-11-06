@@ -282,6 +282,24 @@ function M.clip(chunks, w)
   return out
 end
 
+--- The longest start of `s` that fits in `w` cells, and the rest. At least one
+--- character, so a character wider than `w` still moves the split along.
+---@param s string
+---@param w integer
+---@return string head, string rest
+local function cut(s, w)
+  local chars, n, used = vim.fn.strchars(s, true), 0, 0
+  while n < chars do
+    -- A character with what combines with it, so the two never split.
+    local c = M.cells(vim.fn.strcharpart(s, n, 1, true))
+    if n > 0 and used + c > w then
+      break
+    end
+    n, used = n + 1, used + c
+  end
+  return vim.fn.strcharpart(s, 0, n, true), vim.fn.strcharpart(s, n, chars, true)
+end
+
 --- Split `s` into lines of at most `w` cells, at spaces where it can.
 ---@param s string
 ---@param w integer
@@ -293,8 +311,7 @@ function M.wrap(s, w)
       if line ~= '' then
         out[#out + 1], line = line, ''
       end
-      out[#out + 1] = vim.fn.strcharpart(word, 0, w)
-      word = vim.fn.strcharpart(word, w)
+      out[#out + 1], word = cut(word, w)
     end
     local joined = line == '' and word or (line .. ' ' .. word)
     if M.cells(joined) > w then

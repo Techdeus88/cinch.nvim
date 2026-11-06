@@ -448,18 +448,33 @@ local function on_call(e)
 end
 
 local hooked = false
+local warned = false
 local window ---@type fun() turns the function hook on or off for what is happening now
 
+--- Turn the call hook on or off. LuaJIT has one hook for the whole process, so a
+--- debugger's or a coverage tool's is never replaced or cleared: while one is set,
+--- functions go untimed.
 ---@param on boolean
 local function hook(on)
   if on == hooked then
     return
   end
-  hooked = on
   if on then
+    if debug.gethook() ~= nil then
+      if not warned then
+        warned = true
+        events.report('functions are not profiled: another debug hook is set, a debugger or coverage tool', vim.log.levels.WARN)
+      end
+      return
+    end
+    hooked = true
     debug.sethook(on_call, 'cr')
   else
-    debug.sethook()
+    hooked = false
+    -- Only while it is still ours: a hook set since then stays.
+    if debug.gethook() == on_call then
+      debug.sethook()
+    end
     close(1, hrtime())
   end
 end
