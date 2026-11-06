@@ -20,12 +20,21 @@ H.eq(add(1, 1), 2, 'works before setup')
 
 cinch.setup({ confirm = false, spec = {} })
 
-local seen = {}
+local seen, runs = {}, {}
 cinch.on('Time', function(d)
   seen[#seen + 1] = d
 end)
+cinch.on('Run', function(d)
+  runs[#runs + 1] = d.where
+end)
+local here = debug.getinfo(1, 'l').currentline + 1
+cinch.later(cinch.time('a later function', function() end))
 
 H.after_startup(function()
+  H.eq(runs, { 'timed.lua:' .. here }, 'a wrapped later function is named by where it was written')
+  H.eq(seen[1].name, 'a later function', 'and timed')
+  table.remove(seen, 1)
+
   local r = { add(2, 3) }
   H.eq(r[1], 5, 'the result')
   H.eq(select('#', add(2, 3)), 3, 'every result, a nil in the middle too')
@@ -56,10 +65,10 @@ H.after_startup(function()
     vim.tbl_map(function(n)
       return n.name
     end, group.children),
-    { 'add', 'obj:double', 'boom' },
+    { 'a later function', 'add', 'obj:double', 'boom' },
     'one entry per name, in the order each first ran'
   )
-  H.eq(group.children[1].calls, 2, 'with its call count')
+  H.eq(group.children[2].calls, 2, 'with its call count')
 
   local ui = require('cinch.features.ui')
   ui.open('profile')

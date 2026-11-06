@@ -28,7 +28,7 @@ M.now_if_args = handler.now_if_args
 function M.time(name, fn)
   vim.validate('name', name, 'string')
   vim.validate('fn', fn, 'callable')
-  return function(...)
+  local function timed(...)
     if not events.has('Time') then
       return fn(...)
     end
@@ -41,6 +41,10 @@ function M.time(name, fn)
     end
     return unpack(res, 2, res.n)
   end
+  if type(fn) == 'function' then
+    handler.wraps[timed] = fn
+  end
+  return timed
 end
 
 ---@class cinch.Opts

@@ -427,11 +427,20 @@ local started = false
 --- the plugins they may require are installed. init.lua sets it.
 M.held = false
 
+--- The function each cinch.time() wrapper calls, so a wrapped function is still
+--- named by where you wrote it, not by the wrapper in cinch.
+---@type table<function, function>
+M.wraps = setmetatable({}, { __mode = 'k' })
+
 --- Run one of your functions, protected: an error is reported, and the rest go on.
 ---@param when 'now'|'later'
 ---@param fn function
 local function run(when, fn)
-  local info = debug.getinfo(fn, 'S')
+  local src = fn
+  while M.wraps[src] do
+    src = M.wraps[src]
+  end
+  local info = debug.getinfo(src, 'S')
   local where = ('%s:%d'):format(vim.fs.basename(info.short_src), info.linedefined)
   local t = uv.hrtime()
   local ok, err = xpcall(fn, debug.traceback)
