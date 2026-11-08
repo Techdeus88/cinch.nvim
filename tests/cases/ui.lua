@@ -152,7 +152,11 @@ H.after_startup(function()
   H.eq(lines(w.pane)[1]:find('alpha', 1, true) ~= nil, true, 'the pane follows the cursor')
   H.eq(line_of(w.pane, "require%('alpha'%)%.setup%(opts%)") ~= nil, true, 'with what config called')
   H.eq(line_of(w.pane, 'style = "night"') ~= nil, true, 'and the opts it got')
-  H.eq(line_of(w.pane, 'ui%.lua:%d+') ~= nil, true, 'and where its spec is')
+  -- Long paths wrap under themselves; read them whole.
+  local function whole_pane()
+    return (table.concat(lines(w.pane), '\n'):gsub('\n' .. (' '):rep(11), ''))
+  end
+  H.eq(whole_pane():find('ui%.lua:%d+') ~= nil, true, 'and where its spec is')
   local function top()
     return vim.fn.getwininfo(w.pane)[1].topline
   end
@@ -164,9 +168,8 @@ H.after_startup(function()
   go(w.list, ' beta%.nvim ')
   H.eq(top(), 1, 'another plugin starts at its top')
   go(w.list, ' alpha%.nvim ')
-  -- Long paths wrap under themselves; read them whole.
-  local pane = table.concat(lines(w.pane), '\n'):gsub('\n' .. (' '):rep(11), '')
-  H.eq(pane:find('dir +/[^\n]*/pack/core/opt/alpha%.nvim\n') ~= nil, true, 'its folder')
+  local pane = whole_pane()
+  H.eq(pane:find('dir +[^\n]*/pack/core/opt/alpha%.nvim\n') ~= nil, true, 'its folder')
   H.eq(pane:find('url +file://[^\n]*alpha%.nvim\n') ~= nil, true, 'its url')
   H.eq(line_of(w.pane, '^ commit +' .. H.plugin('alpha.nvim').rev:sub(1, 7)) ~= nil, true, 'the commit on disk')
   H.eq(line_of(w.pane, '^ readme +README%.md') ~= nil, true, 'its readme')

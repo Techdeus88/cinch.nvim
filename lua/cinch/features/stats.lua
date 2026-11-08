@@ -122,9 +122,10 @@ do
   if get then
     ok, ms = pcall(get)
   end
-  -- Sane: a number, positive, and less than a day.
-  if ok and type(ms) == 'number' and ms == ms and ms > 0 and ms < 864e5 then
+  -- Linux's clocks tick every 10 ms, so a process this young can read 0 or just below it.
+  if ok and type(ms) == 'number' and ms == ms and ms > -10 and ms < 864e5 then
     M.source = 'os'
+    ms = math.max(ms, 0)
   else
     local ru = uv.getrusage()
     ms = ru and (ru.utime.sec + ru.stime.sec) * 1e3 + (ru.utime.usec + ru.stime.usec) / 1e3 or 0

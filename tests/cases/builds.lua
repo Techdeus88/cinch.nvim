@@ -3,8 +3,10 @@
 -- running build without blocking; a failed build runs again on the next start.
 local H = dofile(vim.env.CINCH_ROOT .. '/tests/helpers.lua')
 local events = require('cinch.events')
--- Shell builds run with sh, whatever 'shell' is.
-vim.o.shell = '/no/such/shell'
+-- Shell builds run with sh on Unix, whatever 'shell' is.
+if vim.fn.has('win32') == 0 then
+  vim.o.shell = '/no/such/shell'
+end
 -- The function build hides the plugin from vim.loader's cache too.
 vim.loader.enable()
 

@@ -25,7 +25,7 @@ H.after_startup(function()
     H.eq(type(stats.phases[phase]), 'number', 'phase ' .. phase)
   end
   H.eq(stats.marks.vimenter > 0 and stats.marks.later >= stats.marks.vimenter, true, 'VimEnter, then later done')
-  H.eq(stats.source, jit.os == 'Windows' and 'cpu' or 'os', 'start time from the OS')
+  H.eq(stats.source, 'os', 'start time from the OS')
   H.eq(type(stats.plugins.early.packadd), 'number', 'per-plugin times')
   vim.cmd('Cinch stats')
 

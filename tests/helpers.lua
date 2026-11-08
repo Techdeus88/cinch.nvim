@@ -7,6 +7,10 @@ H.root = assert(vim.env.CINCH_ROOT)
 H.home = vim.env.CINCH_HOME
 H.phase = tonumber(vim.env.CINCH_PHASE)
 vim.opt.rtp:prepend(H.root)
+-- The cases' shell builds are POSIX commands, and on Windows cinch runs builds with 'shell'.
+if vim.fn.has('win32') == 1 then
+  vim.o.shell, vim.o.shellcmdflag = 'sh', '-c'
+end
 
 ---@type { msg: string, level: integer? }[] everything cinch reported, and every vim.notify
 H.notes = {}
@@ -111,7 +115,7 @@ end
 
 --- Write `lines` to `path`; relative paths are under the config dir.
 function H.write(path, lines)
-  if not path:find('^/') then
+  if not path:find('^/') and not path:find('^%a:[/\\]') then
     path = vim.fs.joinpath(vim.fn.stdpath('config') --[[@as string]], path)
   end
   vim.fn.mkdir(vim.fs.dirname(path), 'p')
