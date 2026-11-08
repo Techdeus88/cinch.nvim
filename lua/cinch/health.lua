@@ -57,7 +57,8 @@ local function plugins(pack, state)
     return o.name
   end, pack.orphans())
   if #orphans > 0 then
-    h.warn(('on disk, in no spec: %s; `:Cinch clean` deletes them'):format(table.concat(orphans, ', ')))
+    local clean = require('cinch.usercmd').text('clean')
+    h.warn(('on disk, in no spec: %s; %s deletes them'):format(table.concat(orphans, ', '), clean))
   end
 end
 

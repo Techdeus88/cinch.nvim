@@ -225,7 +225,8 @@ local function schedule()
         on_done = function(results)
           local n = vim.tbl_count(results)
           if n > 0 then
-            events.report(('%d update%s available · `:Cinch check` lists them'):format(n, n == 1 and '' or 's'))
+            local check = require('cinch.usercmd').text('check')
+            events.report(('%d update%s available · %s lists them'):format(n, n == 1 and '' or 's', check))
           end
         end,
       })

@@ -68,7 +68,13 @@ M.commands = {
   del = {
     run = function(args, bang)
       if #args == 0 then
-        events.report('which plugins? `:Cinch del {name}`; `:Cinch clean` deletes those no spec names')
+        local usercmd = require('cinch.usercmd')
+        events.report(
+          ('which plugins? %s; %s deletes those no spec names'):format(
+            usercmd.text('del {name}'),
+            usercmd.text('clean')
+          )
+        )
         return
       end
       cinch.del(args, { force = bang })

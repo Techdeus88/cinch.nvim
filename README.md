@@ -81,9 +81,22 @@ cinch fields can sit at the top level, as above, or inside `data`, the way `vim.
 | `after` | `function(plugin)`, run after `config` |
 | `module` | `false` keeps `require()` of this plugin's modules from loading it |
 
-Specs with the same `name` merge into one before the plugin loads, in the order cinch reads them, so you can declare a plugin in one file and adjust it in another. It works like `vim.tbl_deep_extend('force', ...)`: `opts` and other nested tables merge key by key, and when two specs set the same field the later one wins. A list counts as one value, so a later `keys`, `cmd`, `event`, `ft` or `deps` replaces the earlier list. An `opts` function is the exception: it gets the `opts` merged so far, so `{ opts = { a = 1 } }` then `{ opts = function(_, opts) opts.b = 2 end }` gives `{ a = 1, b = 2 }`. What the function returns replaces what it was given, if it returns anything, and a table in a later spec merges over the result.
+Specs with the same `name` merge into one before the plugin loads, in the order cinch reads them, so you can declare a plugin in one file and adjust it in another. It works like `vim.tbl_deep_extend('force', ...)`: `opts` and other nested tables merge key by key, and when two specs set the same field the later one wins. A list counts as one value, so a later `keys`, `cmd`, `event` or `ft` replaces the earlier list. `deps` is the exception: every spec's dependencies are kept, because a dependency dropped from the list and with no trigger of its own would never load. An `opts` function is the exception: it gets the `opts` merged so far, so `{ opts = { a = 1 } }` then `{ opts = function(_, opts) opts.b = 2 end }` gives `{ a = 1, b = 2 }`. What the function returns replaces what it was given, if it returns anything, and a table in a later spec merges over the result.
 
 Files under a folder are read in sorted order. A later `add()` merges too, while the plugin is still waiting to load, and its triggers and `load` change to match. Once the plugin has started loading, a new spec warns and applies on restart. A plain `deps = { 'owner/repo' }` only names the dependency and changes nothing in its spec.
+
+A spec nested in another plugin's `deps` extends the dependency's own spec, whichever file cinch reads first, and wins any conflict with it. So a Copilot spec can add a source to blink.cmp from `ai.lua`, even though `lsp.lua`, which sets blink.cmp up, is read later:
+
+```lua
+{ 'github/copilot.vim', deps = {
+  { 'saghen/blink.cmp', opts = function(_, opts)
+    table.insert(opts.sources.default, 'copilot')
+    return opts
+  end },
+} }
+```
+
+Two specs at the top level still apply in the order cinch reads them.
 
 A field cinch does not know gets a warning naming the spec file, and is ignored. That includes lazy.nvim's `lazy`: use `load` instead.
 
@@ -131,6 +144,7 @@ require('cinch').setup({
   build_timeout = 300,           -- seconds an async function build may take before it fails
   disable_runtime = {},          -- Neovim's own plugins not to load: { 'netrwPlugin', 'gzip', 'tutor' }
   module = true,                 -- require() of a plugin's module loads the plugin
+  cmd_prefix = 'Cinch',          -- the name of the user command: 'Pack' gives :Pack update
   self = true,                   -- update cinch itself as one of its plugins; a table pins it: { tag = 'v1.0.0' }
   features = { 'messages', 'stats', 'updates', 'ui' },
 
@@ -184,6 +198,8 @@ builtin.find_files = cinch.time('find_files', builtin.find_files)
 The Profile view lists each name under **timed**: how long all its calls took together, how many there were, the slowest one, and whether any raised. Each call also fires the `Time` event with its `start` and `ms`, for timings of your own. Calls made before `setup()`, or with the stats feature off, are not timed. The wrapper only times until `fn` returns, so work it hands to a callback or a job is not counted.
 
 ## Commands
+
+These use the default name. `cmd_prefix` in `setup()` renames the command, so `cmd_prefix = 'Pack'` gives `:Pack`, `:Pack update` and the rest, and cinch's messages use the new name. `:Cinch` then no longer exists. The name must start with a capital and have only letters and digits, and it can't be a command that already exists. Otherwise cinch warns and keeps `:Cinch`. The Lua API, `User Cinch*` events and highlight groups keep their names.
 
 | Command | Does |
 | --- | --- |

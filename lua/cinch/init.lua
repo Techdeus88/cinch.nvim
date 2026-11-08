@@ -8,6 +8,7 @@ local modules = require('cinch.modules')
 local pack = require('cinch.pack')
 local spec = require('cinch.spec')
 local state = require('cinch.state')
+local usercmd = require('cinch.usercmd')
 
 local levels, hrtime = vim.log.levels, vim.uv.hrtime
 
@@ -56,6 +57,7 @@ end
 ---@field build_timeout? integer seconds an async function build may take before it fails; default 300
 ---@field disable_runtime? string[] Neovim's own plugins not to load: 'netrwPlugin', 'gzip', 'tutor'; default {}
 ---@field module? boolean require() of a plugin's module loads the plugin; default true
+---@field cmd_prefix? string the name of the user command; default 'Cinch'
 ---@field self? boolean|{ version?: any, tag?: string, branch?: string, commit?: string } update cinch as one of its
 ---plugins when it lives in vim.pack's folder; a table pins it, as in a spec; default true: its default branch
 ---@field features? string[] modules under cinch.features to load; default { 'messages', 'stats', 'updates', 'ui' }
@@ -70,6 +72,7 @@ local defaults = {
   build_timeout = 300,
   disable_runtime = {},
   module = true,
+  cmd_prefix = usercmd.default,
   self = true,
   features = { 'messages', 'stats', 'updates', 'ui' },
 }
@@ -430,6 +433,12 @@ function M.setup(opts)
     return events.report('setup() already ran; use add() for more plugins', levels.WARN)
   end
   M.opts = vim.tbl_extend('force', defaults, opts or {})
+  local named, why = usercmd.check(M.opts.cmd_prefix)
+  if not named then
+    events.report(('cmd_prefix `%s`: %s; using `%s`'):format(M.opts.cmd_prefix, why, usercmd.default), levels.WARN)
+    M.opts.cmd_prefix = usercmd.default
+  end
+  usercmd.define(M.opts.cmd_prefix)
   handler.budget = M.opts.budget
   disable_runtime(M.opts.disable_runtime)
   pack.timeout = M.opts.build_timeout * 1000
@@ -565,7 +574,7 @@ function M.del(names, opts)
     local why = ('delete failed: %s'):format((tostring(err):gsub('^[^:]*:%d+: ', '')))
     if active then
       why = ('not deleted: %s is in your specs and in use. Take it out of your specs and restart, '):format(active)
-        .. 'or `:Cinch del!` deletes it now and it installs again on the next start'
+        .. ('or %s deletes it now and it installs again on the next start'):format(usercmd.text('del!'))
     end
     events.report(why, levels.ERROR)
   end

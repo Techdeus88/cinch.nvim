@@ -343,7 +343,7 @@ end
 ---@param batch cinch.Batch
 local function merge_into(p, spec, e, dep_of, deps, batch)
   -- `deps = { 'owner/repo' }` only names the plugin, and must not undo a fork's `src`.
-  if dep_of and type(e.spec) == 'string' then
+  if dep_of and next(spec.data) == nil and spec.version == nil then
     return
   end
   if p.state ~= 'registered' and p.state ~= 'pending' and p.state ~= 'disabled' then
@@ -351,9 +351,15 @@ local function merge_into(p, spec, e, dep_of, deps, batch)
     events.report(msg:format(e.origin.file, p.name), vim.log.levels.WARN)
     return
   end
-  fill(p, merged(p.spec, spec), e.origin, p.dep_only == true and dep_of ~= nil, {})
-  if spec.data.deps ~= nil then
-    p.deps = deps
+  -- A spec nested in `deps` extends the plugin's own, whichever file is read first.
+  local own_arrives_last = p.dep_only and not dep_of
+  local combined = own_arrives_last and merged(spec, p.spec) or merged(p.spec, spec)
+  fill(p, combined, e.origin, p.dep_only == true and dep_of ~= nil, {})
+  -- Added, never replaced: a dropped dependency with no trigger of its own would never load.
+  for _, name in ipairs(deps) do
+    if not vim.list_contains(p.deps, name) then
+      p.deps[#p.deps + 1] = name
+    end
   end
   add_once(batch.touched, p)
   if p.state == 'pending' then

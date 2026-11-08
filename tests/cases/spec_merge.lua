@@ -59,6 +59,7 @@ reg({
   -- Only naming a dependency leaves the fork in place.
   { src = 'https://example.com/fork/forked', opts = { a = 1 } },
   { 'owner/fork-user', deps = { 'owner/forked' } },
+  { 'owner/fork-user-table', deps = { { 'owner/forked' } } },
 })
 
 H.after_startup(function()
@@ -73,7 +74,7 @@ H.after_startup(function()
 
   H.eq(plugin('lists').data.keys, { 'c' }, 'a later list replaces')
   H.eq(plugin('lists').data.cmd, { 'One', 'Two' }, 'a list set once stays')
-  H.eq(plugin('lists').deps, { 'dep-two' }, 'a later deps replaces')
+  H.eq(plugin('lists').deps, { 'dep-one', 'dep-two' }, 'deps add up')
   H.eq({ plugin('hooks').data.config, plugin('hooks').data.init }, { second, first }, 'functions: the later one')
   H.eq({ plugin('off').data.keys, plugin('off').load }, { false, 'later' }, 'keys = false turns earlier keys off')
 
@@ -102,14 +103,15 @@ H.after_startup(function()
   H.eq(mine, { 'owner/mine', opts = { kept = { 1 } } }, 'your own tables are left as you wrote them')
   H.eq(mine_again, { 'owner/mine', opts = { kept = { 2 }, more = true } }, 'both of them')
 
-  H.eq(plugin('lib').data.opts, { a = 1, b = 2 }, 'a dependency then its own spec')
+  H.eq(plugin('lib').data.opts, { a = 1, b = 1 }, 'a nested spec beats the own spec read after it')
   H.eq(plugin('lib').dep_only, nil, 'is not only a dependency')
   H.eq(plugin('lib').load, 'later', 'so it loads as its own')
-  H.eq(plugin('lib2').data.opts, { b = 2 }, 'its own spec then a dependency')
+  H.eq(plugin('lib2').data.opts, { b = 2 }, 'and the one read before it')
   H.eq(plugin('lib2').dep_only, nil, 'is not only a dependency either')
   H.eq(plugin('only-dep').data.opts, { a = 1, b = 2 }, 'two dependents merge')
   H.eq({ plugin('only-dep').dep_only, plugin('only-dep').load }, { true, 'trigger' }, 'and it stays a dependency')
   H.eq(plugin('forked').src, 'https://example.com/fork/forked', 'naming a dependency leaves src alone')
   H.eq(plugin('fork-user').deps, { 'forked' }, 'and still depends on it')
+  H.eq(plugin('fork-user-table').deps, { 'forked' }, 'in a table of its own too')
   H.eq(H.noted('declared twice'), false, 'nothing warns about a second spec')
 end)
