@@ -18,6 +18,15 @@ local M = {}
 ---@field animate fun()
 ---@field focus fun(to: 'editor'|'list')
 
+---@param path string a plugin's folder
+---@param name string
+---@return boolean
+local function ships_colors(path, name)
+  -- Not glob(): on Windows `{vim,lua}` only expands in a pattern that also has `*?[`.
+  local base = vim.fs.joinpath(path, 'colors', name)
+  return vim.uv.fs_stat(base .. '.lua') ~= nil or vim.uv.fs_stat(base .. '.vim') ~= nil
+end
+
 --- Apply `opts.colorscheme` once a plugin that ships it is on disk: on the
 --- runtimepath at once, so the rest of the install already shows in your colors.
 ---@param w cinch.ui.InstallHost
@@ -30,7 +39,7 @@ function M.colorscheme(w)
   for _, p in ipairs(state.list) do
     local status = ui.ctx.install and ui.ctx.install.status[p.name]
     local path = p.path or vim.fs.joinpath(dir, p.name)
-    if status ~= 'cloning' and #vim.fn.glob(path .. '/colors/' .. name .. '.{vim,lua}', false, true) > 0 then
+    if status ~= 'cloning' and ships_colors(path, name) then
       pcall(vim.cmd.packadd, { vim.fn.escape(p.name, ' '), bang = true })
       ui.colors_done = pcall(vim.cmd.colorscheme, name)
       return

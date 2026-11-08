@@ -147,7 +147,8 @@ M.own_dir = vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(debug.getinfo(1, 'S').s
 ---@param path string
 ---@return string
 local function real(path)
-  return vim.uv.fs_realpath(path) or vim.fs.normalize(path)
+  -- Normalized: on Windows fs_realpath gives backslashes, vim.fs.dirname forward slashes.
+  return vim.fs.normalize(vim.uv.fs_realpath(path) or path)
 end
 
 --- The url of a repo's origin remote, read from its .git/config.
