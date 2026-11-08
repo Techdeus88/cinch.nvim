@@ -33,7 +33,7 @@ H.after_startup(function()
     H.eq(row ~= nil, true, name .. ' has a row')
     ---@cast row integer
     local line = lines[row + 1]
-    H.eq(line:find(name .. ' ' .. off .. ' ' .. why, 1, true) ~= nil, true, name .. ': the off chip, then ' .. why)
+    H.eq(line:find(' ✕ ' .. name .. ' ' .. off .. ' ' .. why, 1, true) ~= nil, true, name .. ': an X, the off chip, then ' .. why)
   end
 
   -- The name's own group: dim like a comment, not italic.

@@ -40,7 +40,7 @@ function M.section_of(p)
   return 'waiting'
 end
 
-local marks = { failed = '✗', loaded = '●', waiting = '○', disabled = '–' }
+local marks = { failed = '✗', loaded = '●', waiting = '○', disabled = '✕' }
 
 --- Nerd Font icons for how a plugin loads. `ui.icons` in setup() replaces any of
 --- them; `trigger` is for a trigger of your own.

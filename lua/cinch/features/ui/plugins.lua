@@ -90,7 +90,7 @@ local install_look = {
   cloning = { nil, 'CinchActive', 'cloning…' },
   installed = { '✓', 'CinchLoaded' },
   failed = { '✗', 'CinchFailed', 'could not install' },
-  disabled = { '–', 'CinchMuted' },
+  disabled = { '✕', 'CinchMuted' },
   on_disk = { '✓', 'CinchMuted' },
 }
 
