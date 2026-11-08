@@ -53,7 +53,7 @@ end
 local function scan()
   local res = {}
   for _, p in ipairs(state.list) do
-    if p.data.module ~= false and not p.self then
+    if not p.self then
       for _, top in ipairs(tops_of(p)) do
         res[top] = res[top] or {}
         table.insert(res[top], p)
@@ -85,7 +85,7 @@ end
 local function providers(mod)
   tops = tops or scan()
   return vim.tbl_filter(function(p)
-    return p.state ~= 'loaded' and provides(p, mod)
+    return p.state ~= 'loaded' and p.data.module ~= false and provides(p, mod)
   end, tops[mod:match('^[^.]+')] or {})
 end
 

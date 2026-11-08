@@ -253,11 +253,12 @@ end
 ---@param dep_only boolean
 ---@param notes string[]
 local function fill(p, spec, origin, dep_only, notes)
-  p.spec, p.data, p.origin = spec, spec.data, origin
+  -- A copy: resolve_load() rewrites `event`, and a later merge needs it as you wrote it.
+  p.spec, p.data, p.origin = spec, shallow(spec.data), origin
   p.src, p.version = spec.src, spec.version
   p.dep_only = dep_only or nil
   local very_lazy
-  p.load, p.when, very_lazy = resolve_load(spec.data, dep_only, notes)
+  p.load, p.when, very_lazy = resolve_load(p.data, dep_only, notes)
   p.very_lazy = very_lazy or nil
 end
 
@@ -277,11 +278,68 @@ local function is_ref(d)
   return type(d) == 'string' and not d:find('/') and not d:find(':')
 end
 
+--- `new` over `old`, later values winning. `data` merges deep; `version` stays whole,
+--- because a merged range object would lose its metatable.
+---@param old vim.pack.Spec
+---@param new vim.pack.Spec
+---@return vim.pack.Spec
+local function merged(old, new)
+  local res = shallow(old)
+  for k, v in pairs(new) do
+    res[k] = v
+  end
+  res.data = vim.tbl_deep_extend('force', old.data, new.data)
+  return res
+end
+
+---@class cinch.Batch
+---@field added cinch.Plugin[] new records, deps before dependents
+---@field touched cinch.Plugin[] new records and merged ones, each once
+---@field respecced cinch.Plugin[] merged while pending, armed by the old spec
+
+---@param list cinch.Plugin[]
+---@param p cinch.Plugin
+local function add_once(list, p)
+  if not vim.list_contains(list, p) then
+    list[#list + 1] = p
+  end
+end
+
+--- Apply another spec of a plugin that already has a record.
+---@param p cinch.Plugin
+---@param spec vim.pack.Spec
 ---@param e cinch.Entry
 ---@param dep_of? string
----@param added cinch.Plugin[]
+---@param deps string[]
+---@param batch cinch.Batch
+local function merge_into(p, spec, e, dep_of, deps, batch)
+  -- `deps = { 'owner/repo' }` only names the plugin, and must not undo a fork's `src`.
+  if dep_of and type(e.spec) == 'string' then
+    return
+  end
+  if p.state ~= 'registered' and p.state ~= 'pending' and p.state ~= 'disabled' then
+    local msg = '%s: `%s` already started loading; this spec applies on restart'
+    events.report(msg:format(e.origin.file, p.name), vim.log.levels.WARN)
+    return
+  end
+  fill(p, merged(p.spec, spec), e.origin, p.dep_only == true and dep_of ~= nil, {})
+  if spec.data.deps ~= nil then
+    p.deps = deps
+  end
+  add_once(batch.touched, p)
+  if p.state == 'pending' then
+    add_once(batch.respecced, p)
+  elseif p.state == 'disabled' then
+    state.set(p, 'registered')
+    add_once(batch.added, p)
+  end
+end
+
+---@param e cinch.Entry
+---@param dep_of? string
+---@param batch cinch.Batch
 ---@return cinch.Plugin?
-local function make(e, dep_of, added)
+local function make(e, dep_of, batch)
   local spec, notes = M.normalize(e.spec)
   if not spec then
     events.report(('%s: a spec without `src`'):format(e.origin.file), vim.log.levels.ERROR)
@@ -293,6 +351,7 @@ local function make(e, dep_of, added)
     events.report(('%s: no plugin name in `%s`'):format(e.origin.file, spec.src), vim.log.levels.ERROR)
     return
   end
+  report(name, e.origin, notes)
 
   -- Deps first, so they come before their dependents in the list and in vim.pack.add.
   local deps = {}
@@ -300,7 +359,7 @@ local function make(e, dep_of, added)
     if is_ref(d) then
       deps[#deps + 1] = d
     else
-      local dp = make({ spec = d, origin = e.origin }, name, added)
+      local dp = make({ spec = d, origin = e.origin }, name, batch)
       if dp then
         deps[#deps + 1] = dp.name
       end
@@ -309,44 +368,36 @@ local function make(e, dep_of, added)
 
   local p = state.plugins[name]
   if p then
-    if dep_of then
-      return p
-    end
-    if p.dep_only and p.state == 'registered' then
-      fill(p, spec, e.origin, false, notes)
-      p.deps = deps
-      report(name, e.origin, notes)
-    elseif p.dep_only then
-      events.report(('`%s` already set up as a dependency; its own spec applies on restart'):format(name))
-    else
-      events.report(
-        ('%s: `%s` declared twice; keeping the one in %s'):format(e.origin.file, name, p.origin.file),
-        vim.log.levels.WARN
-      )
-    end
+    merge_into(p, spec, e, dep_of, deps, batch)
     return p
   end
 
   -- fill() and state.add() set the rest.
   ---@diagnostic disable-next-line: missing-fields
   p = { name = name, deps = deps }
-  fill(p, spec, e.origin, dep_of ~= nil, notes)
-  report(name, e.origin, notes)
+  fill(p, spec, e.origin, dep_of ~= nil, {})
   state.add(p --[[@as cinch.Plugin]])
-  added[#added + 1] = p
+  batch.added[#batch.added + 1] = p
+  batch.touched[#batch.touched + 1] = p
   return p
 end
 
---- Turn entries into plugin records. Names already registered are not returned.
+--- Turn entries into plugin records, merging specs of the same name. Names already
+--- registered are not in `added`; those merged while pending are in `respecced`.
 ---@param entries cinch.Entry[]
 ---@return cinch.Plugin[] added in declaration order, deps before dependents
+---@return cinch.Plugin[] respecced
 function M.register(entries)
-  local added = {}
+  local batch = { added = {}, touched = {}, respecced = {} }
   for _, e in ipairs(entries) do
-    make(e, nil, added)
+    make(e, nil, batch)
   end
-  -- Bare-name deps can point at a spec declared later, so they are checked last.
-  for _, p in ipairs(added) do
+  for _, p in ipairs(batch.touched) do
+    -- Now every spec is in: an earlier one's load may not hold any more.
+    local notes = {}
+    fill(p, p.spec, p.origin, p.dep_only == true, notes)
+    report(p.name, p.origin, notes)
+    -- Bare-name deps can point at a spec declared later, so they are checked last.
     for i = #p.deps, 1, -1 do
       if not state.plugins[p.deps[i]] then
         events.report(('`%s` depends on `%s`, which no spec declares'):format(p.name, p.deps[i]), vim.log.levels.WARN)
@@ -354,7 +405,7 @@ function M.register(entries)
       end
     end
   end
-  return added
+  return batch.added, batch.respecced
 end
 
 -- Discovery ------------------------------------------------------------------

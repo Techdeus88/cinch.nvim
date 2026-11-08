@@ -81,6 +81,10 @@ cinch fields can sit at the top level, as above, or inside `data`, the way `vim.
 | `after` | `function(plugin)`, run after `config` |
 | `module` | `false` keeps `require()` of this plugin's modules from loading it |
 
+Specs with the same `name` merge into one before the plugin loads, in the order cinch reads them, so you can declare a plugin in one file and adjust it in another. It works like `vim.tbl_deep_extend('force', ...)`: `opts` and other nested tables merge key by key, and when two specs set the same field the later one wins. A list counts as one value, so a later `keys`, `cmd`, `event`, `ft` or `deps` replaces the earlier list. So does an `opts` function: it replaces earlier `opts` and gets an empty table.
+
+Files under a folder are read in sorted order. A later `add()` merges too, while the plugin is still waiting to load, and its triggers and `load` change to match. Once the plugin has started loading, a new spec warns and applies on restart. A plain `deps = { 'owner/repo' }` only names the dependency and changes nothing in its spec.
+
 A field cinch does not know gets a warning naming the spec file, and is ignored. That includes lazy.nvim's `lazy`: use `load` instead.
 
 The `plugin` table your hooks receive has `name`, `src`, `version`, `load`, `path` and `rev`, the commit that is checked out.

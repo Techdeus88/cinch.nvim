@@ -93,7 +93,7 @@ H.after_startup(function()
   H.eq(H.noted('sets `commit` and `tag`; using `commit`'), true, 'the losing pin warns')
   H.eq(H.noted('unknown field `bogus`'), true, 'unknown fields warn')
   H.eq(H.noted('unknown field `lazy`'), true, 'lazy is not a field')
-  H.eq(H.noted('`which.nvim` declared twice'), true, 'a second spec of a name warns')
+  H.eq(H.noted('declared twice'), false, 'a second spec of a name merges without a warning')
 
   H.eq(state.plugins['now-cmd'].load, 'now', 'an explicit load wins')
   H.eq(H.noted('load = `now`, so its triggers are ignored'), true, 'and says its triggers are ignored')

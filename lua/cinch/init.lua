@@ -258,8 +258,19 @@ end
 
 --- Run init hooks, arm every plugin on disk, then load what can load now.
 ---@param install cinch.Plugin[]
-local function start(install)
+---@param respecced? cinch.Plugin[] pending plugins armed by a spec that has since changed
+local function start(install, respecced)
   local t = hrtime()
+  for _, p in ipairs(respecced or {}) do
+    handler.disarm(p)
+    p.triggers = nil
+    local on, why = enabled(p)
+    if on then
+      handler.arm(p)
+    else
+      state.set(p, 'disabled', why)
+    end
+  end
   for _, p in ipairs(install) do
     if p.state == 'registered' then
       local ok, err = loader.hook(p, 'init')
@@ -344,7 +355,8 @@ end
 --- must wait for the UI do all of that on UIEnter instead.
 ---@param added cinch.Plugin[]
 ---@param confirm? boolean
-local function activate(added, confirm)
+---@param respecced? cinch.Plugin[]
+local function activate(added, confirm, respecced)
   modules.set((M.opts or defaults).module ~= false)
   local install = {}
   for _, p in ipairs(added) do
@@ -358,6 +370,7 @@ local function activate(added, confirm)
   if deferred then
     -- add() while a batch waits: it joins the batch.
     vim.list_extend(deferred.plugins, install)
+    start({}, respecced)
     return
   end
   local wait = with_dependents(to_defer(install), install)
@@ -368,7 +381,7 @@ local function activate(added, confirm)
   if #now > 0 then
     install_all(now, confirm)
   end
-  start(now)
+  start(now, respecced)
   if #wait > 0 then
     deferred = { plugins = wait, confirm = confirm }
     -- When the whole batch waits (a first start, a new machine), cinch.now()
@@ -421,10 +434,10 @@ function M.setup(opts)
   pack.timeout = M.opts.build_timeout * 1000
   load_features(M.opts)
   local t = hrtime()
-  local added = spec.register(spec.collect(M.opts.spec, caller()))
+  local added, respecced = spec.register(spec.collect(M.opts.spec, caller()))
   adopt_self(added)
   phase('specs', t)
-  activate(added, M.opts.confirm)
+  activate(added, M.opts.confirm, respecced)
   -- User CinchDone, for config code that runs once cinch has set everything up: now,
   -- or once a batch that waits for the UI has installed and loaded too.
   if deferred then
@@ -443,8 +456,8 @@ function M.add(specs, opts)
   if confirm == nil then
     confirm = (M.opts or defaults).confirm
   end
-  local added = spec.register(spec.collect({ specs }, caller()))
-  activate(added, confirm)
+  local added, respecced = spec.register(spec.collect({ specs }, caller()))
+  activate(added, confirm, respecced)
   return added
 end
 
