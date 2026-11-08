@@ -7,7 +7,12 @@ require('cinch').setup({
   spec = {
     {
       { H.src('alpha.nvim'), enabled = false },
-      { H.src('beta.nvim'), cond = function() return false end },
+      {
+        H.src('beta.nvim'),
+        cond = function()
+          return false
+        end,
+      },
       { H.src('gamma'), cond = false },
     },
   },
@@ -28,19 +33,29 @@ H.after_startup(function()
     end
   end
   local off = ' ' .. require('cinch.features.ui.rows').glyph('off') .. ' off '
-  for name, why in pairs({ ['alpha.nvim'] = 'enabled = false', ['beta.nvim'] = 'cond() returned false', gamma = 'cond = false' }) do
+  for name, why in pairs({
+    ['alpha.nvim'] = 'enabled = false',
+    ['beta.nvim'] = 'cond() returned false',
+    gamma = 'cond = false',
+  }) do
     local row = row_of(name)
     H.eq(row ~= nil, true, name .. ' has a row')
     ---@cast row integer
     local line = lines[row + 1]
-    H.eq(line:find(' ✕ ' .. name .. ' ' .. off .. ' ' .. why, 1, true) ~= nil, true, name .. ': an X, the off chip, then ' .. why)
+    H.eq(
+      line:find(' ✕ ' .. name .. ' ' .. off .. ' ' .. why, 1, true) ~= nil,
+      true,
+      name .. ': an X, the off chip, then ' .. why
+    )
   end
 
   -- The name's own group: dim like a comment, not italic.
   local row = row_of('alpha.nvim')
   local col = lines[row + 1]:find('alpha.nvim', 1, true) - 1
   local groups = {}
-  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, -1, { row, col }, { row, col }, { details = true, overlap = true })) do
+  for _, m in
+    ipairs(vim.api.nvim_buf_get_extmarks(buf, -1, { row, col }, { row, col }, { details = true, overlap = true }))
+  do
     groups[#groups + 1] = m[4].hl_group
   end
   H.eq(vim.list_contains(groups, 'CinchOffName'), true, 'the name in CinchOffName')

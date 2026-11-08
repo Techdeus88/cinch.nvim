@@ -79,6 +79,7 @@ cinch fields can sit at the top level, as above, or inside `data`, the way `vim.
 | `main` | The module whose `setup()` gets `opts`. cinch guesses it from the plugin's name, or takes the only module in its `lua/` folder |
 | `config` | `function(plugin, opts)`, run after the plugin loads, in place of `require(main).setup(opts)`. `config = true` calls `setup()` with no opts |
 | `after` | `function(plugin)`, run after `config` |
+| `module` | `false` keeps `require()` of this plugin's modules from loading it |
 
 A field cinch does not know gets a warning naming the spec file, and is ignored. That includes lazy.nvim's `lazy`: use `load` instead.
 
@@ -97,6 +98,8 @@ When `load` is not set:
 `event = 'VeryLazy'` from lazy.nvim means `later`. Beside other events, as in `event = { 'VeryLazy', 'BufReadPre' }`, the plugin loads on whichever comes first: one of those events, or its turn in the `later` queue.
 
 An explicit `load` always wins. `load = 'now'` with a `cmd` loads at startup, and cinch warns that the `cmd` is ignored.
+
+Whatever `load` says, `require()` of a plugin's module loads a plugin that has not loaded yet. Its dependencies, `config` and events run as they do for any load, and the reason, such as `require telescope.builtin`, shows in the log and the window. `module = false` turns this off in `setup()` or on one spec.
 
 `now` plugins load while `init.lua` runs, in the order you declared them, dependencies first. On a first start they load right after the install instead (see below). Neovim then sources their `plugin/` files in its normal startup pass, so a `now` plugin's `config` runs before its own `plugin/` files. A plugin whose `config` needs something its `plugin/` file defines should use `later`.
 
@@ -123,6 +126,7 @@ require('cinch').setup({
   defer = true,                  -- install missing plugins once the UI is up
   build_timeout = 300,           -- seconds an async function build may take before it fails
   disable_runtime = {},          -- Neovim's own plugins not to load: { 'netrwPlugin', 'gzip', 'tutor' }
+  module = true,                 -- require() of a plugin's module loads the plugin
   self = true,                   -- update cinch itself as one of its plugins; a table pins it: { tag = 'v1.0.0' }
   features = { 'messages', 'stats', 'updates', 'ui' },
 
@@ -332,6 +336,10 @@ cinch.trigger(name, def)
 - Lua modules cannot be unloaded. Updating a plugin that has already loaded takes effect when you restart, and cinch says so.
 - A `':Cmd'` build needs the plugin's own command, so cinch loads the plugin first. During startup that waits for `VimEnter`.
 - A build that fails, or is cut off by quitting, runs again at the next startup.
+- `pcall(require, 'foo')` loads the plugin that has `foo`, so it no longer tells you whether a plugin has loaded. Use `require('cinch').get(name).state` for that, or `module = false`.
+- `require()` has to return at once, so it cannot wait for a build the way a key or a command can. During a build it fails with `still building`, and a later `require()` loads the plugin. It also fails, with the reason in the error, when the plugin is disabled, not installed or failed, when `LoadPre` cancels the load, and when it runs in a fast event. A plugin whose `config` raises fails that first `require()`, and later ones find the module on the runtimepath.
+- When two plugins have the same module, `require()` loads the first declared and warns once.
+- A `require()` during startup loads the plugin right then, however the spec says to load it. Stats and the log show it as `require <module>`.
 - A plugin loads only once everything it depends on has, however deep. It waits for a build running anywhere below it, and fails with the reason when a dependency is disabled, failed, cancelled or not installed yet. On a start that installs a new dependency once the UI is up, the plugins that need it wait too.
 - `keys = false`, `cmd = false` and the like turn that trigger off, as in lazy.nvim. With no trigger left, the plugin loads `later`.
 - Plugins behind the same trigger load in the order you declared them. A key replayed in operator-pending mode keeps its operator, count and register, and a command keeps the exact text you typed.

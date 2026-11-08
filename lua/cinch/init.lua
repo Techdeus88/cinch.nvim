@@ -4,6 +4,7 @@
 local events = require('cinch.events')
 local handler = require('cinch.handler')
 local loader = require('cinch.loader')
+local modules = require('cinch.modules')
 local pack = require('cinch.pack')
 local spec = require('cinch.spec')
 local state = require('cinch.state')
@@ -54,6 +55,7 @@ end
 ---@field defer? boolean when plugins are missing, install once the UI is up, not during init.lua; default true
 ---@field build_timeout? integer seconds an async function build may take before it fails; default 300
 ---@field disable_runtime? string[] Neovim's own plugins not to load: 'netrwPlugin', 'gzip', 'tutor'; default {}
+---@field module? boolean require() of a plugin's module loads the plugin; default true
 ---@field self? boolean|{ version?: any, tag?: string, branch?: string, commit?: string } update cinch as one of its
 ---plugins when it lives in vim.pack's folder; a table pins it, as in a spec; default true: its default branch
 ---@field features? string[] modules under cinch.features to load; default { 'messages', 'stats', 'updates', 'ui' }
@@ -67,6 +69,7 @@ local defaults = {
   defer = true,
   build_timeout = 300,
   disable_runtime = {},
+  module = true,
   self = true,
   features = { 'messages', 'stats', 'updates', 'ui' },
 }
@@ -342,6 +345,7 @@ end
 ---@param added cinch.Plugin[]
 ---@param confirm? boolean
 local function activate(added, confirm)
+  modules.set((M.opts or defaults).module ~= false)
   local install = {}
   for _, p in ipairs(added) do
     local on, why = enabled(p)

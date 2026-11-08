@@ -463,7 +463,10 @@ local function hook(on)
     if debug.gethook() ~= nil then
       if not warned then
         warned = true
-        events.report('functions are not profiled: another debug hook is set, a debugger or coverage tool', vim.log.levels.WARN)
+        events.report(
+          'functions are not profiled: another debug hook is set, a debugger or coverage tool',
+          vim.log.levels.WARN
+        )
       end
       return
     end
@@ -488,12 +491,11 @@ local function functions(owner_of)
   for _, r in pairs(M.funcs) do
     local key = r and ('%s:%d'):format(r.source, r.line) or ''
     local same = at[key]
-    if not r then
-      -- A C function: never timed.
-    elseif same then
+    -- False for a C function: never timed.
+    if r and same then
       same.ms, same.total, same.calls = same.ms + r.self / 1e6, same.total + r.total / 1e6, same.calls + r.calls
       same.start = math.min(same.start, r.first)
-    elseif r.calls > 0 then
+    elseif r and r.calls > 0 then
       local path = r.source:match('^@(.*)') or r.source
       local owner, rel = 'other', r.source
       if path:find('^/') or path:find('^%a:[/\\]') then

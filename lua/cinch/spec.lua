@@ -28,6 +28,7 @@ local M = {}
 ---@field main? string module whose setup() gets opts; guessed from the name
 ---@field config? true|fun(p: cinch.Plugin, opts: table) replaces the default setup(opts) call
 ---@field after? fun(p: cinch.Plugin) after the plugin loaded and its config ran
+---@field module? boolean false: require() of its modules does not load it
 
 ---A vim.pack.Spec, with `[1]` in place of `src` and cinch fields at the top level if you like.
 ---@class cinch.Spec: vim.pack.Spec, cinch.Data
@@ -58,6 +59,7 @@ M.fields = {
   main = true,
   config = true,
   after = true,
+  module = true,
 }
 ---@type table<string, true>
 M.triggers = { event = true, ft = true, cmd = true, keys = true }

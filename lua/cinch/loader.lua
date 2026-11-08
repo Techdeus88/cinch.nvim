@@ -218,6 +218,7 @@ local function building(p, seen)
     end
   end
 end
+M.building = building
 
 -- Why a dependency did not load, by its state.
 local dep_why = {
@@ -248,6 +249,7 @@ end
 ---@param reason string 'now', 'later', 'event BufReadPost', 'dep of x', ...
 ---@param done? fun()
 ---@return boolean loaded now
+---@return string? cancelled why LoadPre stopped it
 function M.load(p, reason, done)
   done = done or function() end
   if p.state ~= 'pending' then
@@ -279,9 +281,10 @@ function M.load(p, reason, done)
   end
   local pre = events.has('LoadPre') and events.emit('LoadPre', { plugin = p, reason = reason }) or {}
   if pre.cancel then
-    events.report(('`%s` not loaded: %s'):format(p.name, pre.cancel_reason or 'cancelled'))
+    local why = pre.cancel_reason or 'cancelled'
+    events.report(('`%s` not loaded: %s'):format(p.name, why))
     done()
-    return false
+    return false, why
   end
 
   state.set(p, 'loading', reason)

@@ -95,6 +95,15 @@ vim.g.floaty_win = vim.api.nvim_open_win(vim.api.nvim_create_buf(false, true), t
     ['lua/builder.lua'] = 'return { make = function() vim.g.builder_made = true end }',
     ['plugin/builder.lua'] = 'vim.g.builder_plugin = true',
   },
+  -- Modules with no setup of their own, for loading by require().
+  ['modly'] = {
+    ['lua/modly/init.lua'] = "vim.g.modly_runs = (vim.g.modly_runs or 0) + 1 return { name = 'modly' }",
+    ['lua/modly/sub.lua'] = "return { name = 'sub' }",
+    ['plugin/modly.lua'] = 'vim.g.modly_plugin = (vim.g.modly_plugin or 0) + 1',
+  },
+  -- Two plugins that provide one module.
+  ['dup-first'] = { ['lua/dupmod.lua'] = "return { from = 'first' }" },
+  ['dup-second'] = { ['lua/dupmod.lua'] = "return { from = 'second' }" },
 }
 
 local function sh(cmd, cwd)
