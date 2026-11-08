@@ -278,6 +278,34 @@ local function is_ref(d)
   return type(d) == 'string' and not d:find('/') and not d:find(':')
 end
 
+--- Two specs' `opts` as one: a function gets what came before it, and what it returns
+--- or fills in is the result; a table merges over what came before it.
+---@param old any
+---@param new any
+---@return any
+local function merged_opts(old, new)
+  if type(old) ~= 'function' and type(new) ~= 'function' then
+    if type(old) == 'table' and type(new) == 'table' then
+      return vim.tbl_deep_extend('force', old, new)
+    end
+    return new == nil and old or new
+  end
+  if old == nil or new == nil then
+    return old or new
+  end
+  return function(p, given)
+    local function apply(opts, so_far)
+      if type(opts) == 'function' then
+        local res = opts(p, so_far)
+        return res == nil and so_far or res
+      end
+      -- A copy, since the function after it may change what it is given.
+      return vim.tbl_deep_extend('force', so_far, vim.deepcopy(opts))
+    end
+    return apply(new, apply(old, given))
+  end
+end
+
 --- `new` over `old`, later values winning. `data` merges deep; `version` stays whole,
 --- because a merged range object would lose its metatable.
 ---@param old vim.pack.Spec
@@ -289,6 +317,7 @@ local function merged(old, new)
     res[k] = v
   end
   res.data = vim.tbl_deep_extend('force', old.data, new.data)
+  res.data.opts = merged_opts(old.data.opts, new.data.opts)
   return res
 end
 
