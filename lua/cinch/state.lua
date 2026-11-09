@@ -9,7 +9,7 @@ local M = {}
 
 ---@alias cinch.State
 ---| 'registered' a record, not yet checked against the disk
----| 'disabled'   `enabled` or `cond` is false, or turned off this session
+---| 'disabled'   `enabled` or `cond` is false, turned off this session, or only off plugins need it
 ---| 'pending'    on disk, waiting for its moment: now, later or a trigger
 ---| 'loading'
 ---| 'loaded'

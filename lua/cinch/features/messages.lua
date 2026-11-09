@@ -281,11 +281,8 @@ local function log_steps()
     if d.to == 'pending' and d.from == 'registered' then
       step('state', ('%s waits for %s'):format(p.name, waits_for(p)), p.name)
     elseif d.to == 'disabled' then
-      step(
-        'state',
-        ('%s is off: %s'):format(p.name, d.reason == 'cond' and 'cond is false' or 'enabled = false'),
-        p.name
-      )
+      local why = ({ cond = 'cond is false', unneeded = 'only plugins that are off need it' })[d.reason]
+      step('state', ('%s is off: %s'):format(p.name, why or 'enabled = false'), p.name)
     end
   end)
   events.on('LoadWait', function(d)

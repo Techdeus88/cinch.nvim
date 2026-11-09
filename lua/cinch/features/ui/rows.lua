@@ -61,6 +61,9 @@ M.icons = {
 ---@param p cinch.Plugin
 ---@return string
 function M.off_reason(p)
+  if p.reason == 'unneeded' then
+    return 'only plugins that are off need it'
+  end
   local k = p.reason == 'cond' and 'cond' or 'enabled'
   return type(p.data[k]) == 'function' and k .. '() returned false' or k .. ' = false'
 end

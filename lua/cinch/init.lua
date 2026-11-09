@@ -260,6 +260,49 @@ local function install_all(install, confirm)
   phase('install', t)
 end
 
+--- Turn off plugins only ever named as dependencies once every plugin needing them is off.
+local function drop_unneeded()
+  local changed = true
+  while changed do
+    changed = false
+    local listed, needed = {}, {}
+    for _, q in ipairs(state.list) do
+      for _, name in ipairs(q.deps) do
+        listed[name] = true
+        needed[name] = needed[name] or q.state ~= 'disabled'
+      end
+    end
+    for _, p in ipairs(state.list) do
+      local waiting = p.state == 'registered' or p.state == 'pending'
+      if waiting and p.dep_only and listed[p.name] and not needed[p.name] then
+        handler.disarm(p)
+        state.set(p, 'disabled', 'unneeded')
+        changed = true
+      end
+    end
+  end
+end
+
+--- Bring back the dependencies drop_unneeded() turned off, now that a plugin needs them.
+---@param install cinch.Plugin[] grows with those that need installing
+---@param respecced? cinch.Plugin[]
+local function revive_needed(install, respecced)
+  local queue = vim.list_extend(vim.list_slice(install), respecced or {})
+  local i = 1
+  while queue[i] do
+    for _, name in ipairs(queue[i].deps) do
+      local d = state.plugins[name]
+      if d and d.state == 'disabled' and d.reason == 'unneeded' then
+        d.reason = nil
+        state.set(d, 'registered')
+        install[#install + 1] = d
+        queue[#queue + 1] = d
+      end
+    end
+    i = i + 1
+  end
+end
+
 --- Run init hooks, arm every plugin on disk, then load what can load now.
 ---@param install cinch.Plugin[]
 ---@param respecced? cinch.Plugin[] pending plugins armed by a spec that has since changed
@@ -274,6 +317,9 @@ local function start(install, respecced)
     else
       state.set(p, 'disabled', why)
     end
+  end
+  if respecced and #respecced > 0 then
+    drop_unneeded()
   end
   for _, p in ipairs(install) do
     if p.state == 'registered' then
@@ -371,6 +417,11 @@ local function activate(added, confirm, respecced)
       state.set(p, 'disabled', why)
     end
   end
+  revive_needed(install, respecced)
+  drop_unneeded()
+  install = vim.tbl_filter(function(p)
+    return p.state ~= 'disabled'
+  end, install)
   if deferred then
     -- add() while a batch waits: it joins the batch.
     vim.list_extend(deferred.plugins, install)
