@@ -90,7 +90,11 @@ H.after_startup(function()
     return not u.checking
   end, 'the check')
   vim.wait(50)
-  H.eq(lines(w.list)[line_of(w.list, ' beta%.nvim ')]:find('↑1') ~= nil, true, 'pending commits on the row')
+  H.eq(
+    lines(w.list)[line_of(w.list, ' beta%.nvim ')]:find('beta.nvim 1 commit', 1, true) ~= nil,
+    true,
+    'commits behind'
+  )
 
   -- A row: the status light, the name, its load time and bar, then how it loads,
   -- each kind on a chip of its own color.

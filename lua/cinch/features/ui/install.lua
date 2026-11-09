@@ -55,7 +55,7 @@ function M.installing(w, d)
   if vim.v.vim_did_enter == 0 then
     return
   end
-  local install = { total = #d.names, done = 0, started = vim.uv.hrtime(), status = {} }
+  local install = { total = #d.names, done = 0, status = {} }
   for _, name in ipairs(d.names) do
     install.status[name] = 'cloning'
   end
@@ -75,6 +75,7 @@ function M.progress(w, d)
   if not (install and d.title:find('^Installing')) then
     return
   end
+  install.current = d.name or install.current
   if d.name and install.status[d.name] == 'cloning' then
     install.status[d.name] = 'installed'
     install.done = install.done + 1

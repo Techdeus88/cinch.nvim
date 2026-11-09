@@ -63,7 +63,8 @@ H.after_startup(function()
   H.eq(beta.activity, nil, 'it is not left "deleting"')
 
   vim.cmd('Cinch')
-  H.eq(vim.list_contains(list_lines(), ' ▾ not in your specs 4'), true, 'the window lists them')
+  H.eq(vim.list_contains(list_lines(), ' ▾ Updates (4)'), true, 'the window lists them under Updates')
+  H.eq(vim.list_contains(list_lines(), ' · cmdy not in specs'), true, 'each saying it is not in specs')
 
   -- Several at once: select them, then d.
   local w = require('cinch.features.ui').windows()
@@ -110,7 +111,7 @@ H.after_startup(function()
   vim.cmd('Cinch clean')
   H.eq(on_disk('delta.nvim'), false, ':Cinch clean deletes the rest')
   H.wait(function()
-    return table.concat(list_lines(), '\n'):find('not in your specs', 1, true) == nil
+    return table.concat(list_lines(), '\n'):find('not in specs', 1, true) == nil
   end, 'the section to go')
   vim.cmd('Cinch clean')
   H.eq(H.noted('nothing to clean'), true, 'then there is nothing to clean')

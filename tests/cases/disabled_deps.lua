@@ -42,12 +42,23 @@ H.after_startup(function()
   H.eq(H.plugin('modly').state, 'loaded', 'and that plugin loads')
   H.eq(H.plugin('early').state, 'loaded', 'a dependency with its own spec stays on')
 
-  local off = require('cinch.features.ui.rows').off_reason(beta)
-  H.eq(off, 'only plugins that are off need it', 'the window says why')
+  local rows = require('cinch.features.ui.rows')
+  H.eq(rows.off_reason(beta), nil, 'no message of its own')
+  H.eq(rows.off_reason(H.plugin('alpha.nvim')), 'enabled = false', 'the plugin that is off keeps its')
+  local list = require('cinch.features.ui.plugins').list(100, { folded = {}, tick = 0, info = {}, spec_lines = {} })
+  local dep = ' ' .. rows.glyph('dep') .. ' dep  alpha.nvim'
+  local row = vim.tbl_filter(function(l)
+    return l:find(' beta.nvim ', 1, true) ~= nil
+  end, list.lines)[1]
+  H.eq(row, ' ✕ beta.nvim ' .. dep, 'its row: an X, the name, the dep chip, the plugin that needs it')
+  H.eq(table.concat(list.lines, '\n'):find('only plugins', 1, true), nil, 'and no message')
+  local pane =
+    require('cinch.features.ui.plugins').pane('beta.nvim', 100, { folded = {}, tick = 0, info = {}, spec_lines = {} })
+  H.eq(table.concat(pane.lines, '\n'):find('dep  alpha.nvim', 1, true) ~= nil, true, 'the pane shows the same chip')
   local logged = vim.tbl_filter(function(l)
-    return l.msg:find('beta.nvim is off: only plugins that are off need it', 1, true) ~= nil
+    return l.msg:find('beta.nvim is off', 1, true) ~= nil
   end, require('cinch.features.messages').log)
-  H.eq(#logged, 1, 'and so does the log')
+  H.eq(#logged, 0, 'and the log adds no line for it')
 
   local ok, err = pcall(require, 'beta')
   H.eq(ok, false, 'require() does not load it')

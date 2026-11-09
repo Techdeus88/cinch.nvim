@@ -14,7 +14,7 @@ local M = {}
 ---@class cinch.ui.Install
 ---@field total integer
 ---@field done integer
----@field started integer hrtime
+---@field current? string the plugin that last reported progress
 ---@field status table<string, 'queued'|'cloning'|'installed'|'failed'>
 ---@field message? string what is happening now, when not one plugin
 
@@ -38,7 +38,7 @@ M.glyph = rows.glyph
 M.kind_chip = rows.kind_chip
 M.pane = details.pane
 
-local feature, mark, message = rows.feature, rows.mark, rows.message
+local mark, message = rows.mark, rows.message
 local add_row, load_ms, pending, dependents = rows.add_row, rows.load_ms, rows.pending, rows.dependents
 
 ---@param ctx cinch.ui.Ctx
@@ -49,39 +49,75 @@ local function visible(ctx)
   end, state.yours())
 end
 
---- cinch itself has no row; a pending update of it gets one line above the rest,
---- which selects it like a plugin, so the pane lists its commits and `u` applies it.
----@param c cinch.ui.Canvas
-local function own_update(c)
-  local updates = feature('updates')
+--- Plugins with pending updates, taken from the section they would be in, with cinch
+--- itself, which has a row only here. One that is working, failed or off stays there.
+---@param plugins cinch.Plugin[]
+---@param ctx cinch.ui.Ctx
+---@return cinch.Plugin[]
+local function with_updates(plugins, ctx)
+  local out = {}
   for _, p in ipairs(state.list) do
-    local u = p.self and updates and updates.results[p.name]
-    if u then
-      c:add({
-        { ' ↑ ', 'CinchUpdate' },
-        { 'cinch', 'CinchName' },
-        { (' has %d new commit%s · u updates it'):format(#u.commits, #u.commits == 1 and '' or 's'), 'CinchMuted' },
-      }, { plugin = p.name })
-      c:blank()
+    local key = M.section_of(p)
+    local shown = p.self and (not ctx.filter or p.name:lower():find(ctx.filter:lower(), 1, true))
+      or vim.list_contains(plugins, p)
+    if shown and pending(p) and (key == 'loaded' or key == 'waiting') then
+      out[#out + 1] = p
     end
+  end
+  return out
+end
+
+--- The Updates section, drawn only when it has something: plugins with pending updates,
+--- then what is on disk in no spec.
+---@param c cinch.ui.Canvas
+---@param list cinch.Plugin[]
+---@param orphans cinch.Orphan[]
+---@param ctx cinch.ui.Ctx
+local function updates_section(c, list, orphans, ctx)
+  local count = #list + #orphans
+  if count == 0 then
+    return
+  end
+  local open = not ctx.folded.updates
+  c:add({
+    { (open and ' ▾ ' or ' ▸ ') .. 'Updates', 'CinchSection' },
+    { (' (%d)'):format(count), 'CinchMuted' },
+  }, { section = 'updates' })
+  if not open then
+    return
+  end
+  for _, p in ipairs(list) do
+    rows.add_update_row(c, p, ctx.tick, ctx.marked and ctx.marked[p.name])
+  end
+  for _, o in ipairs(orphans) do
+    c:add(
+      { { ' · ' .. o.name .. ' ', 'CinchMuted' }, { 'not in specs', 'CinchWarn' } },
+      { plugin = o.name, line_hl = ctx.marked and ctx.marked[o.name] and 'CinchMarked' or nil }
+    )
   end
 end
 
---- Install progress for a first start: one line of status and a thin bar across the list.
+local graph_min = 6
+
+--- Install progress on one line: `Installing plugins (18/48) - yanky.nvim 37% ━━━━`.
 ---@param c cinch.ui.Canvas
 ---@param install cinch.ui.Install
 local function install_header(c, install)
-  local secs = (vim.uv.hrtime() - install.started) / 1e9
-  local msg = install.message
-    or ('Setting up %d plugin%s · %d of %d · %.1fs'):format(
-      install.total,
-      install.total == 1 and '' or 's',
-      install.done,
-      install.total,
-      secs
-    )
-  c:add({ { ' ' .. msg, 'CinchTitle' } })
-  c:add(vim.list_extend({ { ' ' } }, canvas.pill(install.done, install.total, c.width - 3)))
+  if install.message then
+    c:add({ { ' ' .. install.message, 'CinchTitle' } })
+    return
+  end
+  local current = install.current and (' - ' .. install.current) or ''
+  local left = (' Installing plugins (%d/%d)%s '):format(install.done, install.total, current)
+  local percent = ('%d%% '):format(install.total > 0 and math.floor(install.done / install.total * 100) or 0)
+  -- A long name gives way first, so the percent and the graph stay in view.
+  local room = c.width - 1 - canvas.cells(percent) - graph_min
+  if canvas.cells(left) > room then
+    left = canvas.fit(left, room - 1) .. ' '
+  end
+  local graph = c.width - 1 - canvas.cells(left) - canvas.cells(percent)
+  local line = { { left, 'CinchTitle' }, { percent, 'CinchMuted' } }
+  c:add(vim.list_extend(line, canvas.pill(install.done, install.total, graph)))
 end
 
 -- Each install status: its mark (nil: the spinner), its color, the message.
@@ -137,19 +173,25 @@ function M.list(width, ctx)
     slowest = math.max(slowest, load_ms(p) or 0)
   end
   local needed = dependents()
+  local updating = with_updates(plugins, ctx)
   local by = {}
   for _, p in ipairs(plugins) do
-    local key = M.section_of(p)
-    by[key] = by[key] or {}
-    table.insert(by[key], p)
+    if not vim.list_contains(updating, p) then
+      local key = M.section_of(p)
+      by[key] = by[key] or {}
+      table.insert(by[key], p)
+    end
   end
   table.sort(by.loaded or {}, function(a, b)
     return (a.order or 0) < (b.order or 0)
   end)
-  own_update(c)
   if ctx.filter then
     c:add({ { ' / ' .. ctx.filter, 'CinchKey' }, { ('  %d of %d'):format(#plugins, #state.yours()), 'CinchMuted' } })
   end
+  local orphans = vim.tbl_filter(function(o)
+    return not ctx.filter or o.name:lower():find(ctx.filter:lower(), 1, true) ~= nil
+  end, ctx.orphans or {})
+  updates_section(c, updating, orphans, ctx)
   for _, s in ipairs(M.sections) do
     local list = by[s.key]
     if list then
@@ -177,23 +219,7 @@ function M.list(width, ctx)
       end
     end
   end
-  local orphans = vim.tbl_filter(function(o)
-    return not ctx.filter or o.name:lower():find(ctx.filter:lower(), 1, true) ~= nil
-  end, ctx.orphans or {})
-  if #orphans > 0 then
-    local open = not ctx.folded.orphans
-    c:add({
-      { (open and ' ▾ ' or ' ▸ ') .. 'not in your specs', 'CinchSection' },
-      { ' ' .. #orphans, 'CinchMuted' },
-    }, { section = 'orphans' })
-    for _, o in ipairs(open and orphans or {}) do
-      c:add(
-        { { ' · ' .. o.name .. ' ', 'CinchMuted' }, { 'on disk · d deletes it', 'CinchWarn' } },
-        { plugin = o.name, line_hl = ctx.marked and ctx.marked[o.name] and 'CinchMarked' or nil }
-      )
-    end
-  end
-  if #plugins + #orphans == 0 then
+  if #plugins + #orphans + #updating == 0 then
     c:add({ { ' no plugins match', 'CinchMuted' } })
   end
   return c

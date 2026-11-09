@@ -201,7 +201,7 @@ function M.pane(name, width, ctx)
       return o.name == name
     end)
   if orphan then
-    c:add({ { ' ' .. fit(orphan.name, c.width - 20), 'CinchTitle' }, { ' not in your specs ', 'CinchWarn' } })
+    c:add({ { ' ' .. fit(orphan.name, c.width - 20), 'CinchTitle' }, { ' not in specs ', 'CinchWarn' } })
     c:add({ { ' ' .. ('─'):rep(c.width - 2), 'CinchRule' } })
     kv(c, 'dir', { { vim.fn.fnamemodify(orphan.path, ':~'), 'CinchLink' } })
     kv(c, 'url', { { orphan.src, 'CinchLink' } })
@@ -248,7 +248,8 @@ function M.pane(name, width, ctx)
       pane_output(c, p)
     end
   elseif sec == 'disabled' then
-    kv(c, 'off', { { rows.off_reason(p) } })
+    local why = rows.off_reason(p)
+    kv(c, 'off', why and { { why } } or join(rows.load_items(p, rows.dependents()[p.name] or {})))
   else
     kv(c, 'load', load_line(p))
   end

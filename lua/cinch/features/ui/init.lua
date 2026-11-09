@@ -324,7 +324,7 @@ local function fetch_info(tries)
   end, tries == 0 and 150 or 300)
 end
 
---- What vim.pack has on disk that no spec names, for the "not in your specs" section.
+--- What vim.pack has on disk that no spec names, for the Updates section.
 --- Read on open and after a delete; skipped while vim.pack is busy.
 local function read_orphans()
   local pack = require('cinch.pack')

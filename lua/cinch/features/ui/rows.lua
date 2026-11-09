@@ -57,12 +57,12 @@ M.icons = {
 }
 
 --- Why a plugin is off, as its spec says it: `cond = false`, or `cond() returned false`
---- when the field is a function.
+--- when the field is a function. A dependency off with its parents has no spec to quote.
 ---@param p cinch.Plugin
----@return string
+---@return string?
 function M.off_reason(p)
   if p.reason == 'unneeded' then
-    return 'only plugins that are off need it'
+    return nil
   end
   local k = p.reason == 'cond' and 'cond' or 'enabled'
   return type(p.data[k]) == 'function' and k .. '() returned false' or k .. ' = false'
@@ -243,8 +243,10 @@ local function add_row(c, p, r)
     items[#items + 1] = { { '(' .. canvas.ms(r.ms) .. ')', 'CinchMuted' } }
     items[#items + 1] = canvas.pill(r.ms, r.slowest, 6)
   end
-  -- Off: its own chip in place of how it loads, which it never arms.
-  vim.list_extend(items, off and { M.kind_chip('off') } or load_items(p, r.needed_by))
+  -- Off: its own chip in place of how it loads, which it never arms. A dependency off
+  -- with its parents keeps its dep chip, which names them.
+  local off_chip = off and p.reason ~= 'unneeded'
+  vim.list_extend(items, off_chip and { M.kind_chip('off') } or load_items(p, r.needed_by))
   if r.up then
     items[#items + 1] = { { '↑' .. r.up, 'CinchUpdate' } }
   end
@@ -252,6 +254,22 @@ local function add_row(c, p, r)
     items[#items + 1] = { { r.msg, r.msg_hl } }
   end
   c:add(canvas.clip(join(items), c.width - 1), { plugin = p.name, line_hl = r.marked and 'CinchMarked' or nil })
+end
+
+--- A row in the Updates section: `● <name> 2 commits`.
+---@param c cinch.ui.Canvas
+---@param p cinch.Plugin
+---@param tick integer spinner frame
+---@param marked? boolean
+local function add_update_row(c, p, tick, marked)
+  local m, m_hl = mark(p, tick)
+  local n = pending(p) or 0
+  local items = {
+    { { ' ' .. m, m_hl } },
+    { { p.name, 'CinchName' } },
+    { { ('%d commit%s'):format(n, n == 1 and '' or 's'), 'CinchUpdate' } },
+  }
+  c:add(canvas.clip(join(items), c.width - 1), { plugin = p.name, line_hl = marked and 'CinchMarked' or nil })
 end
 
 M.feature = feature
@@ -263,5 +281,7 @@ M.load_ms = load_ms
 M.pending = pending
 M.dependents = dependents
 M.add_row = add_row
+M.load_items = load_items
+M.add_update_row = add_update_row
 
 return M

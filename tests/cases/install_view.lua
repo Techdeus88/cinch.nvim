@@ -53,14 +53,11 @@ H.after_startup(function()
   end, 'the install')
 
   H.eq(seen.open_at_installing, true, 'the window is open before vim.pack.add starts')
-  H.eq(seen.first_lines[1]:find('Setting up 5 plugins', 1, true) ~= nil, true, 'in its install phase')
+  H.eq(seen.first_lines[1]:find('Installing plugins (0/5)', 1, true) ~= nil, true, 'in its install phase')
+  H.eq(seen.first_lines[1]:find('0% ', 1, true) ~= nil, true, 'with how far along it is')
+  H.eq(seen.first_lines[1]:find('━', 1, true) ~= nil, true, 'and the graph, on the same line')
+  H.eq(seen.first_lines[2], ' ▾ installing 5', 'the rows right under it')
   H.eq(table.concat(seen.first_lines, '\n'):find('cloning…', 1, true) ~= nil, true, 'every row cloning')
-  local bar = seen.first_lines[2]
-  H.eq(
-    { bar:find('━', 1, true) ~= nil, (bar:gsub('━', '')) },
-    { true, ' ' },
-    'the progress bar: a thin line across the list'
-  )
   H.eq(vim.list_contains(seen.first_lines, ' ▾ installing 5'), true, 'the rows under their section header')
   H.eq(#seen.progress >= 3, true, 'progress arrives for each plugin')
   H.eq(seen.progress[1].handled, true, 'and the window takes it over from the command line')
@@ -72,7 +69,42 @@ H.after_startup(function()
   H.wait(function()
     return table.concat(list_lines(), '\n'):find('▾ loaded', 1, true) ~= nil
   end, 'the Plugins view')
-  H.eq(list_lines()[1]:find('Setting up', 1, true), nil, 'the same window, now the Plugins view')
+  H.eq(list_lines()[1]:find('Installing plugins', 1, true), nil, 'the same window, now the Plugins view')
+
+  local view = require('cinch.features.ui.plugins')
+  local running = view.list(60, {
+    folded = {},
+    tick = 0,
+    info = {},
+    spec_lines = {},
+    install = { total = 48, done = 18, status = {}, current = 'yanky.nvim' },
+  }).lines[1]
+  H.eq(running:find('^ Installing plugins %(18/48%) %- yanky%.nvim 37%% ━') ~= nil, true, running)
+  H.eq(vim.fn.strdisplaywidth(running), 59, 'the graph runs to the edge')
+  local narrow = view.list(36, {
+    folded = {},
+    tick = 0,
+    info = {},
+    spec_lines = {},
+    install = { total = 48, done = 18, status = {}, current = 'a-very-long-plugin-name.nvim' },
+  }).lines[1]
+  H.eq(
+    narrow:find(' 37%% ━━━━━━$') ~= nil,
+    true,
+    'a long name gives way to the percent and graph: ' .. narrow
+  )
+
+  local install = { total = 2, done = 0, status = { a = 'cloning' } }
+  local host = {
+    ui = { ctx = { install = install } },
+    is_open = function()
+      return true
+    end,
+    redraw = function() end,
+    opts = {},
+  }
+  require('cinch.features.ui.install').progress(host, { title = 'Installing plugins', name = 'a' })
+  H.eq({ install.current, install.done }, { 'a', 1 }, 'progress names the plugin it heard from')
   local w = require('cinch.features.ui').windows()
   H.eq(require('cinch.features.ui').is_open(), true, 'a now plugin opening a buffer did not close it')
   H.eq(vim.b[vim.api.nvim_win_get_buf(vim.fn.win_getid(1))].dashy, true, 'that buffer opened in your editor')
