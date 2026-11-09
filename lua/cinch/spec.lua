@@ -299,7 +299,10 @@ end
 local function apply_opts(p, opts, so_far)
   if type(opts) == 'function' then
     local res = opts(p, so_far)
-    return res == nil and so_far or res
+    if res == nil or res == so_far then
+      return so_far
+    end
+    return type(res) == 'table' and vim.tbl_deep_extend('force', so_far, res) or res
   end
   -- A copy, since the function after it may change what it is given.
   return vim.tbl_deep_extend('force', so_far, vim.deepcopy(opts))

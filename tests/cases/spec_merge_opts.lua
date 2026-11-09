@@ -1,5 +1,5 @@
 -- opts functions across merged specs: each gets the opts merged so far, what it returns
--- replaces them, and a later table merges over the result. Your own tables stay as written.
+-- merges in, and tables build the base first. Your own tables stay as written.
 local H = dofile(vim.env.CINCH_ROOT .. '/tests/helpers.lua')
 
 local function noop() end
@@ -130,6 +130,45 @@ require('cinch').setup({
         end,
       },
       { H.src('early'), opts = { a = 1 } },
+      -- A function with no opts argument adds to the table before it.
+      { H.src('dup-first'), load = 'now', config = noop, opts = { a = 1 } },
+      {
+        H.src('dup-first'),
+        opts = function()
+          return { b = 2 }
+        end,
+      },
+      -- A list in a returned table replaces, like any later list.
+      { H.src('dup-second'), load = 'now', config = noop, opts = { list = { 1, 2 }, keep = true } },
+      {
+        H.src('dup-second'),
+        opts = function(_, _)
+          return { list = { 3 } }
+        end,
+      },
+      -- Returning the table it was given keeps it as it is: a key it removed stays
+      -- removed, and an object inside keeps its metatable.
+      {
+        H.src('builder'),
+        load = 'now',
+        config = noop,
+        opts = { gone = true, keep = true, object = setmetatable({ v = 1 }, { __index = {} }) },
+      },
+      {
+        H.src('builder'),
+        opts = function(_, opts)
+          opts.gone = nil
+          return opts
+        end,
+      },
+      -- A new table that leaves a key out does not remove it.
+      { H.src('colory'), load = 'now', config = noop, opts = { a = 1 } },
+      {
+        H.src('colory'),
+        opts = function(_, _)
+          return { b = 2 }
+        end,
+      },
       -- A function that raises fails the plugin, whichever spec it came from.
       { H.src('cmdy'), load = 'now', config = noop, opts = { a = 1 } },
       {
@@ -144,7 +183,12 @@ require('cinch').setup({
 
 H.after_startup(function()
   H.eq(H.plugin('alpha.nvim').opts_used, { a = 1, b = 2, nested = { x = 1, y = 2 } }, 'a function fills in the table')
-  H.eq(H.plugin('beta.nvim').opts_used, { seen = 1, b = 2 }, 'what a function returns replaces what it was given')
+  H.eq(H.plugin('beta.nvim').opts_used, { a = 1, seen = 1, b = 2 }, 'a table a function returns merges in')
+  H.eq(H.plugin('dup-first').opts_used, { a = 1, b = 2 }, 'from a function with no opts argument too')
+  H.eq(H.plugin('dup-second').opts_used, { list = { 3 }, keep = true }, 'a list in a returned table replaces')
+  H.eq(H.plugin('builder').opts_used.gone, nil, 'a key set to nil on opts is gone')
+  H.eq(getmetatable(H.plugin('builder').opts_used.object) ~= nil, true, 'and returning opts keeps objects whole')
+  H.eq(H.plugin('colory').opts_used, { a = 1, b = 2 }, 'a smaller table returned removes nothing')
   H.eq(H.plugin('delta.nvim').opts_used, { a = 1, nested = { x = 1, y = 2 } }, 'a table merges over a function')
 
   H.eq(H.plugin('modly').opts_used, { name = 'modly', count = 2 }, 'each function sees the one before it')
