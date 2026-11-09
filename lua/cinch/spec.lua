@@ -63,6 +63,9 @@ M.fields = {
 }
 ---@type table<string, true>
 M.triggers = { event = true, ft = true, cmd = true, keys = true }
+
+---@type string[] spec files that failed to load this session: their plugins look like strays on disk
+M.broken = {}
 for k in pairs(M.triggers) do
   M.fields[k] = true
 end
@@ -538,6 +541,7 @@ function M.collect(roots, origin)
           ok, res = pcall(push, out, res, { file = file })
         end
         if not ok then
+          M.broken[#M.broken + 1] = file
           events.report(tostring(res), vim.log.levels.ERROR)
         end
       end

@@ -38,8 +38,10 @@ local function go(pat)
 end
 
 local answer = 1
+local asked = {}
 ---@diagnostic disable-next-line: duplicate-set-field
-vim.fn.confirm = function()
+vim.fn.confirm = function(question)
+  asked[#asked + 1] = question
   return answer
 end
 
@@ -108,8 +110,16 @@ H.after_startup(function()
     'the pane, what comes next'
   )
 
+  answer = 2
+  vim.cmd('Cinch clean')
+  H.eq(asked[#asked], 'Delete 1 plugin not in specs? delta.nvim', ':Cinch clean asks first, naming them')
+  H.eq(on_disk('delta.nvim'), true, 'and saying no keeps them')
+  answer = 1
   vim.cmd('Cinch clean')
   H.eq(on_disk('delta.nvim'), false, ':Cinch clean deletes the rest')
+  H.eq(H.noted('^Deleted 1 plugin$'), true, 'and says how it ended')
+  vim.wait(50)
+  H.eq(list_lines()[1], ' Deleted 1 plugin', 'in the window too')
   H.wait(function()
     return table.concat(list_lines(), '\n'):find('not in specs', 1, true) == nil
   end, 'the section to go')

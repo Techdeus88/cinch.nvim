@@ -30,7 +30,7 @@ local M = {}
 
 --- The keys of each view, for the frame's bottom border.
 M.hints = {
-  plugins = ' / filter  l load  i install  b build  u update  d delete  S-CR select  ? keys  q close ',
+  plugins = ' / filter  l load  i install  b build  u update  d delete  s sync  S-CR select  ? keys  q close ',
   triggers = ' <CR> fold  l load what waits  <C-d> <C-u> details  <Tab> next view  ? keys  q close ',
   stats = ' <Tab> next view  = size  ? keys  q close ',
   profile = ' <CR> fold  <C-s> sort  <C-f> hide under ms  / filter  <Tab> next view  ? keys  q close ',
@@ -322,6 +322,14 @@ function M.make(w)
       'check for updates in the background: the selected plugins, or all',
     },
     { { 'd' }, delete, 'delete the plugin, or the ones selected, from disk, once you confirm' },
+    {
+      { 's' },
+      function()
+        w.in_editor(require('cinch').sync)
+        w.redraw()
+      end,
+      'sync: install what is missing, offer to delete what no spec names, check for updates',
+    },
     { { '<S-CR>', '<Space>' }, toggle, 'select the plugin under the cursor for l b u c d, or let it go' },
     {
       { '<C-d>' },

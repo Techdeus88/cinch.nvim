@@ -25,10 +25,14 @@ M.sections = {
   { key = 'disabled', title = 'disabled', hl = 'CinchMuted' },
 }
 
+-- Disk work that moves a plugin into `working`. A check, an update or a delete leaves
+-- it where it is, saying so on its row, so the list does not reshuffle.
+local works = { installing = true, building = true }
+
 ---@param p cinch.Plugin
 ---@return string section key
 function M.section_of(p)
-  if p.activity or p.state == 'loading' then
+  if works[p.activity] or p.state == 'loading' then
     return 'working'
   elseif p.state == 'failed' then
     return 'failed'
@@ -83,7 +87,7 @@ M.glyph = glyph
 ---@return string mark, string group
 local function mark(p, tick)
   local sec = M.section_of(p)
-  if sec == 'working' then
+  if sec == 'working' or p.activity then
     return canvas.spinner[tick % #canvas.spinner + 1], 'CinchActive'
   end
   for _, s in ipairs(M.sections) do
@@ -181,6 +185,8 @@ local function message(p)
       return log[#log], 'CinchMuted'
     end
     return (p.activity or 'loading') .. '…', 'CinchActive'
+  elseif p.activity then
+    return p.activity .. '…', 'CinchActive'
   elseif sec == 'disabled' then
     return M.off_reason(p), 'CinchMuted'
   elseif p.deleted then
@@ -264,10 +270,12 @@ end
 local function add_update_row(c, p, tick, marked)
   local m, m_hl = mark(p, tick)
   local n = pending(p) or 0
+  local status = p.activity and { p.activity .. '…', 'CinchActive' }
+    or { ('%d commit%s'):format(n, n == 1 and '' or 's'), 'CinchUpdate' }
   local items = {
     { { ' ' .. m, m_hl } },
     { { p.name, 'CinchName' } },
-    { { ('%d commit%s'):format(n, n == 1 and '' or 's'), 'CinchUpdate' } },
+    { status },
   }
   c:add(canvas.clip(join(items), c.width - 1), { plugin = p.name, line_hl = marked and 'CinchMarked' or nil })
 end

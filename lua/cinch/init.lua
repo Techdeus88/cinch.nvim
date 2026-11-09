@@ -579,6 +579,20 @@ function M.install(names, opts)
   return missing
 end
 
+--- Bring the disk in line with your specs: install what is missing, offer to delete
+--- what no spec names, then check for updates. It never applies updates, and never
+--- deletes a plugin your specs list.
+function M.sync()
+  M.install()
+  if #pack.orphans() > 0 then
+    M.clean({ confirm = true })
+  end
+  local updates = package.loaded['cinch.features.updates']
+  if updates then
+    updates.check(nil, { notify = true })
+  end
+end
+
 --- Run plugins' builds again.
 ---@param names string|string[]
 function M.build(names)
@@ -632,15 +646,32 @@ function M.del(names, opts)
   return ok, err
 end
 
---- Delete every plugin on disk that no spec names.
+--- Delete every plugin on disk that no spec names. Not while a spec file has failed
+--- to load, since every plugin it names would look like one, unless `force`.
+---@param opts? { confirm?: boolean, force?: boolean } confirm: ask first, listing them
 ---@return string[] deleted
-function M.clean()
+function M.clean(opts)
+  opts = opts or {}
   local names = vim.tbl_map(function(o)
     return o.name
   end, pack.orphans())
   if #names == 0 then
     events.report('nothing to clean: every plugin on disk is in your specs')
     return {}
+  end
+  if #spec.broken > 0 and not opts.force then
+    events.report('A spec file failed to load, so nothing was deleted', levels.WARN)
+    return {}
+  end
+  if opts.confirm then
+    local question = ('Delete %d plugin%s not in specs? %s'):format(
+      #names,
+      #names == 1 and '' or 's',
+      table.concat(names, ', ')
+    )
+    if vim.fn.confirm(question, '&Yes\n&No', 2) ~= 1 then
+      return {}
+    end
   end
   return M.del(names) and names or {}
 end

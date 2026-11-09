@@ -32,7 +32,7 @@ H.after_startup(function()
   H.eq(#u.results['beta.nvim'].commits, 1, 'beta has one')
   H.eq(u.results.gamma, nil, 'gamma could not be checked')
   H.eq(H.noted('could not fetch `gamma`'), true, 'which is reported')
-  H.eq(H.noted('2 updates available'), true, 'the outcome is reported')
+  H.eq(H.noted('Checked 3 plugins in [%d.]+m?s · 2 updates · 1 failed'), true, 'the outcome is reported')
   H.eq(u.fresh(), true, 'fresh now')
 
   -- A fetch that fails later learns nothing, so what the last check found stands.
@@ -51,7 +51,11 @@ H.after_startup(function()
   u.apply({ 'alpha.nvim' })
   H.eq(pack.rev(alpha) ~= before, true, 'applying moves the plugin')
   H.eq(u.results['alpha.nvim'], nil, 'and clears it')
-  H.eq(H.noted('restart Neovim to run the new code of alpha.nvim'), true, 'a loaded plugin needs a restart')
+  H.eq(
+    H.noted('Updated 1 of 1 plugin in [%d.]+m?s · restart to use them'),
+    true,
+    'how it ended, with a restart for a loaded plugin'
+  )
   u.apply()
   H.eq(vim.tbl_count(u.results), 0, 'apply() takes the rest')
   H.eq(H.noted('new code of beta.nvim'), false, 'beta was not loaded, so no restart')

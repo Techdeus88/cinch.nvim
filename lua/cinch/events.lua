@@ -39,6 +39,13 @@ M.names = {
   --                                                    start is its hrtime()
   Installing = true, -- { names }                       a batch of installs starts
   Installed = true, -- { names, failed, ms }            and ended; failed lists names not on disk
+  Checking = true, -- { names }                         an update check starts
+  Checked = true, -- { names, failed, ms, updates }     and ended; failed lists fetches that failed
+  Updating = true, -- { names }                         vim.pack.update applies updates, without review
+  Updated = true, -- { names, updated, failed, total, ms, restart }   and ended
+  Deleting = true, -- { names }                         vim.pack.del starts
+  Deleted = true, -- { names, deleted, failed, ms }      and ended
+  Progress = true, -- { title, done?, total?, name?, status, percent? }   vim.pack's progress, or a check's
   Report = true, -- { msg, level }                      cinch has something to tell the user
 }
 

@@ -5,6 +5,7 @@
 -- Applying runs vim.pack.update offline, so it uses what the check fetched.
 
 local events = require('cinch.events')
+local ops = require('cinch.ops')
 local pack = require('cinch.pack')
 local state = require('cinch.state')
 
@@ -71,6 +72,9 @@ function M.fresh()
   return M.checked_at ~= nil and os.time() - M.checked_at < M.opts.fresh
 end
 
+---@type integer hrtime the current check started
+local started = 0
+
 ---@param plugins cinch.Plugin[]
 ---@param results table<string, cinch.Update>
 ---@param opts { notify?: boolean, on_done?: fun(results: table<string, cinch.Update>) }
@@ -89,9 +93,18 @@ local function finish(plugins, results, opts, failed)
   for name, err in pairs(M.failed) do
     events.report(('could not fetch `%s`: %s'):format(name, err), levels.WARN)
   end
+  local done = {
+    names = vim.tbl_map(function(p)
+      return p.name
+    end, plugins),
+    failed = vim.tbl_keys(M.failed),
+    ms = (uv.hrtime() - started) / 1e6,
+    updates = vim.tbl_count(M.results),
+  }
+  table.sort(done.failed)
+  events.emit('Checked', done)
   if opts.notify then
-    local n = vim.tbl_count(M.results)
-    events.report(n == 0 and 'everything is up to date' or ('%d update%s available'):format(n, n == 1 and '' or 's'))
+    events.report(ops.summary('check', done))
   end
   events.emit('Updates', { results = M.results })
   if opts.on_done then
@@ -145,7 +158,13 @@ function M.check(names, opts)
   local plugins = vim.tbl_filter(function(p)
     return p.path ~= nil and (not names or vim.list_contains(names, p.name))
   end, state.list)
-  M.checking, M.failed = true, {}
+  M.checking, M.failed, started = true, {}, uv.hrtime()
+  events.emit('Checking', {
+    names = vim.tbl_map(function(p)
+      return p.name
+    end, plugins),
+  })
+  local n = 0
   local fetched = join(#plugins, function()
     resolve(plugins, opts)
   end)
@@ -159,13 +178,17 @@ function M.check(names, opts)
       if r.code ~= 0 then
         M.failed[p.name] = vim.trim(r.stderr or ('exit ' .. r.code))
       end
+      n = n + 1
+      if events.has('Progress') then
+        events.emit(
+          'Progress',
+          { title = 'Checking plugins', done = n, total = #plugins, name = p.name, status = 'running' }
+        )
+      end
       fetched()
     end)
   end
 end
-
----@type string[]? loaded plugins updated during the current apply()
-local restart
 
 --- Apply pending updates, offline: the commits the last check fetched.
 ---@param names? string[] default: every plugin with a pending update
@@ -175,15 +198,10 @@ function M.apply(names)
     return events.report('nothing to update')
   end
   table.sort(names)
-  restart = {}
   local ok, err = pack.update(names, { force = true, offline = true })
   if not ok then
     events.report(('update failed: %s'):format(err), levels.ERROR)
   end
-  if #restart > 0 then
-    events.report(('restart Neovim to run the new code of %s'):format(table.concat(restart, ', ')))
-  end
-  restart = nil
 end
 
 ---@return string[]
@@ -244,9 +262,6 @@ function M.setup(opts)
   events.on('Pack', function(d)
     if d.kind ~= 'install' and M.results[d.name] then
       M.results[d.name] = nil
-      if restart and d.plugin and d.plugin.state == 'loaded' then
-        restart[#restart + 1] = d.name
-      end
       events.emit('Updates', { results = M.results })
     end
   end)

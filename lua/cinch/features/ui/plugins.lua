@@ -11,12 +11,13 @@ local state = require('cinch.state')
 
 local M = {}
 
----@class cinch.ui.Install
+---@class cinch.ui.Op an install, check, update or delete under way, or just ended
+---@field kind cinch.OpKind
 ---@field total integer
 ---@field done integer
 ---@field current? string the plugin that last reported progress
----@field status table<string, 'queued'|'cloning'|'installed'|'failed'>
----@field message? string what is happening now, when not one plugin
+---@field status table<string, 'queued'|'cloning'|'installed'|'failed'> each plugin's install status
+---@field message? string how it ended, shown for a moment
 
 ---@class cinch.ui.Ctx
 ---@field folded table<string, true> sections folded shut
@@ -24,7 +25,7 @@ local M = {}
 ---@field tick integer spinner frame
 ---@field info table<string, vim.pack.PlugData|string> vim.pack.get per plugin, or why it is missing
 ---@field spec_lines table<string, integer> line of each plugin's spec in its file
----@field install? cinch.ui.Install set while a first start installs
+---@field op? cinch.ui.Op set while an install, check, update or delete runs
 ---@field orphans? cinch.Orphan[] on disk, in no spec
 ---@field marked? table<string, true> plugins selected for an action
 ---@field profile_sort? 'time' the Profile view sorts siblings by time, not order
@@ -99,17 +100,20 @@ end
 
 local graph_min = 6
 
---- Install progress on one line: `Installing plugins (18/48) - yanky.nvim 37% ━━━━`.
+-- What the progress line says for each operation; a delete only shows its ending.
+local doing = { install = 'Installing plugins', check = 'Checking plugins', update = 'Updating plugins' }
+
+--- Progress on one line: `Installing plugins (18/48) - yanky.nvim 37% ━━━━`, or how it ended.
 ---@param c cinch.ui.Canvas
----@param install cinch.ui.Install
-local function install_header(c, install)
-  if install.message then
-    c:add({ { ' ' .. install.message, 'CinchTitle' } })
+---@param op cinch.ui.Op
+local function op_header(c, op)
+  if op.message or not doing[op.kind] then
+    c:add({ { ' ' .. (op.message or ''), 'CinchTitle' } })
     return
   end
-  local current = install.current and (' - ' .. install.current) or ''
-  local left = (' Installing plugins (%d/%d)%s '):format(install.done, install.total, current)
-  local percent = ('%d%% '):format(install.total > 0 and math.floor(install.done / install.total * 100) or 0)
+  local current = op.current and (' - ' .. op.current) or ''
+  local left = (' %s (%d/%d)%s '):format(doing[op.kind], op.done, op.total, current)
+  local percent = ('%d%% '):format(op.total > 0 and math.floor(op.done / op.total * 100) or 0)
   -- A long name gives way first, so the percent and the graph stay in view.
   local room = c.width - 1 - canvas.cells(percent) - graph_min
   if canvas.cells(left) > room then
@@ -117,7 +121,7 @@ local function install_header(c, install)
   end
   local graph = c.width - 1 - canvas.cells(left) - canvas.cells(percent)
   local line = { { left, 'CinchTitle' }, { percent, 'CinchMuted' } }
-  c:add(vim.list_extend(line, canvas.pill(install.done, install.total, graph)))
+  c:add(vim.list_extend(line, canvas.pill(op.done, op.total, graph)))
 end
 
 -- Each install status: its mark (nil: the spinner), its color, the message.
@@ -144,7 +148,7 @@ local function install_rows(c, ctx)
     { ' ' .. #list, 'CinchMuted' },
   }, { section = 'installing' })
   for _, p in ipairs(open and list or {}) do
-    local look = install_look[ctx.install.status[p.name] or (p.state == 'disabled' and 'disabled' or 'on_disk')]
+    local look = install_look[ctx.op.status[p.name] or (p.state == 'disabled' and 'disabled' or 'on_disk')]
     add_row(c, p, {
       mark = look[1] or canvas.spinner[ctx.tick % #canvas.spinner + 1],
       mark_hl = look[2],
@@ -163,10 +167,13 @@ end
 function M.list(width, ctx)
   local c = canvas.new(width)
   local plugins = visible(ctx)
-  if ctx.install then
-    install_header(c, ctx.install)
+  if ctx.op and ctx.op.kind == 'install' then
+    op_header(c, ctx.op)
     install_rows(c, ctx)
     return c
+  end
+  if ctx.op then
+    op_header(c, ctx.op)
   end
   local slowest = 0
   for _, p in ipairs(plugins) do

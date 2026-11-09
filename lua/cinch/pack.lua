@@ -407,12 +407,73 @@ function M.add(plugins, confirm)
   return failed
 end
 
---- vim.pack.update through cinch, so the bus sees it.
+--- The names of the plugins a kind of change reached while `fn` ran, in order.
+---@param kind 'update'|'delete'
+---@param fn fun(): boolean, any
+---@return string[] reached, boolean ok, any err
+local function reaching(kind, fn)
+  local reached = {}
+  local off = events.on('Pack', function(d)
+    if d.kind == kind then
+      reached[#reached + 1] = d.name
+    end
+  end)
+  local ok, res = fn()
+  off()
+  return reached, ok, res
+end
+
+---@param names string[]
+---@param reached string[]
+---@return string[] those of `names` not in `reached`
+local function missed(names, reached)
+  return vim.tbl_filter(function(name)
+    return not vim.list_contains(reached, name)
+  end, names)
+end
+
+--- vim.pack.update through cinch, so the bus sees it. One that applies without the
+--- review tab is framed by Updating and Updated, and says how it ended; a review tab
+--- and a restore from the lockfile are not.
 ---@param names? string[]
 ---@param opts? vim.pack.keyset.update
 ---@return boolean ok, any err
 function M.update(names, opts)
-  return call('update', names, vim.pack.update, names, opts)
+  opts = opts or {}
+  if not opts.force or opts.target == 'lockfile' then
+    return call('update', names, vim.pack.update, names, opts)
+  end
+  local asked = names
+    or vim.tbl_map(
+      function(p)
+        return p.name
+      end,
+      vim.tbl_filter(function(p)
+        return p.path ~= nil
+      end, state.list)
+    )
+  local start = uv.hrtime()
+  events.emit('Updating', { names = asked })
+  local updated, ok, res = reaching('update', function()
+    return call('update', names, vim.pack.update, names, opts)
+  end)
+  local restart = vim.iter(updated):any(function(name)
+    local p = state.plugins[name]
+    return p ~= nil and p.state == 'loaded'
+  end)
+  -- Without names a plugin with nothing new is not a failure; with them, it is.
+  local failed = (not ok and names) and missed(names, updated) or {}
+  local d = {
+    names = asked,
+    updated = updated,
+    failed = failed,
+    total = names and #names or #updated + #failed,
+    ms = (uv.hrtime() - start) / 1e6,
+    restart = restart,
+  }
+  events.emit('Updated', d)
+  events.report(require('cinch.ops').summary('update', d))
+  return ok, res
 end
 
 --- vim.pack.del through cinch. vim.pack fires PackChangedPre for every plugin
@@ -421,12 +482,21 @@ end
 ---@param opts? vim.pack.keyset.del
 ---@return boolean ok, any err
 function M.del(names, opts)
-  local ok, res = call('del', names, vim.pack.del, names, opts)
+  local start = uv.hrtime()
+  events.emit('Deleting', { names = names })
+  local deleted, ok, res = reaching('delete', function()
+    return call('del', names, vim.pack.del, names, opts)
+  end)
   for _, name in ipairs(names) do
     local p = state.plugins[name]
     if p and p.activity == 'deleting' then
       state.activity(p, nil)
     end
+  end
+  local d = { names = names, deleted = deleted, failed = missed(names, deleted), ms = (uv.hrtime() - start) / 1e6 }
+  events.emit('Deleted', d)
+  if #deleted > 0 then
+    events.report(require('cinch.ops').summary('delete', d))
   end
   return ok, res
 end

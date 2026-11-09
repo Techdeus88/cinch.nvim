@@ -99,7 +99,8 @@ end
 --- The keys in the bottom border: the view's own, or what the selection can do.
 ---@return string
 local function footer_text()
-  local text = part('keys').hints[ui.ctx.install and 'install' or ui.help and 'help' or ui.view]
+  local holding = ui.ctx.op and ui.ctx.op.kind ~= 'check' and ui.ctx.op.kind ~= 'delete'
+  local text = part('keys').hints[holding and 'install' or ui.help and 'help' or ui.view]
   local marked = vim.tbl_count(ui.ctx.marked or {})
   if ui.view == 'plugins' and marked > 0 and not ui.help then
     text = (' %d selected · l load  b build  u update  c check  d delete · <Esc> lets go '):format(marked)
@@ -248,8 +249,8 @@ local function render()
     end
   end
   draw_pane()
-  -- vim.pack.add waits in vim.wait, which runs callbacks but does not redraw.
-  if ui.ctx.install then
+  -- vim.pack.add and vim.pack.update wait in vim.wait, which runs callbacks but does not redraw.
+  if ui.ctx.op and (ui.ctx.op.kind == 'install' or ui.ctx.op.kind == 'update') then
     vim.cmd.redraw()
   end
 end
@@ -268,7 +269,7 @@ end
 
 --- The spinner turns while something is happening, and stops when nothing is.
 local function animate()
-  local busy = ui.ctx.install ~= nil
+  local busy = ui.ctx.op ~= nil
   for _, p in ipairs(state.list) do
     busy = busy or p.activity ~= nil or p.state == 'loading'
   end
@@ -535,7 +536,7 @@ function M.open(view)
   -- Opening checks for updates when the last check is stale, in the background;
   -- not while plugins install.
   local u = updates()
-  if u and not u.checking and not u.fresh() and not ui.ctx.install then
+  if u and not u.checking and not u.fresh() and not (ui.ctx.op and ui.ctx.op.kind == 'install') then
     u.check()
   end
 end
@@ -566,10 +567,10 @@ M.commands = {
   },
 }
 
--- First start ------------------------------------------------------------------
+-- Install, check, update, delete -------------------------------------------------
 
---- What install.lua needs from the window.
----@type cinch.ui.InstallHost
+--- What ops.lua needs from the window.
+---@type cinch.ui.OpHost
 local host = {
   ui = ui,
   opts = M.opts,
@@ -588,25 +589,36 @@ local host = {
   end,
 }
 
---- A handler that loads install.lua the first time its event fires.
----@param name 'installing'|'progress'|'installed'
+--- A handler that loads ops.lua the first time its event fires.
+---@param fn 'start'|'progress'|'finish'
+---@param kind? cinch.OpKind
 ---@return fun(d: table)
-local function first_start(name)
+local function on_op(fn, kind)
   return function(d)
     host.opts = M.opts
-    require('cinch.features.ui.install')[name](host, d)
+    local ops = require('cinch.features.ui.ops')
+    if kind then
+      ops[fn](host, kind, d)
+    else
+      ops[fn](host, d)
+    end
   end
 end
 
 ---@param opts? cinch.ui.Opts
 function M.setup(opts)
   M.opts = vim.tbl_extend('force', M.opts, opts or {})
-  -- These fire only when plugins install, so listening from startup costs nothing.
-  events.on('Installing', first_start('installing'))
-  events.on('Installed', first_start('installed'))
-  if events.names.Progress then
-    events.on('Progress', first_start('progress'))
+  -- These fire only when something runs, so listening from startup costs nothing.
+  for kind, names in pairs({
+    install = { 'Installing', 'Installed' },
+    check = { 'Checking', 'Checked' },
+    update = { 'Updating', 'Updated' },
+    delete = { 'Deleting', 'Deleted' },
+  }) do
+    events.on(names[1], on_op('start', kind))
+    events.on(names[2], on_op('finish', kind))
   end
+  events.on('Progress', on_op('progress'))
 end
 
 return M

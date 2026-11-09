@@ -77,7 +77,7 @@ H.after_startup(function()
     tick = 0,
     info = {},
     spec_lines = {},
-    install = { total = 48, done = 18, status = {}, current = 'yanky.nvim' },
+    op = { kind = 'install', total = 48, done = 18, status = {}, current = 'yanky.nvim' },
   }).lines[1]
   H.eq(running:find('^ Installing plugins %(18/48%) %- yanky%.nvim 37%% ━') ~= nil, true, running)
   H.eq(vim.fn.strdisplaywidth(running), 59, 'the graph runs to the edge')
@@ -86,7 +86,7 @@ H.after_startup(function()
     tick = 0,
     info = {},
     spec_lines = {},
-    install = { total = 48, done = 18, status = {}, current = 'a-very-long-plugin-name.nvim' },
+    op = { kind = 'install', total = 48, done = 18, status = {}, current = 'a-very-long-plugin-name.nvim' },
   }).lines[1]
   H.eq(
     narrow:find(' 37%% ━━━━━━$') ~= nil,
@@ -94,16 +94,16 @@ H.after_startup(function()
     'a long name gives way to the percent and graph: ' .. narrow
   )
 
-  local install = { total = 2, done = 0, status = { a = 'cloning' } }
+  local install = { kind = 'install', total = 2, done = 0, status = { a = 'cloning' } }
   local host = {
-    ui = { ctx = { install = install } },
+    ui = { ctx = { op = install } },
     is_open = function()
       return true
     end,
     redraw = function() end,
     opts = {},
   }
-  require('cinch.features.ui.install').progress(host, { title = 'Installing plugins', name = 'a' })
+  require('cinch.features.ui.ops').progress(host, { title = 'Installing plugins', name = 'a' })
   H.eq({ install.current, install.done }, { 'a', 1 }, 'progress names the plugin it heard from')
   local w = require('cinch.features.ui').windows()
   H.eq(require('cinch.features.ui').is_open(), true, 'a now plugin opening a buffer did not close it')

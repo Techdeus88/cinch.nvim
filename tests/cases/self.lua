@@ -79,7 +79,7 @@ H.after_startup(function()
   u.apply({ 'cinch.nvim' })
   H.eq(list():find('cinch', 1, true), nil, 'gone once applied')
   H.eq(pack.rev(p) ~= before, true, 'and applies')
-  H.eq(H.noted('restart Neovim to run the new code of cinch%.nvim'), true, 'with a restart notice')
+  H.eq(H.noted('Updated 1 of 1 plugin in [%d.]+m?s · restart to use them'), true, 'with a restart notice')
 
   vim.cmd('Cinch del! cinch.nvim')
   H.eq(vim.uv.fs_stat(dir) ~= nil, true, 'it never deletes itself')

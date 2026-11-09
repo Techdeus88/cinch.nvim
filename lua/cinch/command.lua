@@ -88,9 +88,16 @@ M.commands = {
       )
     end,
   },
-  clean = {
+  -- Install what is missing, offer to delete what no spec names, check for updates.
+  sync = {
     run = function()
-      cinch.clean()
+      cinch.sync()
+    end,
+  },
+  -- With !, without asking, and even when a spec file failed to load.
+  clean = {
+    run = function(_, bang)
+      cinch.clean({ confirm = not bang, force = bang })
     end,
   },
 }

@@ -10,7 +10,7 @@ H.after_startup(function()
   local command = require('cinch.command')
   H.eq(
     command.complete('', 'Cinch '),
-    { 'build', 'check', 'clean', 'del', 'install', 'load', 'open', 'restore', 'stats', 'update' },
+    { 'build', 'check', 'clean', 'del', 'install', 'load', 'open', 'restore', 'stats', 'sync', 'update' },
     'every subcommand'
   )
   H.eq(command.complete('a', 'Cinch load a'), { 'alpha.nvim' }, 'plugin names')
@@ -22,7 +22,7 @@ H.after_startup(function()
 
   vim.cmd('Cinch check')
   H.wait(function()
-    return H.noted('everything is up to date')
+    return H.noted('Checked 2 plugins in %d+m?s · no updates')
   end, ':Cinch check')
 
   vim.cmd('Cinch update! beta.nvim')
@@ -30,7 +30,7 @@ H.after_startup(function()
 
   vim.cmd('Cinch nope')
   H.eq(
-    H.noted('subcommands: build, check, clean, del, install, load, open, restore, stats, update'),
+    H.noted('subcommands: build, check, clean, del, install, load, open, restore, stats, sync, update'),
     true,
     'an unknown one lists them'
   )
