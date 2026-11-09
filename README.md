@@ -81,22 +81,11 @@ cinch fields can sit at the top level, as above, or inside `data`, the way `vim.
 | `after` | `function(plugin)`, run after `config` |
 | `module` | `false` keeps `require()` of this plugin's modules from loading it |
 
-Specs with the same `name` merge into one before the plugin loads, in the order cinch reads them, so you can declare a plugin in one file and adjust it in another. It works like `vim.tbl_deep_extend('force', ...)`: `opts` and other nested tables merge key by key, and when two specs set the same field the later one wins. A list counts as one value, so a later `keys`, `cmd`, `event` or `ft` replaces the earlier list. `deps` is the exception: every spec's dependencies are kept, because a dependency dropped from the list and with no trigger of its own would never load. An `opts` function is the exception: it gets the `opts` merged so far, so `{ opts = { a = 1 } }` then `{ opts = function(_, opts) opts.b = 2 end }` gives `{ a = 1, b = 2 }`. What the function returns replaces what it was given, if it returns anything, and a table in a later spec merges over the result.
+Specs with the same `name` merge into one before the plugin loads, in the order cinch reads them, so you can declare a plugin in one file and adjust it in another. It works like `vim.tbl_deep_extend('force', ...)`: `opts` and other nested tables merge key by key, and when two specs set the same field the later one wins. A list counts as one value, so a later `keys`, `cmd`, `event` or `ft` replaces the earlier list. `deps` is the exception: every spec's dependencies are kept, because a dependency dropped from the list and with no trigger of its own would never load. `opts` functions are the exception. Tables and functions that take no `opts` argument build the base, in the order cinch reads them. Then functions that take `opts`, like `function(_, opts)`, run in order over that base, whichever file they are in. So `{ opts = function(_, opts) opts.b = 2 end }` in one file and `{ opts = { a = 1 } }` in a file read later give `{ a = 1, b = 2 }`, and a value such a function sets beats the same key from any table. What the function returns replaces what it was given, if it returns anything.
 
 Files under a folder are read in sorted order. A later `add()` merges too, while the plugin is still waiting to load, and its triggers and `load` change to match. Once the plugin has started loading, a new spec warns and applies on restart. A plain `deps = { 'owner/repo' }` only names the dependency and changes nothing in its spec.
 
-A spec nested in another plugin's `deps` extends the dependency's own spec, whichever file cinch reads first, and wins any conflict with it. So a Copilot spec can add a source to blink.cmp from `ai.lua`, even though `lsp.lua`, which sets blink.cmp up, is read later:
-
-```lua
-{ 'github/copilot.vim', deps = {
-  { 'saghen/blink.cmp', opts = function(_, opts)
-    table.insert(opts.sources.default, 'copilot')
-    return opts
-  end },
-} }
-```
-
-Two specs at the top level still apply in the order cinch reads them.
+A spec nested in another plugin's `deps` applies over the dependency's own spec, whichever file cinch reads first, and wins any conflict with it. Other top-level specs still apply in the order cinch reads them.
 
 A field cinch does not know gets a warning naming the spec file, and is ignored. That includes lazy.nvim's `lazy`: use `load` instead.
 

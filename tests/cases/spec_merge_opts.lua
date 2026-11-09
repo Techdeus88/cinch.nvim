@@ -104,6 +104,32 @@ require('cinch').setup({
           return { sources = { default = { 'lsp' }, providers = { lsp = {} } } }
         end,
       },
+      -- Top-level and read first, a function that takes opts still extends what comes after.
+      {
+        H.src('opy'),
+        config = noop,
+        opts = function(_, opts)
+          table.insert(opts.sources.default, 'copilot')
+          opts.shared = 'function'
+          return opts
+        end,
+      },
+      {
+        H.src('opy'),
+        opts = function()
+          return { sources = { default = { 'lsp' } }, shared = 'base' }
+        end,
+      },
+      { H.src('opy'), opts = { shared = 'table', extra = true } },
+      -- An extender ahead of a table.
+      {
+        H.src('early'),
+        config = noop,
+        opts = function(_, opts)
+          opts.sum = opts.a + 1
+        end,
+      },
+      { H.src('early'), opts = { a = 1 } },
       -- A function that raises fails the plugin, whichever spec it came from.
       { H.src('cmdy'), load = 'now', config = noop, opts = { a = 1 } },
       {
@@ -141,6 +167,13 @@ H.after_startup(function()
     { 'loaded', 'loaded', 'loaded' },
     'and every one of them loads'
   )
+
+  H.eq(
+    H.plugin('opy').opts_used,
+    { sources = { default = { 'lsp', 'copilot' } }, shared = 'function', extra = true },
+    'base first, in order, then functions that take opts'
+  )
+  H.eq(H.plugin('early').opts_used, { a = 1, sum = 2 }, 'a table read after an extender is still its base')
 
   H.eq(H.plugin('cmdy').state, 'failed', 'a function that raises fails the plugin')
   H.eq(H.noted('opts boom'), true, 'and is reported')

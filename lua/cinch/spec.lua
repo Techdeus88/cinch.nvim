@@ -278,8 +278,35 @@ local function is_ref(d)
   return type(d) == 'string' and not d:find('/') and not d:find(':')
 end
 
---- Two specs' `opts` as one: a function gets what came before it, and what it returns
---- or fills in is the result; a table merges over what came before it.
+---@type table<function, any[]> the specs' `opts` behind each combined function
+local opts_parts = setmetatable({}, { __mode = 'k' })
+
+--- Whether `opts` is a function that takes the opts so far, and so extends them.
+---@param opts any
+---@return boolean
+local function extends(opts)
+  if type(opts) ~= 'function' then
+    return false
+  end
+  local info = debug.getinfo(opts, 'u')
+  return info.isvararg or info.nparams >= 2
+end
+
+---@param p cinch.Plugin
+---@param opts any table or function
+---@param so_far table
+---@return table
+local function apply_opts(p, opts, so_far)
+  if type(opts) == 'function' then
+    local res = opts(p, so_far)
+    return res == nil and so_far or res
+  end
+  -- A copy, since the function after it may change what it is given.
+  return vim.tbl_deep_extend('force', so_far, vim.deepcopy(opts))
+end
+
+--- Two specs' `opts` as one. Tables and functions that take no opts build the base, in
+--- order; then functions that take opts extend it, in order, whichever file they are in.
 ---@param old any
 ---@param new any
 ---@return any
@@ -293,17 +320,20 @@ local function merged_opts(old, new)
   if old == nil or new == nil then
     return old or new
   end
-  return function(p, given)
-    local function apply(opts, so_far)
-      if type(opts) == 'function' then
-        local res = opts(p, so_far)
-        return res == nil and so_far or res
+  local parts = vim.list_extend(vim.list_slice(opts_parts[old] or { old }), opts_parts[new] or { new })
+  local function combined(p, given)
+    local so_far = given
+    for _, pass_extends in ipairs({ false, true }) do
+      for _, opts in ipairs(parts) do
+        if extends(opts) == pass_extends then
+          so_far = apply_opts(p, opts, so_far)
+        end
       end
-      -- A copy, since the function after it may change what it is given.
-      return vim.tbl_deep_extend('force', so_far, vim.deepcopy(opts))
     end
-    return apply(new, apply(old, given))
+    return so_far
   end
+  opts_parts[combined] = parts
+  return combined
 end
 
 --- `new` over `old`, later values winning. `data` merges deep; `version` stays whole,
