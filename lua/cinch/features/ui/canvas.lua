@@ -125,6 +125,15 @@ function M.define_colors(rounded)
   set(0, 'CinchOffName', { fg = color('Comment', 'fg'), ctermfg = color('Comment', 'ctermfg') })
   -- The trigger that loaded a plugin, among the others it waits on.
   set(0, 'CinchFired', { fg = color('Normal', 'fg'), bold = true, underline = true })
+  -- The name in the top border and the keys in the bottom one: filled, so they stand out.
+  local title = color('FloatTitle', 'fg') or color('Title', 'fg')
+  if vim.o.termguicolors and title and base then
+    set(0, 'CinchBanner', { fg = base, bg = title, bold = true })
+    set(0, 'CinchBannerCap', { fg = title })
+  else
+    set(0, 'CinchBanner', { link = 'IncSearch' })
+    set(0, 'CinchBannerCap', { link = 'IncSearch' })
+  end
   if not M.colored then
     for kind, link in pairs(kind_links) do
       local chip, text = M.kind_hl(kind)

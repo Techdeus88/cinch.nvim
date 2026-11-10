@@ -46,7 +46,7 @@ H.after_startup(function()
   H.eq(rows.off_reason(beta), nil, 'no message of its own')
   H.eq(rows.off_reason(H.plugin('alpha.nvim')), 'enabled = false', 'the plugin that is off keeps its')
   local list = require('cinch.features.ui.plugins').list(100, { folded = {}, tick = 0, info = {}, spec_lines = {} })
-  local dep = ' ' .. rows.glyph('dep') .. ' dep  alpha.nvim'
+  local dep = rows.glyph('dep') .. ' dep alpha.nvim'
   local row = vim.tbl_filter(function(l)
     return l:find(' beta.nvim ', 1, true) ~= nil
   end, list.lines)[1]
@@ -54,7 +54,7 @@ H.after_startup(function()
   H.eq(table.concat(list.lines, '\n'):find('only plugins', 1, true), nil, 'and no message')
   local pane =
     require('cinch.features.ui.plugins').pane('beta.nvim', 100, { folded = {}, tick = 0, info = {}, spec_lines = {} })
-  H.eq(table.concat(pane.lines, '\n'):find('dep  alpha.nvim', 1, true) ~= nil, true, 'the pane shows the same chip')
+  H.eq(table.concat(pane.lines, '\n'):find('dep alpha.nvim', 1, true) ~= nil, true, 'the pane shows the same chip')
   local logged = vim.tbl_filter(function(l)
     return l.msg:find('beta.nvim is off', 1, true) ~= nil
   end, require('cinch.features.messages').log)

@@ -84,6 +84,47 @@ H.after_startup(function()
     'title and tabs'
   )
 
+  -- In a wide editor the name sits in the middle of the top border, on a banner, and
+  -- the keys sit on a banner in the middle of the bottom one.
+  local cols = vim.o.columns
+  vim.o.columns = 200
+  local wide = require('cinch.features.ui.layout').configs({
+    opts = ui.opts,
+    view = 'plugins',
+    views = ui.views,
+    help = false,
+    wide = false,
+    split = true,
+    footer = ' / filter  q close ',
+  }).frame
+  vim.o.columns = cols
+  local before, banner_at, total = 0, nil, 0
+  for i, c in ipairs(wide.title) do
+    if c[2] == 'CinchBanner' and vim.trim(c[1]) == 'cinch' then
+      banner_at = i
+    end
+  end
+  assert(banner_at, 'the name is on a banner')
+  local first = banner_at - (wide.title[banner_at - 1][2] == 'CinchBannerCap' and 1 or 0)
+  local last = banner_at + (wide.title[banner_at + 1][2] == 'CinchBannerCap' and 1 or 0)
+  local name_w = 0
+  for i, c in ipairs(wide.title) do
+    local w_ = vim.fn.strdisplaywidth(c[1])
+    total = total + w_
+    if i < first then
+      before = before + w_
+    elseif i <= last then
+      name_w = name_w + w_
+    end
+  end
+  H.eq(total, wide.width - 2, 'the title fills the border')
+  H.eq(math.abs(before - (total - before - name_w)) <= 1, true, 'with the name in the middle')
+  H.eq(wide.footer_pos, 'center', 'the keys centered')
+  local keys = vim.tbl_filter(function(c)
+    return c[2] == 'CinchBanner'
+  end, wide.footer)
+  H.eq(vim.trim(keys[1][1]), '/ filter  q close', 'on a banner')
+
   local u = require('cinch.features.updates')
   H.eq(u.checking, true, 'opening starts an update check')
   H.wait(function()
@@ -119,14 +160,15 @@ H.after_startup(function()
   local alpha_row = lines(w.list)[alpha_at]
   H.eq(alpha_row:find('● alpha.nvim (', 1, true) ~= nil, true, 'the lit light left of the name, then its load time')
   H.eq(alpha_row:find(icons.later .. ' later', 1, true) ~= nil, true, 'later: its icon and name')
-  H.eq(groups(alpha_at).CinchKindLater, true, 'on a chip of the later color')
+  H.eq(groups(alpha_at).CinchKindLaterText, true, 'in the later color, with no shade behind it')
+  H.eq(groups(alpha_at).CinchKindLater, nil, 'and no chip')
   H.eq(alpha_row:find('\u{e0b6}', 1, true), nil, 'square, with no rounded ends')
   local delta_at = assert(line_of(w.list, ' delta%.nvim '))
-  H.eq(lines(w.list)[delta_at]:find(icons.cmd .. ' cmd .* DeltaGo') ~= nil, true, 'a trigger: its chip, then its value')
-  H.eq(groups(delta_at).CinchKindCmd, true, 'in the command color')
+  H.eq(lines(w.list)[delta_at]:find(icons.cmd .. ' cmd.* DeltaGo') ~= nil, true, 'a trigger: its chip, then its value')
+  H.eq(groups(delta_at).CinchKindCmdText, true, 'in the command color')
   local gamma_at = assert(line_of(w.list, ' gamma '))
   H.eq(
-    lines(w.list)[gamma_at]:find(icons.dep .. ' dep .* delta%.nvim') ~= nil,
+    lines(w.list)[gamma_at]:find(icons.dep .. ' dep.* delta%.nvim') ~= nil,
     true,
     'a dependency: dep, then who needs it'
   )

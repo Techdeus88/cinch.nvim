@@ -105,7 +105,7 @@ end
 ---@param kind string now, later, event, ft, cmd, keys, dep, off, or your own
 ---@return cinch.ui.Item
 function M.kind_chip(kind)
-  return { { ' ' .. glyph(kind) .. ' ' .. kind .. ' ', (canvas.kind_hl(kind)) } }
+  return { { glyph(kind) .. ' ' .. kind, select(2, canvas.kind_hl(kind)) } }
 end
 
 -- Triggers in this order, then any of your own by name.

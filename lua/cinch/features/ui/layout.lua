@@ -25,8 +25,27 @@ function M.border(opts)
   return opts.border or (vim.o.winborder ~= '' and vim.o.winborder or 'rounded')
 end
 
---- The title row: name and counts on the left, the tabs on the right, the border's
---- own line between them.
+---@param chunks { [1]: string, [2]: string }[]
+---@return integer
+local function cells(chunks)
+  local n = 0
+  for _, ch in ipairs(chunks) do
+    n = n + canvas.cells(ch[1])
+  end
+  return n
+end
+
+--- `text` on the filled banner color, with rounded ends when it can, at most `room` cells.
+---@param text string
+---@param room integer
+---@return { [1]: string, [2]: string }[]
+local function banner(text, room)
+  local inner = math.max(1, math.min(canvas.cells(text) + 2, room - canvas.chip_width(0)))
+  return canvas.chip(text, 'CinchBanner', inner)
+end
+
+--- The title row: the counts on the left, the name on a banner in the middle, the
+--- tabs on the right, the border's own line between them.
 ---@param width integer
 ---@param s cinch.ui.Shape
 ---@return { [1]: string, [2]: string }[]
@@ -34,9 +53,8 @@ local function title(width, s)
   local stats = package.loaded['cinch.features.stats']
   local startup = stats and (stats.marks.uienter or stats.marks.vimenter)
   local left = {
-    { ' cinch ', 'CinchTitle' },
     {
-      ('· %d plugins%s '):format(#state.yours(), startup and (' · startup ' .. canvas.ms(startup)) or ''),
+      (' %d plugins%s '):format(#state.yours(), startup and (' · startup ' .. canvas.ms(startup)) or ''),
       'CinchMuted',
     },
   }
@@ -44,21 +62,26 @@ local function title(width, s)
   for _, v in ipairs(s.views) do
     tabs[#tabs + 1] = { ' ' .. v .. ' ', v == s.view and not s.help and 'CinchTab' or 'CinchMuted' }
   end
-  local used = 0
-  for _, ch in ipairs(vim.list_extend(vim.list_slice(left), tabs)) do
-    used = used + canvas.cells(ch[1])
-  end
+  local name = banner('cinch', width)
+  local inner = width - 2
   local b = M.border(s.opts)
   local line = type(b) == 'string' and border_line[b] or '─'
-  local fill = math.max(1, width - used - 2)
-  return vim.list_extend(vim.list_extend(left, { { line:rep(fill), 'FloatBorder' } }), tabs)
+  -- The name centered on the whole border; the line on either side takes up the rest.
+  local at = math.floor((inner - cells(name)) / 2)
+  local before = math.max(1, at - cells(left))
+  local after = math.max(1, inner - cells(left) - before - cells(name) - cells(tabs))
+  local out = vim.list_extend(left, { { line:rep(before), 'FloatBorder' } })
+  vim.list_extend(out, name)
+  vim.list_extend(out, { { line:rep(after), 'FloatBorder' } })
+  return vim.list_extend(out, tabs)
 end
 
+--- The keys, on a banner centered in the bottom border.
 ---@param width integer
 ---@param text string
 ---@return { [1]: string, [2]: string }[]
 local function footer(width, text)
-  return { { canvas.fit(text, math.min(canvas.cells(text), width - 2)), 'CinchMuted' } }
+  return banner(vim.trim(text), width - 2)
 end
 
 --- The configs of the backdrop, the frame, the list and the pane, for `s`.
@@ -76,7 +99,7 @@ function M.configs(s)
   -- Neovim allows a title and footer only on a float with a border.
   if frame.border ~= 'none' then
     frame.title, frame.title_pos = title(w, s), 'left'
-    frame.footer, frame.footer_pos = footer(w, s.footer), 'left'
+    frame.footer, frame.footer_pos = footer(w, s.footer), 'center'
   end
   local list = { relative = 'editor', row = row + 1, col = col + 1, width = w, height = h, zindex = 51 }
   -- Focusable, so the mouse wheel scrolls it.

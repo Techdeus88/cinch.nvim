@@ -32,7 +32,7 @@ H.after_startup(function()
       end
     end
   end
-  local off = ' ' .. require('cinch.features.ui.rows').glyph('off') .. ' off '
+  local off = require('cinch.features.ui.rows').glyph('off') .. ' off'
   for name, why in pairs({
     ['alpha.nvim'] = 'enabled = false',
     ['beta.nvim'] = 'cond() returned false',
