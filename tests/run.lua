@@ -152,6 +152,9 @@ for _, case in ipairs(cases) do
       XDG_DATA_HOME = vim.fs.joinpath(home, 'data'),
       XDG_STATE_HOME = vim.fs.joinpath(home, 'state'),
       XDG_CACHE_HOME = vim.fs.joinpath(home, 'cache'),
+      -- An NVIM_APPNAME from your shell would move the config dir away from the one
+      -- made above, and a dir missing at startup stays off the runtime file cache.
+      NVIM_APPNAME = 'nvim',
     }
     local ok, out = true, ''
     for phase = 1, phases do
