@@ -84,23 +84,66 @@ function M.portable(v, seen)
   return out
 end
 
+---@param path string
+---@return table?
+local function read_json(path)
+  local f = io.open(path)
+  if not f then
+    return
+  end
+  local ok, res = pcall(vim.json.decode, f:read('*a'))
+  f:close()
+  return ok and type(res) == 'table' and res or nil
+end
+
 --- Plugins the lockfile lists that are not on disk. The first vim.pack.add of a
 --- session installs these, whatever it was asked to add.
 ---@return string[]
 function M.locked_missing()
-  local f = io.open(vim.go.packlockfile)
-  if not f then
-    return {}
-  end
-  local ok, lock = pcall(vim.json.decode, f:read('*a'))
-  f:close()
+  local lock = read_json(vim.go.packlockfile)
   local res = {}
-  for name in pairs(ok and type(lock) == 'table' and type(lock.plugins) == 'table' and lock.plugins or {}) do
+  for name in pairs(lock and type(lock.plugins) == 'table' and lock.plugins or {}) do
     if not uv.fs_stat(vim.fs.joinpath(M.dir, name)) then
       res[#res + 1] = name
     end
   end
   return res
+end
+
+--- Give plugins that are not installed yet the commit lazy-lock.json records, by
+--- writing it to vim.pack's lockfile, which the first vim.pack.add installs from.
+--- A plugin on disk or in the lockfile already is left alone.
+---@param plugins cinch.Plugin[]
+---@return string[] names taken from lazy-lock.json
+function M.import_lazy_lock(plugins)
+  local path = vim.fs.joinpath(vim.fn.stdpath('config') --[[@as string]], 'lazy-lock.json')
+  if synced or not uv.fs_stat(path) then
+    return {}
+  end
+  local lazy, lock = read_json(path) or {}, read_json(vim.go.packlockfile) or {}
+  if type(lock.plugins) ~= 'table' then
+    lock.plugins = {}
+  end
+  local names = {}
+  for _, p in ipairs(plugins) do
+    local l = lazy[p.name]
+    local commit = type(l) == 'table' and l.commit
+    if
+      type(commit) == 'string'
+      and commit:find('^%x+$')
+      and lock.plugins[p.name] == nil
+      and not uv.fs_stat(vim.fs.joinpath(M.dir, p.name))
+    then
+      lock.plugins[p.name] = { src = p.src, rev = commit }
+      names[#names + 1] = p.name
+    end
+  end
+  if #names > 0 then
+    vim.fn.mkdir(vim.fs.dirname(vim.go.packlockfile), 'p')
+    local json = vim.json.encode(lock, { indent = '  ', sort_keys = true })
+    vim.fn.writefile(vim.split(json, '\n'), vim.go.packlockfile)
+  end
+  return names
 end
 
 --- Whether vim.pack can be called now.

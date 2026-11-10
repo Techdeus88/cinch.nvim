@@ -422,6 +422,12 @@ local function activate(added, confirm, respecced)
   install = vim.tbl_filter(function(p)
     return p.state ~= 'disabled'
   end, install)
+  local pinned = #pack.import_lazy_lock(install)
+  if pinned > 0 then
+    local msg = pinned == 1 and '1 plugin installs at the commit in lazy-lock.json'
+      or ('%d plugins install at the commits in lazy-lock.json'):format(pinned)
+    events.report(msg)
+  end
   if deferred then
     -- add() while a batch waits: it joins the batch.
     vim.list_extend(deferred.plugins, install)

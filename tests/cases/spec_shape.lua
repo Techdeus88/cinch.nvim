@@ -6,7 +6,7 @@ H.write('lua/plugins/a.lua', {
   'return {',
   "  { 'owner/tele.nvim', cmd = 'Tele', opts = { a = 1 }, data = { opts = { a = 2 } },",
   "    deps = { 'owner/plenary.nvim', 'icons' } },",
-  "  { 'owner/which.nvim', event = 'VeryLazy', commit = 'abc1234', tag = 'v1', bogus = 1, lazy = false },",
+  "  { 'owner/which.nvim', event = 'VeryLazy', commit = 'abc1234', tag = 'v1', bogus = 1 },",
   "  { 'owner/now-cmd', load = 'now', cmd = 'Foo' },",
   "  { 'owner/odd', load = 'sometimes' },",
   "  { 'owner/needs', deps = { 'ghost.nvim' } },",
@@ -23,6 +23,13 @@ H.write('lua/plugins/e.lua', {
   "  { 'owner/starred', tag = '1.*' },",
   "  { 'owner/branchy', version = 'feat/x-1.0' },",
   "  { 'owner/real-range', version = vim.version.range('^1.2') },",
+  "  { 'owner/dot-x', version = '0.1.x' },",
+  "  { 'owner/dot-x-branch', branch = '0.1.x' },",
+  "  { 'owner/unpinned', version = false, branch = 'dev' },",
+  "  { 'owner/eager', lazy = false },",
+  "  { 'owner/on-demand', lazy = true },",
+  "  { 'owner/lazy-load', lazy = false, load = 'later' },",
+  "  { 'owner/lazy-data', data = { lazy = true }, lazy = false },",
   '}',
 })
 
@@ -58,6 +65,13 @@ H.after_startup(function()
     'starred',
     'branchy',
     'real-range',
+    'dot-x',
+    'dot-x-branch',
+    'unpinned',
+    'eager',
+    'on-demand',
+    'lazy-load',
+    'lazy-data',
     'icons',
   }, 'deps first')
 
@@ -92,7 +106,12 @@ H.after_startup(function()
   H.eq(w.version, 'abc1234', 'commit beats tag')
   H.eq(H.noted('sets `commit` and `tag`; using `commit`'), true, 'the losing pin warns')
   H.eq(H.noted('unknown field `bogus`'), true, 'unknown fields warn')
-  H.eq(H.noted('unknown field `lazy`'), true, 'lazy is not a field')
+  H.eq(H.noted('unknown field `lazy`'), false, "lazy.nvim's lazy is mapped, not warned about")
+  H.eq(state.plugins['eager'].load, 'now', 'lazy = false is load = now')
+  H.eq(state.plugins['on-demand'].load, 'trigger', 'lazy = true is load = trigger')
+  H.eq(state.plugins['lazy-load'].load, 'later', 'an explicit load beats lazy')
+  H.eq(state.plugins['lazy-data'].load, 'trigger', 'lazy in data beats the top level')
+  H.eq(state.plugins['lazy-data'].data['lazy'], nil, 'and is not kept')
   H.eq(H.noted('declared twice'), false, 'a second spec of a name merges without a warning')
 
   H.eq(state.plugins['now-cmd'].load, 'now', 'an explicit load wins')
@@ -107,9 +126,15 @@ H.after_startup(function()
   H.eq(H.noted('broken file'), true, 'a broken spec file is reported')
 
   local looks = 'version `%s` looks like a range, which vim.pack reads as a branch or tag; write vim.version.range'
-  H.eq(H.noted(vim.pesc(looks:format('^1.2'))), true, 'a range written as a string warns')
-  H.eq(H.noted(vim.pesc(looks:format('1.*'))), true, 'from a tag too')
-  H.eq(state.plugins['ranged'].version, '^1.2', 'and goes to vim.pack unchanged')
+  local ranged = state.plugins['ranged'].version
+  H.eq(tostring(ranged), tostring(vim.version.range('^1.2')), 'a range written as a string becomes a range')
+  H.eq(getmetatable(ranged) ~= nil, true, 'a range object')
+  H.eq(tostring(state.plugins['starred'].version), tostring(vim.version.range('1.*')), 'from a tag too')
+  H.eq(H.noted(vim.pesc(looks:format('^1.2'))), false, 'without a warning')
+  H.eq(state.plugins['dot-x'].version, '0.1.x', '`0.1.x` can be a branch, so it stays a string')
+  H.eq(H.noted(vim.pesc(looks:format('0.1.x'))), true, 'and warns')
+  H.eq(H.noted('`dot%-x%-branch`'), false, 'but not when written as a branch')
+  H.eq(state.plugins['unpinned'].version, 'dev', 'version = false is no version')
   H.eq(H.noted('`feat/x%-1%.0` looks like'), false, 'a branch name does not warn')
   H.eq(H.noted('`real%-range`'), false, 'a real range does not warn')
   H.eq(getmetatable(state.plugins['real-range'].version) ~= nil, true, 'and stays a range object')

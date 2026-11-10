@@ -64,9 +64,10 @@ cinch fields can sit at the top level, as above, or inside `data`, the way `vim.
 | --- | --- |
 | `[1]` or `src` | Where the plugin comes from |
 | `name` | The plugin's name. Defaults to the last part of `src`, the same way `vim.pack` names it |
-| `version` | A branch, tag, commit, or `vim.version.range()`. Passed to `vim.pack` unchanged. A range must be a range object: `vim.pack` reads a string like `'^1.2'` as a branch or tag name, so cinch warns when a string looks like a range |
+| `version` | A branch, tag, commit, or `vim.version.range()`. A string range like `'^1.2'`, `'*'` or `'>=1.0.0'` becomes `vim.version.range()`, since `vim.pack` would read it as a branch or tag name. `'1.x'` can be a branch too, so cinch leaves it as written and warns: write `vim.version.range('1.x')` or `branch = '1.x'`. `false` is no version |
 | `commit`, `tag`, `branch` | Become `version`. When more than one is set, `commit` beats `tag`, which beats `version`, which beats `branch`, and the losers are named in a warning |
 | `load` | `'now'`, `'later'`, `'now_if_args'` or `'trigger'`. See below |
+| `lazy` | lazy.nvim's field. `false` is `load = 'now'` and `true` is `load = 'trigger'`. A `load` on the same spec wins |
 | `event` | `'BufReadPost'`, or `'User MyEvent'` for an event with a pattern. A string or a list |
 | `ft` | A filetype or a list of them |
 | `cmd` | A command or a list of them |
@@ -87,7 +88,7 @@ Files under a folder are read in sorted order. A later `add()` merges too, while
 
 A spec nested in another plugin's `deps` applies over the dependency's own spec, whichever file cinch reads first, and wins any conflict with it. Other top-level specs still apply in the order cinch reads them.
 
-A field cinch does not know gets a warning naming the spec file, and is ignored. That includes lazy.nvim's `lazy`: use `load` instead.
+A field cinch does not know gets a warning naming the spec file, and is ignored.
 
 The `plugin` table your hooks receive has `name`, `src`, `version`, `load`, `path` and `rev`, the commit that is checked out.
 
@@ -121,6 +122,22 @@ When plugins are missing, cinch doesn't install them while `init.lua` runs, beca
 | Headless Neovim, or `defer = false` | Installs during `init.lua`, as `vim.pack` does |
 
 While the batch installs, the keys you press are held until it's done: `vim.pack.add` waits for git, and so does Neovim's input.
+
+## Coming from lazy.nvim
+
+Your spec files work as they are. cinch reads `lua/plugins/` the way lazy.nvim does, and these mean the same thing: `dependencies`, `event` with `VeryLazy`, `ft`, `cmd`, `keys`, `init`, `opts`, `main`, `config`, `build`, `enabled`, `cond`, `commit`, `tag`, `branch` and `version`.
+
+| lazy.nvim | In cinch |
+| --- | --- |
+| `lazy = false` | `load = 'now'` |
+| `lazy = true` | `load = 'trigger'`: it loads on a trigger, a `require()`, or with a plugin that depends on it |
+| `version = '^1.2'`, `'*'` | `vim.version.range()` of the same string |
+| `version = false` | No version: the default branch |
+| `lazy-lock.json` | A plugin that is not installed yet installs at the commit it records |
+
+cinch reads `lazy-lock.json` from your config folder, and only before the first `vim.pack` call of a session. Each plugin your specs list that is neither on disk nor in `vim.pack`'s lockfile gets its commit written there, and `vim.pack` installs from it. So the first start after you switch gives you the commits you had, and from then on `nvim-pack-lock.json` is the only lockfile: delete `lazy-lock.json` whenever you like.
+
+A plugin with no trigger and no `lazy` loads `later`, where lazy.nvim loads it during startup. `import`, `optional`, `opts_extend`, `specs`, `priority`, `dir` and `dev` are not supported, and each gets the unknown-field warning. Nor are luarocks dependencies: a plugin's rockspec is not read.
 
 ## Setup
 

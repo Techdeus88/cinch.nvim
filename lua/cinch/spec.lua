@@ -37,6 +37,7 @@ local M = {}
 ---@field commit? string becomes version
 ---@field tag? string becomes version
 ---@field branch? string becomes version
+---@field lazy? boolean lazy.nvim's: false is load = 'now', true is load = 'trigger'
 
 ---@alias cinch.Origin { file: string, index?: integer }
 
@@ -95,6 +96,10 @@ end
 ---@param s table
 ---@param notes string[]
 local function resolve_version(s, notes)
+  -- lazy.nvim's `version = false`: follow the default branch.
+  if s.version == false then
+    s.version = nil
+  end
   local won
   for _, k in ipairs(pins) do
     if s[k] ~= nil then
@@ -109,14 +114,25 @@ local function resolve_version(s, notes)
     s.version = s[won]
   end
   s.commit, s.tag, s.branch = nil, nil, nil
-  -- vim.pack reads a string as a branch, tag or commit, never as a range. Git refs
-  -- cannot hold * ^ ~ or spaces, so a string with them can only be a range by mistake.
   local v = s.version
-  if type(v) == 'string' and (v:find('[%*%^~%s<>=]') or v:find('%d%.[xX]')) then
-    local msg = 'version `%s` looks like a range, which vim.pack reads as a branch or tag; '
-      .. "write vim.version.range('%s')"
-    notes[#notes + 1] = msg:format(v, v)
+  if type(v) ~= 'string' then
+    return
   end
+  -- vim.pack reads a string as a branch, tag or commit, never as a range. Git refs
+  -- cannot hold * ^ ~ or spaces, so a string with them is a range, as in lazy.nvim.
+  if v:find('[%*%^~%s<>=]') then
+    local ok, range = pcall(vim.version.range, v)
+    if ok and range then
+      s.version = range
+      return
+    end
+  elseif not (won == 'version' and v:find('%d%.[xX]')) then
+    return
+  end
+  -- `1.x` can be a branch too, so it is left as written.
+  local msg = 'version `%s` looks like a range, which vim.pack reads as a branch or tag; '
+    .. "write vim.version.range('%s')"
+  notes[#notes + 1] = msg:format(v, v)
 end
 
 ---@param t table
@@ -136,6 +152,17 @@ local function hoist(s)
   local data, notes = s.data or {}, {}
   s.data = data
   resolve_version(s, notes)
+  -- lazy.nvim's `lazy`: false loads at startup, true only when something asks for it.
+  local lazy = data.lazy
+  if lazy == nil then
+    lazy = s.lazy
+  end
+  if type(lazy) == 'boolean' then
+    s.lazy, data.lazy = nil, nil
+    if data.load == nil and s.load == nil then
+      data.load = lazy and 'trigger' or 'now'
+    end
+  end
   local unknown = {}
   for k, v in pairs(s) do
     if type(k) == 'string' and not pack_fields[k] then
