@@ -16,7 +16,7 @@ end
 
 --- The lockfile vim.pack keeps: readable, and written at the first install.
 local function lockfile()
-  local path = vim.go.packlockfile
+  local path = require('cinch.pack').lockfile()
   local f = io.open(path)
   if not f then
     return h.info('no lockfile yet: vim.pack writes one at the first install')

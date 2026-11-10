@@ -6,22 +6,23 @@ on:
 
 jobs:
   test:
-    name: test (${{ matrix.os }})
+    name: test (${{ matrix.os }}, ${{ matrix.neovim }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        neovim: [stable, nightly]
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-      - name: Install Neovim nightly
+      - name: Install Neovim ${{ matrix.neovim }}
         uses: rhysd/action-setup-vim@v1
         with:
           neovim: true
-          version: nightly
+          version: ${{ matrix.neovim }}
       - name: Run the cases
         run: nvim -l tests/run.lua
 

@@ -84,6 +84,15 @@ function M.portable(v, seen)
   return out
 end
 
+--- vim.pack's lockfile: the 'packlockfile' option, or the fixed path of Neovim 0.12.
+---@return string
+function M.lockfile()
+  if vim.fn.exists('+packlockfile') == 1 then
+    return vim.go.packlockfile
+  end
+  return vim.fs.joinpath(vim.fn.stdpath('config') --[[@as string]], 'nvim-pack-lock.json')
+end
+
 ---@param path string
 ---@return table?
 local function read_json(path)
@@ -100,7 +109,7 @@ end
 --- session installs these, whatever it was asked to add.
 ---@return string[]
 function M.locked_missing()
-  local lock = read_json(vim.go.packlockfile)
+  local lock = read_json(M.lockfile())
   local res = {}
   for name in pairs(lock and type(lock.plugins) == 'table' and lock.plugins or {}) do
     if not uv.fs_stat(vim.fs.joinpath(M.dir, name)) then
@@ -120,7 +129,8 @@ function M.import_lazy_lock(plugins)
   if synced or not uv.fs_stat(path) then
     return {}
   end
-  local lazy, lock = read_json(path) or {}, read_json(vim.go.packlockfile) or {}
+  local file = M.lockfile()
+  local lazy, lock = read_json(path) or {}, read_json(file) or {}
   if type(lock.plugins) ~= 'table' then
     lock.plugins = {}
   end
@@ -139,9 +149,9 @@ function M.import_lazy_lock(plugins)
     end
   end
   if #names > 0 then
-    vim.fn.mkdir(vim.fs.dirname(vim.go.packlockfile), 'p')
+    vim.fn.mkdir(vim.fs.dirname(file), 'p')
     local json = vim.json.encode(lock, { indent = '  ', sort_keys = true })
-    vim.fn.writefile(vim.split(json, '\n'), vim.go.packlockfile)
+    vim.fn.writefile(vim.split(json, '\n'), file)
   end
   return names
 end

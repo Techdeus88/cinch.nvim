@@ -13,7 +13,7 @@ A plugin manager for Neovim, built on `vim.pack`.
 
 ## Requirements
 
-- Neovim 0.13 or newer, which is a nightly build until it is released.
+- Neovim 0.12 or newer.
 - `git` on your `PATH`.
 
 ## Install

@@ -1,6 +1,7 @@
 -- Update checks: which plugins have new commits, without changing anything on disk.
 --   1. `git fetch` every plugin in parallel, in the background, with vim.pack's arguments
---   2. one offline vim.pack.get: vim.pack works out each plugin's target the way an update would
+--   2. one offline vim.pack.get: vim.pack works out each plugin's target the way an update would;
+--      on Neovim 0.12, whose get() does not, git does, plugin by plugin
 --   3. `git log` for each plugin that would move, also in parallel
 -- Applying runs vim.pack.update offline, so it uses what the check fetched.
 
@@ -112,18 +113,69 @@ local function finish(plugins, results, opts, failed)
   end
 end
 
----@param plugins cinch.Plugin[]
----@param opts table
-local function resolve(plugins, opts)
-  local names = vim.tbl_map(function(p)
-    return p.name
-  end, plugins)
-  local ok, data = pack.get(names, { offline = true })
-  if not ok then
-    events.report(('update check failed: %s'):format(data), levels.ERROR)
-    return finish(plugins, {}, opts, true)
+---@param ref string
+---@param cwd string
+---@param cb fun(sha?: string)
+local function rev_parse(ref, cwd, cb)
+  git({ 'rev-parse', '--verify', '--quiet', ref .. '^{commit}' }, cwd, function(r)
+    cb(r.code == 0 and vim.trim(r.stdout or '') or nil)
+  end)
+end
+
+--- The commit an update would move a plugin to, worked out the way vim.pack does:
+--- the default branch, a branch, tag or commit, or the newest tag in a range.
+---@param d vim.pack.PlugData
+---@param cb fun(sha?: string)
+local function target(d, cb)
+  local v = d.spec.version
+  if v == nil then
+    return rev_parse('origin/HEAD', d.path, cb)
   end
-  ---@cast data vim.pack.PlugData[]
+  if type(v) == 'string' then
+    return rev_parse('refs/remotes/origin/' .. v, d.path, function(sha)
+      if sha then
+        cb(sha)
+      else
+        rev_parse(v, d.path, cb)
+      end
+    end)
+  end
+  git({ 'tag', '--list' }, d.path, function(r)
+    local best, best_ver
+    for tag in (r.stdout or ''):gmatch('[^\n]+') do
+      local ver = vim.version.parse(tag, { strict = true })
+      if ver and v:has(ver) and (not best_ver or ver > best_ver) then
+        best, best_ver = tag, ver
+      end
+    end
+    if best then
+      rev_parse('refs/tags/' .. best, d.path, cb)
+    else
+      cb(nil)
+    end
+  end)
+end
+
+--- Neovim 0.12's vim.pack.get() has no `rev_to`: fill it in, then call `cb`.
+---@param data vim.pack.PlugData[]
+---@param cb fun()
+local function with_targets(data, cb)
+  if vim.fn.has('nvim-0.13') == 1 then
+    return cb()
+  end
+  local resolved = join(#data, cb)
+  for _, d in ipairs(data) do
+    target(d, function(sha)
+      d.rev_to = sha
+      resolved()
+    end)
+  end
+end
+
+---@param plugins cinch.Plugin[]
+---@param data vim.pack.PlugData[]
+---@param opts table
+local function log(plugins, data, opts)
   local moving = vim.tbl_filter(function(d)
     return d.rev and d.rev_to and d.rev ~= d.rev_to and not M.failed[d.spec.name]
   end, data)
@@ -145,6 +197,23 @@ local function resolve(plugins, opts)
       logged()
     end)
   end
+end
+
+---@param plugins cinch.Plugin[]
+---@param opts table
+local function resolve(plugins, opts)
+  local names = vim.tbl_map(function(p)
+    return p.name
+  end, plugins)
+  local ok, data = pack.get(names, { offline = true })
+  if not ok then
+    events.report(('update check failed: %s'):format(data), levels.ERROR)
+    return finish(plugins, {}, opts, true)
+  end
+  ---@cast data vim.pack.PlugData[]
+  with_targets(data, function()
+    log(plugins, data, opts)
+  end)
 end
 
 --- Check plugins for updates, in the background.

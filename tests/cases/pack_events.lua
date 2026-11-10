@@ -40,6 +40,17 @@ H.after_startup(function()
     { false, true },
     'no vim.pack call before cinch adds'
   )
+  -- Neovim 0.12 fires PackChanged as each install ends, in no fixed order.
+  local installs, at = {}, {}
+  for i, line in ipairs(log) do
+    if line:find('^pack install') then
+      installs[#installs + 1], at[#at + 1] = line, i
+    end
+  end
+  table.sort(installs)
+  for n, i in ipairs(at) do
+    log[i] = installs[n]
+  end
   H.eq(log, {
     'op add',
     'pre install alpha.nvim installing',

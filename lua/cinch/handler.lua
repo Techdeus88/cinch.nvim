@@ -261,6 +261,14 @@ M.handlers.ft = {
 local cmds = {}
 local cmd_desc = 'cinch: load on :'
 
+--- Whether a command is cinch's stub. Neovim 0.12 has its description in `definition`.
+---@param def table from nvim_get_commands
+---@param name string
+---@return boolean
+local function is_stub(def, name)
+  return (def.desc or def.definition) == cmd_desc .. name
+end
+
 ---@param name string
 ---@param args vim.api.keyset.create_user_command.command_args
 local function on_cmd(name, args)
@@ -297,7 +305,7 @@ M.handlers.cmd = {
           -- Still this stub (a build is running, or LoadPre cancelled the load):
           -- asking again would land here, forever.
           local def = api.nvim_get_commands({})[name]
-          if not def or def.desc == cmd_desc .. name then
+          if not def or is_stub(def, name) then
             return {}
           end
           return vim.fn.getcompletion(line, 'cmdline')
@@ -315,7 +323,7 @@ M.handlers.cmd = {
           cmds[name] = nil
           -- Only our stub: another plugin may have defined the real command meanwhile.
           local def = api.nvim_get_commands({})[name]
-          if def and def.desc == cmd_desc .. name then
+          if def and is_stub(def, name) then
             api.nvim_del_user_command(name)
           end
         end

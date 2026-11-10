@@ -26,7 +26,7 @@ require('cinch').setup({ confirm = false, spec = { { { alpha_src }, { beta_src }
 
 H.after_startup(function()
   local pack = require('cinch.pack')
-  local lock = vim.json.decode(table.concat(vim.fn.readfile(vim.go.packlockfile), '\n'))
+  local lock = vim.json.decode(table.concat(vim.fn.readfile(require('cinch.pack').lockfile()), '\n'))
   local at = pack.rev(H.plugin('alpha.nvim'))
   H.eq(lock.plugins['alpha.nvim'].rev, at, 'the lockfile records what is on disk')
   H.eq(lock.plugins['gone.nvim'], nil, 'a plugin no spec names is not imported')

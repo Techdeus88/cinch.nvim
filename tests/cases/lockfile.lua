@@ -5,7 +5,7 @@ local H = dofile(vim.env.CINCH_ROOT .. '/tests/helpers.lua')
 local fixture = vim.fs.joinpath(vim.env.CINCH_FIXTURES, 'alpha.nvim')
 local rev = H.sh({ 'git', '-C', fixture, 'rev-parse', 'HEAD' })
 H.write(
-  vim.go.packlockfile,
+  require('cinch.pack').lockfile(),
   { vim.json.encode({ plugins = { ['alpha.nvim'] = { src = H.src('alpha.nvim'), rev = rev } } }) }
 )
 local prompts = 0
