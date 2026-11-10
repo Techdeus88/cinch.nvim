@@ -1,0 +1,902 @@
+*cinch.txt*  A plugin manager for Neovim, built on vim.pack
+
+==============================================================================
+CONTENTS                                              *cinch* *cinch-contents*
+
+  1. Introduction ........................................ |cinch-intro|
+  2. Requirements ....................................... |cinch-requirements|
+  3. Install ............................................. |cinch-install|
+  4. Specs ............................................... |cinch-specs|
+     Fields .............................................. |cinch-spec-fields|
+     Merging specs ....................................... |cinch-merge|
+     When a plugin loads ................................. |cinch-load|
+     The first start ..................................... |cinch-first-start|
+  5. Coming from lazy.nvim ............................... |cinch-lazy.nvim|
+  6. Setup ............................................... |cinch-setup|
+     Your own code on the same schedule .................. |cinch-schedule|
+     Timing your own functions ........................... |cinch-time|
+  7. Commands ............................................ |cinch-commands|
+  8. The window .......................................... |cinch-window|
+     Keys ................................................ |cinch-keys|
+  9. Features ............................................ |cinch-features|
+ 10. Events .............................................. |cinch-events|
+     Custom triggers ..................................... |cinch-triggers|
+ 11. Lua API ............................................. |cinch-api|
+ 12. Things to know ...................................... |cinch-notes|
+
+==============================================================================
+1. INTRODUCTION                                                  *cinch-intro*
+
+`vim.pack` owns the disk: installing, the lockfile, updating and deleting.
+cinch owns the session. It decides when each plugin loads, runs builds,
+measures what everything costs, and shows it all in one window. Every spec is
+a |vim.pack.Spec|, so anything you write for cinch also works with
+|vim.pack.add()|.
+
+- Four ways to load. `now` loads during startup. `later` loads once the UI is
+  up, a few plugins per tick. `now_if_args` is `now` when Neovim starts with a
+  file and `later` when it doesn't. `trigger` loads on an event, a filetype,
+  a command or a key.
+- A first start you can watch. On a new machine, cinch waits until the UI is
+  up, opens its window, and installs everything in one parallel batch while
+  each plugin's row goes from cloning to installed. Your colorscheme applies
+  the moment its plugin lands.
+- Builds that never block. A shell build runs in the background. A plugin
+  whose build is still running loads when the build ends, and a key or command
+  that fired meanwhile is replayed after.
+- Your messages. cinch shows `vim.pack`'s progress and errors as its own,
+  without Lua stack noise, and logs every step it takes: each install, build,
+  load and trigger.
+- Stats. Startup time measured from when the process began, each phase of
+  cinch's startup, every plugin's load time, and a history across sessions.
+- Update checks fetch in the background and list each plugin's new commits.
+  You apply them from the window.
+
+==============================================================================
+2. REQUIREMENTS                                           *cinch-requirements*
+
+- Neovim 0.13 or newer, which is a nightly build until it is released.
+- `git` on your `PATH`.
+
+==============================================================================
+3. INSTALL                                                     *cinch-install*
+
+Put this at the top of your `init.lua`: >lua
+
+    vim.loader.enable()
+
+    local path = vim.fn.stdpath('data') .. '/site/pack/core/opt/cinch.nvim'
+    if not vim.uv.fs_stat(path) then
+      local out = vim.fn.system({
+        'git', 'clone', '--filter=blob:none',
+        'https://github.com/Techdeus88/cinch.nvim', path,
+      })
+      if vim.v.shell_error ~= 0 then
+        vim.api.nvim_echo({
+          { 'Failed to clone cinch.nvim:\n', 'ErrorMsg' }, { out },
+        }, true, {})
+        return
+      end
+    end
+    vim.cmd.packadd('cinch.nvim')
+
+    require('cinch').setup({ confirm = false })
+<
+cinch is cloned with `git` rather than installed with |vim.pack.add()| for one
+reason. The first `vim.pack.add()` of a session reads your lockfile and
+installs every plugin it lists that is missing on disk. That call should be
+cinch's, so the install carries your `confirm` setting and cinch shows its
+progress.
+
+                                                                  *cinch-self*
+cinch keeps itself updated. Living in `vim.pack`'s folder, where the clone
+above puts it, it adds itself as one of its plugins, from that folder's
+`origin` remote. It is none of your plugins, so no list or count shows it,
+but the update check covers it. A pending update of it gets one line at the
+top of the Plugins view, where the pane lists its commits and `u` applies it,
+and `U` and `:Cinch update` include it. The new code runs after a restart,
+and cinch says so. It never deletes itself.
+
+`vim.pack` adopts the cloned folder rather than cloning it again, and the
+first time it says once that it repaired the lock data for `cinch.nvim`: that
+is `vim.pack` adding it to your lockfile.
+
+It follows its default branch. To stay on a tag or follow another branch,
+give `self` the pin a spec takes: >lua
+
+    self = { tag = 'v1.0.0' }
+    self = { version = vim.version.range('1.*') }
+    self = { branch = 'dev' }
+<
+To change how it loads too, list it in your specs like any other plugin, and
+cinch uses your spec. `self = false` in |cinch.setup()| turns this off, and a
+checkout anywhere else, such as one you develop in, is left alone.
+
+==============================================================================
+4. SPECS                                                         *cinch-specs*
+
+By default cinch reads every file under `lua/plugins/`, in subfolders too, in
+alphabetical order. A file returns one spec or a list of them. >lua
+
+    -- lua/plugins/editor.lua
+    return {
+      { 'folke/tokyonight.nvim', load = 'now', config = function()
+          vim.cmd.colorscheme('tokyonight')
+        end },
+      { 'nvim-telescope/telescope.nvim', cmd = 'Telescope',
+        deps = { 'nvim-lua/plenary.nvim' }, opts = {} },
+      { 'lewis6991/gitsigns.nvim', event = 'BufReadPre', opts = {} },
+      { 'folke/which-key.nvim', opts = {} },
+    }
+<
+`owner/repo` expands to a GitHub URL. Any other `src` goes to `vim.pack` as
+it is.
+
+cinch fields can sit at the top level, as above, or inside `data`, the way
+|vim.pack.Spec| holds extra fields. cinch moves top-level fields into `data`
+before anything else reads the spec, and when both places set a field, `data`
+wins. `vim.pack.add()` receives `src`, `name`, `version` and a copy of `data`,
+so `vim.pack.get()` and the |PackChanged| events show your cinch fields.
+
+The copy is made so Neovim can pass it through autocmd event data: a table
+with both list items and named fields, like a lazy-style key
+`{ 'gx', fn, desc = '…' }`, keeps its list items under `"1"`, `"2"` and so
+on, and anything that can't cross, such as a cycle or a timer, becomes text.
+cinch itself reads your spec as you wrote it.
+
+------------------------------------------------------------------------------
+FIELDS                                                     *cinch-spec-fields*
+
+`[1]` or `src`                                               *cinch-spec-src*
+    Where the plugin comes from.
+
+`name`                                                      *cinch-spec-name*
+    The plugin's name. Defaults to the last part of `src`, the same way
+    `vim.pack` names it.
+
+`version`                                                *cinch-spec-version*
+    A branch, tag, commit, or |vim.version.range()|. A string range like
+    `'^1.2'`, `'*'` or `'>=1.0.0'` becomes `vim.version.range()`, since
+    `vim.pack` would read it as a branch or tag name. `'1.x'` can be a branch
+    too, so cinch leaves it as written and warns: write
+    `vim.version.range('1.x')` or `branch = '1.x'`. `false` is no version.
+
+`commit`, `tag`, `branch`                                    *cinch-spec-pin*
+    Become `version`. When more than one is set, `commit` beats `tag`, which
+    beats `version`, which beats `branch`, and the losers are named in a
+    warning.
+
+`load`                                                      *cinch-spec-load*
+    `'now'`, `'later'`, `'now_if_args'` or `'trigger'`. See |cinch-load|.
+
+`lazy`                                                      *cinch-spec-lazy*
+    lazy.nvim's field. `false` is `load = 'now'` and `true` is
+    `load = 'trigger'`. A `load` on the same spec wins.
+
+`event`                                                    *cinch-spec-event*
+    `'BufReadPost'`, or `'User MyEvent'` for an event with a pattern.
+    A string or a list.
+
+`ft`                                                          *cinch-spec-ft*
+    A filetype or a list of them.
+
+`cmd`                                                        *cinch-spec-cmd*
+    A command or a list of them.
+
+`keys`                                                      *cinch-spec-keys*
+    `'<leader>f'`, or `{ '<leader>f', rhs, mode = 'n', desc = '...' }` for
+    a mapping the spec defines, or a list of either.
+
+`deps`                                                      *cinch-spec-deps*
+    Plugins that load before this one. `'owner/repo'` or a table is a spec.
+    A bare name like `'plenary.nvim'` refers to a spec declared elsewhere.
+    `dependencies` works too.
+
+`enabled`, `cond`                                        *cinch-spec-enabled*
+    `false`, or a function returning `false`, turns the plugin off: it is not
+    installed and never loads. A function that raises leaves the plugin on,
+    with a warning.
+
+`init`                                                      *cinch-spec-init*
+    `function(plugin)`, run at every startup before the plugin loads.
+
+`build`                                                    *cinch-spec-build*
+    Runs after an install or an update.
+    - A shell command runs in the background from the plugin's folder, with
+      `sh -c` on Unix whatever your 'shell' is.
+    - `':Cmd'` runs an Ex command once the plugin has loaded.
+    - `function(plugin)` runs with the plugin on the runtimepath but not
+      loaded.
+    - `function(plugin, done)` finishes when it calls `done(ok, msg)`, or
+      fails after `build_timeout`.
+
+`opts`                                                      *cinch-spec-opts*
+    A table, or `function(plugin, opts)` that returns one or fills in the
+    table it is given.
+
+`main`                                                      *cinch-spec-main*
+    The module whose `setup()` gets `opts`. cinch guesses it from the
+    plugin's name, or takes the only module in its `lua/` folder.
+
+`config`                                                  *cinch-spec-config*
+    `function(plugin, opts)`, run after the plugin loads, in place of
+    `require(main).setup(opts)`. `config = true` calls `setup()` with no
+    opts.
+
+`after`                                                    *cinch-spec-after*
+    `function(plugin)`, run after `config`.
+
+`module`                                                  *cinch-spec-module*
+    `false` keeps `require()` of this plugin's modules from loading it.
+
+A field cinch does not know gets a warning naming the spec file, and is
+ignored.
+
+                                                                *cinch-plugin*
+The `plugin` table your hooks receive has `name`, `src`, `version`, `load`,
+`path` and `rev`, the commit that is checked out.
+
+------------------------------------------------------------------------------
+MERGING SPECS                                                    *cinch-merge*
+
+Specs with the same `name` merge into one before the plugin loads, in the
+order cinch reads them, so you can declare a plugin in one file and adjust it
+in another. It works like |vim.tbl_deep_extend()| with `'force'`: `opts` and
+other nested tables merge key by key, and when two specs set the same field
+the later one wins. A list counts as one value, so a later `keys`, `cmd`,
+`event` or `ft` replaces the earlier list.
+
+`deps` is the exception: every spec's dependencies are kept, because a
+dependency dropped from the list and with no trigger of its own would never
+load.
+
+`opts` functions are the exception too. Tables and functions that take no
+`opts` argument build the base, in the order cinch reads them. Then functions
+that take `opts`, like `function(_, opts)`, run in order over that base,
+whichever file they are in. So >lua
+
+    { opts = function(_, opts) opts.b = 2 end }   -- in one file
+    { opts = { a = 1 } }                          -- in a file read later
+<
+give `{ a = 1, b = 2 }`, and a value such a function sets beats the same key
+from any table. A table a function returns merges in like any other, so
+nothing is dropped. To remove a key, a function sets it to `nil` on `opts`
+and returns nothing or that same `opts`. To add to a list, use a function
+that takes `opts`, since a later list replaces the earlier one.
+
+Files under a folder are read in sorted order. A later |cinch.add()| merges
+too, while the plugin is still waiting to load, and its triggers and `load`
+change to match. Once the plugin has started loading, a new spec warns and
+applies on restart. A plain `deps = { 'owner/repo' }` only names the
+dependency and changes nothing in its spec.
+
+A spec nested in another plugin's `deps` applies over the dependency's own
+spec, whichever file cinch reads first, and wins any conflict with it. Other
+top-level specs still apply in the order cinch reads them.
+
+------------------------------------------------------------------------------
+WHEN A PLUGIN LOADS                                               *cinch-load*
+
+When `load` is not set:
+
+  The spec has                                  It loads ~
+  A trigger: `event`, `ft`, `cmd`, `keys`,      `trigger`: when one of them
+  or a custom one                               fires
+  Nothing, and it is only ever named as         `trigger`, with no triggers
+  another plugin's dependency                   of its own: when the plugin
+                                                that needs it loads
+  Anything else                                 `later`
+
+`event = 'VeryLazy'` from lazy.nvim means `later`. Beside other events, as in
+`event = { 'VeryLazy', 'BufReadPre' }`, the plugin loads on whichever comes
+first: one of those events, or its turn in the `later` queue.
+
+An explicit `load` always wins. `load = 'now'` with a `cmd` loads at startup,
+and cinch warns that the `cmd` is ignored.
+
+                                                               *cinch-require*
+Whatever `load` says, `require()` of a plugin's module loads a plugin that has
+not loaded yet. Its dependencies, `config` and events run as they do for any
+load, and the reason, such as `require telescope.builtin`, shows in the log
+and the window. `module = false` turns this off in |cinch.setup()| or on one
+spec.
+
+`now` plugins load while `init.lua` runs, in the order you declared them,
+dependencies first. On a first start they load right after the install
+instead (see |cinch-first-start|). Neovim then sources their `plugin/` files
+in its normal startup pass, so a `now` plugin's `config` runs before its own
+`plugin/` files. A plugin whose `config` needs something its `plugin/` file
+defines should use `later`.
+
+------------------------------------------------------------------------------
+THE FIRST START                                            *cinch-first-start*
+
+When plugins are missing, cinch doesn't install them while `init.lua` runs,
+because there's no screen to show the install on yet. It waits for
+|UIEnter|, opens its window, and installs then. Exactly what waits depends on
+why plugins are missing:
+
+- Nothing missing: a normal start. Nothing waits.
+- A new spec, or one whose `src` doesn't exist: plugins already on disk start
+  during `init.lua` as usual. Only the missing ones wait for the UI.
+- Your lockfile lists plugins that aren't on disk, as on a new machine with
+  your dotfiles: everything waits. `vim.pack`'s first call would install
+  those during `init.lua` anyway.
+- Headless Neovim, or `defer = false`: installs during `init.lua`, as
+  `vim.pack` does.
+
+While the batch installs, the keys you press are held until it's done:
+`vim.pack.add()` waits for git, and so does Neovim's input.
+
+==============================================================================
+5. COMING FROM LAZY.NVIM                                     *cinch-lazy.nvim*
+
+Your spec files work as they are. cinch reads `lua/plugins/` the way
+lazy.nvim does, and these mean the same thing: `dependencies`, `event` with
+`VeryLazy`, `ft`, `cmd`, `keys`, `init`, `opts`, `main`, `config`, `build`,
+`enabled`, `cond`, `commit`, `tag`, `branch` and `version`.
+
+  lazy.nvim                 In cinch ~
+  `lazy = false`            `load = 'now'`
+  `lazy = true`             `load = 'trigger'`: it loads on a trigger, a
+                            `require()`, or with a plugin that depends on it
+  `version = '^1.2'`, `'*'`   |vim.version.range()| of the same string
+  `version = false`         No version: the default branch
+  `lazy-lock.json`          A plugin that is not installed yet installs at
+                            the commit it records
+
+cinch reads `lazy-lock.json` from your config folder, and only before the
+first `vim.pack` call of a session. Each plugin your specs list that is
+neither on disk nor in `vim.pack`'s lockfile gets its commit written there,
+and `vim.pack` installs from it. So the first start after you switch gives
+you the commits you had, and from then on `nvim-pack-lock.json` is the only
+lockfile: delete `lazy-lock.json` whenever you like.
+
+A plugin with no trigger and no `lazy` loads `later`, where lazy.nvim loads
+it during startup. `import`, `optional`, `opts_extend`, `specs`, `priority`,
+`dir` and `dev` are not supported, and each gets the unknown-field warning.
+Nor are luarocks dependencies: a plugin's rockspec is not read.
+
+==============================================================================
+6. SETUP                                                         *cinch-setup*
+
+The defaults: >lua
+
+    require('cinch').setup({
+      -- module paths, folders, or specs; default lua/plugins/
+      spec = { 'plugins' },
+      -- ask before installing, with vim.pack's prompt
+      confirm = true,
+      -- ms of `later` loading per event-loop tick
+      budget = 5,
+      -- install missing plugins once the UI is up
+      defer = true,
+      -- seconds an async function build may take before it fails
+      build_timeout = 300,
+      -- Neovim's own plugins not to load: { 'netrwPlugin', 'gzip', 'tutor' }
+      disable_runtime = {},
+      -- require() of a plugin's module loads the plugin
+      module = true,
+      -- the name of the user command: 'Pack' gives :Pack update
+      cmd_prefix = 'Cinch',
+      -- update cinch itself as one of its plugins; a table pins it
+      self = true,
+      features = { 'messages', 'stats', 'updates', 'ui' },
+
+      -- each feature's options, under its name
+      messages = { level = vim.log.levels.INFO, progress = true,
+                   history = 1000 },
+      -- profile: time phases, loads, their steps and sourced files for the
+      -- Profile view; 'functions' also times every Lua function
+      stats = { persist = true, history = 50, profile = true },
+      -- fresh: seconds before opening the window checks again
+      -- every: a background check every `every` seconds (false: none)
+      updates = { fresh = 300, every = 86400 },
+      ui = {
+        size = 0.75,           -- share of the editor
+        wide = 0.95,           -- share after `=`
+        split = 0.58,          -- the list's share of the width beside
+                               -- the pane
+        side_by_side = 130,    -- frame width from which the pane sits beside
+                               -- the list, not under it
+        border = nil,          -- default: your 'winborder', or rounded
+        open_on_install = true,-- open the window when plugins install
+        colorscheme = nil,     -- e.g. 'tokyonight': applied as soon as its
+                               -- plugin is on disk
+        backdrop = 60,         -- how much the editor shows through the dark
+                               -- backdrop, 0-100; false for none
+        icons = {},            -- your own for any of: now, later, event, ft,
+                               -- cmd, keys, dep, trigger, off
+      },
+    })
+<
+|cinch.add()| takes the same list |vim.pack.add()| does, with cinch fields
+allowed, and works without `setup()`.
+
+------------------------------------------------------------------------------
+YOUR OWN CODE ON THE SAME SCHEDULE                            *cinch-schedule*
+
+`now`, `later` and `now_if_args` also take a function, for config that isn't
+a plugin spec: options, keymaps, autocmds. >lua
+
+    local cinch = require('cinch')
+
+    cinch.now(function() vim.o.number = true end)
+    cinch.later(function() require('my.keymaps') end)
+    cinch.now_if_args(function() vim.cmd.colorscheme('tokyonight') end)
+<
+- |cinch.now()| runs at once. Called before `setup()`, it runs right after the
+  `now` plugins load, so it can `require()` them. On a first start, when
+  every plugin waits for the UI, it waits too.
+- |cinch.later()| joins the `later` queue once the UI is up, in turn with
+  `later` plugins, in the order you call it.
+- |cinch.now_if_args()| is `now` when Neovim starts with a file argument and
+  `later` when it doesn't.
+
+An error in one of these functions is reported with the file and line where
+you defined it, and the others still run. Each one that runs is in the log.
+
+------------------------------------------------------------------------------
+TIMING YOUR OWN FUNCTIONS                                         *cinch-time*
+
+|cinch.time()| returns `fn` wrapped so every call is timed. Arguments, results
+and errors pass through unchanged, so it can replace the function it wraps,
+a method included: >lua
+
+    local builtin = require('telescope.builtin')
+    builtin.find_files = cinch.time('find_files', builtin.find_files)
+<
+The Profile view lists each name under "timed": how long all its calls took
+together, how many there were, the slowest one, and whether any raised. Each
+call also fires the `Time` event with its `start` and `ms`, for timings of
+your own. Calls made before `setup()`, or with the stats feature off, are not
+timed. The wrapper only times until `fn` returns, so work it hands to a
+callback or a job is not counted.
+
+==============================================================================
+7. COMMANDS                                                   *cinch-commands*
+
+These use the default name. `cmd_prefix` in |cinch.setup()| renames the
+command, so `cmd_prefix = 'Pack'` gives `:Pack`, `:Pack update` and the rest,
+and cinch's messages use the new name. `:Cinch` then no longer exists. The
+name must start with a capital and have only letters and digits, and it can't
+be a command that already exists. Otherwise cinch warns and keeps `:Cinch`.
+The Lua API, `User Cinch*` events and highlight groups keep their names.
+
+:Cinch                                                                *:Cinch*
+    Open the window.
+
+:Cinch open [view]                                               *:Cinch-open*
+    Open it on a view: `plugins`, `triggers`, `stats` or `log`.
+
+:Cinch load {names}                                              *:Cinch-load*
+    Load plugins now.
+
+:Cinch install [names]                                        *:Cinch-install*
+    Install plugins your specs list that aren't on disk: a failed install,
+    or one deleted this session. They then load as their specs say.
+
+:Cinch build {names}                                            *:Cinch-build*
+    Run their builds again.
+
+:Cinch check [names]                                            *:Cinch-check*
+    Check for updates in the background.
+
+:Cinch update [names]                                          *:Cinch-update*
+:Cinch update! [names]
+    Update with `vim.pack`'s review tab. With [!] it applies without it,
+    opens the window, and shows the progress and how it ended.
+
+:Cinch restore [names]                                        *:Cinch-restore*
+:Cinch restore! [names]
+    Put plugins back on the revisions the lockfile records, after a checkout
+    moved on its own. With [!] it does not ask.
+
+:Cinch del {names}                                                *:Cinch-del*
+:Cinch del! {names}
+    Delete plugins from disk. One your specs list is in use, so it needs
+    [!], and it installs again on the next start.
+
+:Cinch clean                                                    *:Cinch-clean*
+:Cinch clean!
+    Delete every plugin on disk that no spec names, once you confirm. Not
+    while a spec file has failed to load, since its plugins would look like
+    strays. With [!] it skips both.
+
+:Cinch sync                                                      *:Cinch-sync*
+    Install what is missing, offer to delete what no spec names, then check
+    for updates. It never applies an update, and never deletes a plugin your
+    specs list.
+
+:Cinch stats                                                    *:Cinch-stats*
+    Print this session's stats.
+
+:checkhealth cinch                                              *cinch-health*
+    Neovim, git, the lockfile, plugin states, orphans, features, and whether
+    startup timing came from the OS.
+
+==============================================================================
+8. THE WINDOW                                                   *cinch-window*
+
+A frame at 75% of the editor, over a dark backdrop that dims the editor
+behind it. The cursor stays in the window: moving to an editor window, with a
+click or `<C-w>`, comes back to the list, while a prompt or picker a plugin
+opens keeps focus. Its top border holds the plugin count, startup time, and
+the five views: plugins, triggers, stats, profile and log. The bottom border
+holds the keys for the view you're in.
+
+PLUGINS                                                 *cinch-window-plugins*
+
+The Plugins view is two panes. The list on the left starts with
+"Updates (n)", which only appears when there are updates: each plugin with
+its name and how many commits it is behind, like `2 commits`, and `u` applies
+the one under the cursor. cinch itself gets its row here. A plugin on disk
+that no spec names is also listed, with `not in specs`, and `d` deletes it.
+A plugin that is working, failed or off stays in that section, with `↑n` on
+its row.
+
+The rest of the list groups plugins into working, failed, loaded, waiting
+and disabled, with what is happening now on top. An install, a check, an
+update or a delete puts one line above it all, like
+`Installing plugins (18/48) - yanky.nvim 37%` with a bar, then a line that
+says how it ended, such as `Checked 61 plugins in 2.1s · 3 updates`, for
+a moment. A plugin being checked, updated or deleted stays in its section and
+says so on its row; an install or a build moves it to working. A check never
+opens the window; an install and `:Cinch update!` do.
+
+Each row puts its parts one after the other: a status light (lit once
+loaded, a spinner while it works), the name, its load time and a load-time
+bar once it has loaded, then how it loads: a Nerd Font icon and its name for
+`now` and `later`, and for a trigger plugin each trigger type with its icon
+and values, the value that loaded it on a chip. A plugin that is only
+a dependency shows the plugins that need it. Pending commits and a message
+come last, and only when there is something to say: an error, the newest
+line a build is printing, why it is off.
+
+The pane on the right follows the cursor and shows that plugin in full: how
+and when it loaded, its folder and url, the branch it follows or the version
+you pinned, the commit on disk, its readme, pending commits, its dependencies
+and what needs it, the config and opts it received, the last lines of its
+build output, live while it builds, and where its spec is. `gx` opens the
+url. Plugins still on disk that no spec names any more sit last, under "not
+in your specs", where `d` deletes them. In a frame narrower than 130 columns,
+where the list could not fit a whole row beside the pane, the pane sits
+under the list instead.
+
+In the Plugins view each way of loading has a chip of its own color: `now`,
+`later`, and every trigger kind. The value that fired is bold and underlined.
+A plugin that is only a dependency has its name in italics and a `dep` chip,
+then the plugins that need it. A plugin of yours that others also need shows
+how many.
+
+TRIGGERS                                               *cinch-window-triggers*
+
+Triggers shows what makes each plugin load, in two panes like Plugins. The
+list has a row per trigger, grouped into events, filetypes, commands, keys
+and your own, then the schedule: `now`, `later` and dependencies. A row shows
+a light (waiting to fire, fired, or never fired because its plugins loaded
+another way), the trigger, a dot per plugin behind it, and what happened. The
+pane follows the cursor: when that trigger fires in plain words, the `:help`
+topic for it, its plugins with their load times and whatever else would load
+them, and for `now` what it cost your startup. `l` loads every plugin still
+waiting on the trigger under the cursor.
+
+STATS                                                     *cinch-window-stats*
+
+Stats shows a startup timeline split into Neovim's own time, each of cinch's
+phases and `later`, then counts, the slowest plugins, and startup times from
+past sessions. It shows the moments of startup the way lazy.nvim does:
+CinchStart, CinchDone, UIEnter and when `later` is done, each with the time
+since the one before.
+
+PROFILE                                                 *cinch-window-profile*
+
+Profile opens with the moments of startup in the order they happened
+(VimEnter, UIEnter, CinchStart, CinchDone and when `later` is done), each
+with the time since the one before. Then it shows where this session's time
+went, as a tree, one group for each way plugins load:
+- cinch's own phases with the `init` hooks,
+- `now` with its plugins and your |cinch.now()| functions, every plugin with
+  its dependencies and the steps of its load (`packadd`, `opts`, `config`,
+  `after`), each step with the files it sourced,
+- the `plugin/` files Neovim sourced at startup grouped by plugin, `runtime`
+  and `config`,
+- the `later` queue with your |cinch.later()| functions,
+- anything loaded after startup.
+
+Functions you wrapped with |cinch.time()| follow under "timed", then builds
+and vim.pack runs (install, update, get) in a group of their own, since they
+run beside everything else. Files are timed with |SourcePre| and
+|SourcePost|, during startup and later only while a plugin loads.
+
+With `stats = { profile = 'functions' }` a last group times every Lua
+function that ran in those same windows, by plugin: its own time, its time
+with what it called, and how many times it ran, the slowest 40 per plugin. It
+hooks every call, so startup takes about twice as long while it is on.
+
+LOG                                                         *cinch-window-log*
+
+Log shows every step and message, oldest first.
+
+------------------------------------------------------------------------------
+KEYS                                                              *cinch-keys*
+
+  `j`, `k`            Move between plugins; the pane follows.
+  `<CR>`              Fold or open the section, or the Profile entry, under
+                    the cursor.
+  `/`                 Filter plugins by name, Profile entries by name or
+                    path, or the log by text. An empty filter clears it.
+  `l`                 Load the plugin under the cursor.
+  `i`                 Install it, or the ones selected, when not on disk.
+  `b`                 Run its build.
+  `u`                 Apply its pending update.
+  `U`                 Apply every pending update.
+  `c`                 Check for updates.
+  `s`                 Sync, as |:Cinch-sync| does.
+  `d`                 Delete the plugin under the cursor from disk, once you
+                    confirm.
+  `<S-CR>`, `<Space>`   Select the plugin under the cursor, shading its row;
+                    `l`, `b`, `u`, `c` and `d` then act on every selected
+                    plugin, and `<Esc>` lets go of them.
+  `<C-d>`, `<C-u>`      Scroll the details pane; the mouse wheel scrolls it
+                    too.
+  `gf`                Open the plugin's spec file at its line.
+  `gx`                Open the plugin's url.
+  `r`                 Read what `vim.pack` knows again.
+  `G`                 Jump to the newest log entry.
+  `<C-s>`             In Profile, sort each level by time taken, or back to
+                    the order things began.
+  `<C-f>`             In Profile, hide entries that took less than the ms
+                    you enter; empty shows them all.
+  `?`                 Show every key.
+  `<Tab>`, `<S-Tab>`    Next or previous view.
+  `=`                 Switch between 75% and 95% of the editor.
+  `q`, `Q`, `<Esc>`     Close.
+
+Opening the window starts an update check when the last one is more than
+5 minutes old.
+
+==============================================================================
+9. FEATURES                                                   *cinch-features*
+
+The core installs, loads and updates plugins on its own. Everything else is
+a feature under `lua/cinch/features/`, loaded by name from `features`.
+`features = {}` turns them all off, and reports then go to |vim.notify()|.
+
+`messages`                                            *cinch-feature-messages*
+    Takes over every message cinch sends and `vim.pack`'s output while cinch
+    calls it. Progress updates in place. Every step cinch takes, notices,
+    and git warnings go to the log.
+
+`stats`                                                  *cinch-feature-stats*
+    Counts, startup phases, load times, the Profile view's timings,
+    |:Cinch-stats|, and one summary per session in
+    `stdpath('state')/cinch/stats.json`.
+
+`updates`                                              *cinch-feature-updates*
+    |:Cinch-check|, applying updates from the window, and a background check
+    every `every` seconds that reports only what is pending.
+
+`ui`                                                        *cinch-feature-ui*
+    The window, and the first start shown in it.
+
+stats asks the OS when Neovim started, so its startup time includes loading
+the binary, which |--startuptime| leaves out. On macOS with Neovim 0.13-dev
+it read 6 to 7.5 ms higher than `--startuptime` in the same run; other
+systems are unmeasured. Compare it with the `Embedded` section of a
+`--startuptime` file, the process that runs your config. The first section is
+the UI client, which finishes before any plugin loads.
+
+==============================================================================
+10. EVENTS                                                      *cinch-events*
+
+Everything cinch does goes out on an event bus. Subscribers run in priority
+order, lower first, and get the payload. See |cinch.on()|. >lua
+
+    local cinch = require('cinch')
+
+    -- Keep a heavy plugin from loading over SSH
+    cinch.on('LoadPre', function(ev)
+      if vim.env.SSH_TTY and ev.plugin.name == 'copilot.lua' then
+        ev.cancel, ev.cancel_reason = true, 'over ssh'
+      end
+    end)
+<
+`Register`
+    `plugin`
+`State`
+    `plugin`, `from`, `to`, `reason`
+`Activity`
+    `plugin`, `from`, `to`: `installing`, `updating`, `deleting`,
+    `building`, `checking`
+`LoadWait`
+    `plugin`, `reason`, `build`: the load waits for `build`'s build to end,
+    the plugin's own or a dependency's
+`LoadPre`
+    `plugin`, `reason`. Set `cancel = true` to stop the load
+`Load`
+    `plugin`, `reason`, `ms = { packadd, config }`
+`Step`
+    `plugin`, `name` (`init`, `packadd`, `opts`, `config` or `after`),
+    `start` (its `hrtime()`), `ms`, `ok`: one part of a load
+`LoadError`
+    `plugin`, `reason`, `err`
+`PackPre`, `Pack`
+    `kind`, `name`, `plugin`, `spec`, `path`: from |PackChangedPre| and
+    |PackChanged|, after cinch has updated its state
+`PackOpPre`, `PackOp`
+    `op`, `names`, and after the call `ok`, `ms`, `err`
+`Build`
+    `plugin`, `ok`, `ms`, `err`, `output`
+`BuildOutput`
+    `plugin`, `lines`: new lines from a shell build as it runs
+`Done`
+    `setup()` is done: specs read, `now` plugins loaded. When plugins were
+    missing, that is after they installed and started on |UIEnter|. Also
+    `User CinchDone`
+`Phase`
+    `name`, `ms`, `start`: a startup step finished; `start` is its
+    `vim.uv.hrtime()`
+`Later`
+    The `later` queue is empty
+`Run`
+    `when`, `where`, `ok`, `ms`, `err`: one of your `now`/`later` functions
+    ran
+`Time`
+    `name`, `start`, `ms`, `ok`, `err`: a function wrapped with
+    |cinch.time()| returned; `start` is its `vim.uv.hrtime()`
+`Installing`, `Installed`
+    `names`, and after the batch `failed` and `ms`: a batch of installs
+    starts and ends
+`Checking`, `Checked`
+    `names`, and after the check `failed`, `ms` and `updates`: an update
+    check starts and ends
+`Updating`, `Updated`
+    `names`, and after it `updated`, `failed`, `total`, `ms` and `restart`:
+    updates applied without the review tab start and end
+`Deleting`, `Deleted`
+    `names`, and after it `deleted`, `failed` and `ms`
+`Progress`
+    `title`, `done`, `total`, `name`, `status`, `percent`: `vim.pack`'s
+    progress, and an update check's
+`Report`
+    `msg`, `level`: something for you to read
+
+The messages feature adds `Message` (`time`, `level`, `msg`, `source`,
+`plugin`: an entry added to the log). The updates feature adds `Updates`
+(`results`: the pending updates by plugin name, after a check and whenever
+one lands).
+
+`Load`, `LoadError` and `Later` also fire as `User CinchLoad`,
+`User CinchLoadError` and `User CinchLater` autocmds.
+
+------------------------------------------------------------------------------
+CUSTOM TRIGGERS                                               *cinch-triggers*
+
+A trigger's name is also its spec field. See |cinch.trigger()|. >lua
+
+    require('cinch').trigger('lsp', {
+      arm = function(plugin, servers)
+        vim.api.nvim_create_autocmd('LspAttach', {
+          callback = function(ev)
+            local client = vim.lsp.get_client_by_id(ev.data.client_id)
+            if client and vim.list_contains(servers, client.name) then
+              require('cinch.handler').fire(plugin, 'lsp ' .. client.name)
+              return true
+            end
+          end,
+        })
+      end,
+    })
+
+    -- spec: { 'some/plugin', lsp = { 'lua_ls' } }
+<
+A trigger can also define:
+- `parse(value)`: the spec's value to a list of values; by default one value
+  is wrapped in a list.
+- `disarm(plugin, values)`: remove what `arm` set up. It runs right before
+  the plugin loads.
+- `loaded(plugin, values)`: runs after a successful load.
+
+==============================================================================
+11. LUA API                                                        *cinch-api*
+
+cinch.setup({opts})                                            *cinch.setup()*
+    Read your specs, install what is missing and start loading. See
+    |cinch-setup| for {opts}.
+
+cinch.add({specs}, {opts})                                       *cinch.add()*
+    Add specs: the same list |vim.pack.add()| takes, with cinch fields
+    allowed. {opts} takes `confirm`. Works without `setup()`.
+
+cinch.load({names}, {reason})                                   *cinch.load()*
+    Load plugins now.
+
+cinch.install({names}, {opts})                               *cinch.install()*
+    Install what your specs list that isn't on disk; all of it without
+    {names}. {opts} takes `confirm`.
+
+cinch.build({names})                                           *cinch.build()*
+    Run their builds again.
+
+cinch.get({name})                                                *cinch.get()*
+    One plugin record, or all of them without {name}. Its `state` says
+    whether it has loaded.
+
+cinch.update({names}, {opts})                                 *cinch.update()*
+    `vim.pack.update()` through cinch. {opts} are `vim.pack.update()`'s.
+
+cinch.del({names}, {opts})                                       *cinch.del()*
+    `vim.pack.del()` through cinch. It says why when it refuses. {opts}
+    takes `force`, to delete a plugin your specs list.
+
+cinch.clean({opts})                                            *cinch.clean()*
+    Delete every plugin on disk that no spec names. {opts} takes `confirm`,
+    and `force`, which ignores a spec file that failed to load.
+
+cinch.sync()                                                    *cinch.sync()*
+    Install what is missing, offer to clean, check for updates.
+
+cinch.now({fn})                                                  *cinch.now()*
+cinch.later({fn})                                              *cinch.later()*
+cinch.now_if_args({fn})                                  *cinch.now_if_args()*
+    Run your own code on cinch's schedule. See |cinch-schedule|.
+
+cinch.time({name}, {fn})                                        *cinch.time()*
+    {fn}, wrapped so each call is timed for the Profile view. See
+    |cinch-time|.
+
+cinch.on({event}, {fn}, {opts})                                   *cinch.on()*
+    Subscribe to an event. {opts} takes `priority` (default 50, lower runs
+    first) and `once` (default false). See |cinch-events|.
+
+cinch.trigger({name}, {def})                                 *cinch.trigger()*
+    Define a trigger. See |cinch-triggers|.
+
+==============================================================================
+12. THINGS TO KNOW                                               *cinch-notes*
+
+- Lua modules cannot be unloaded. Updating a plugin that has already loaded
+  takes effect when you restart, and cinch says so.
+- A `':Cmd'` build needs the plugin's own command, so cinch loads the plugin
+  first. During startup that waits for |VimEnter|.
+- A build that fails, or is cut off by quitting, runs again at the next
+  startup.
+- `pcall(require, 'foo')` loads the plugin that has `foo`, so it no longer
+  tells you whether a plugin has loaded. Use
+  `require('cinch').get(name).state` for that, or `module = false`.
+- `require()` has to return at once, so it cannot wait for a build the way
+  a key or a command can. During a build it fails with `still building`, and
+  a later `require()` loads the plugin. It also fails, with the reason in the
+  error, when the plugin is disabled, not installed or failed, when `LoadPre`
+  cancels the load, and when it runs in a fast event. A plugin whose `config`
+  raises fails that first `require()`, and later ones find the module on the
+  runtimepath.
+- When two plugins have the same module, `require()` loads the first declared
+  and warns once.
+- A `require()` during startup loads the plugin right then, however the spec
+  says to load it. Stats and the log show it as `require <module>`.
+- A plugin that is only ever named as a dependency turns off when every
+  plugin needing it is off, however deep: it isn't installed, `require()`
+  won't load it, and its row keeps its `dep` chip and the plugins that need
+  it. If a later `add()` needs it, it comes back and installs. A dependency
+  with its own spec, or needed by a plugin that is on, stays on.
+- A plugin loads only once everything it depends on has, however deep. It
+  waits for a build running anywhere below it, and fails with the reason when
+  a dependency is disabled, failed, cancelled or not installed yet. On a start
+  that installs a new dependency once the UI is up, the plugins that need it
+  wait too.
+- `keys = false`, `cmd = false` and the like turn that trigger off, as in
+  lazy.nvim. With no trigger left, the plugin loads `later`.
+- Plugins behind the same trigger load in the order you declared them. A key
+  replayed in operator-pending mode keeps its operator, count and register,
+  and a command keeps the exact text you typed.
+- `disable_runtime` keeps Neovim's own plugins in `$VIMRUNTIME/plugin` from
+  loading, by file name: `netrwPlugin`, `gzip`, `tarPlugin`, `zip`, `tutor`,
+  `rplugin` and the rest. They share no switch to turn them off, so during
+  startup a |SourceCmd| autocmd stands in for those files. After startup it
+  is gone, and |:runtime| works as usual. Stats lists what is off.
+- cinch copies your spec tables before it reads them, so a table you share or
+  read again is left as you wrote it.
+
+ vim:tw=78:ts=8:et:ft=help:norl:
