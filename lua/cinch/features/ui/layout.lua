@@ -1,22 +1,21 @@
--- The window's geometry: the frame over the editor, the list, the pane beside it (or
--- under it when narrow), and the backdrop. Given what the window shows, it returns the
--- config of each window; it reads no window state and draws nothing.
+-- The window's geometry: four bordered windows over the editor, the header on top, the
+-- list and the pane beside it (or under it when narrow) in the middle, the footer at the
+-- bottom, and the backdrop. Given what the window shows, it returns the config of each
+-- window and the lines of the header and the footer; it reads no window state.
 
 local canvas = require('cinch.features.ui.canvas')
 local state = require('cinch.state')
 
 local M = {}
 
-local border_line = { rounded = '─', single = '─', double = '═', bold = '━', solid = ' ', shadow = ' ' }
-
 ---@class cinch.ui.Shape what the layout depends on
 ---@field opts cinch.ui.Opts
 ---@field view string the view on show
 ---@field views string[] the view names, in tab order
 ---@field help boolean the ? screen is up
----@field wide boolean the wide share, after `=`
+---@field tall boolean the tall height, after `-`
+---@field even boolean the list and the pane share the width evenly, after `=`
 ---@field split boolean the pane is on show, beside or under the list
----@field footer string the keys for the bottom border
 
 --- The border style: yours, else winborder, else rounded.
 ---@param opts cinch.ui.Opts
@@ -25,7 +24,7 @@ function M.border(opts)
   return opts.border or (vim.o.winborder ~= '' and vim.o.winborder or 'rounded')
 end
 
----@param chunks { [1]: string, [2]: string }[]
+---@param chunks { [1]: string, [2]?: string }[]
 ---@return integer
 local function cells(chunks)
   local n = 0
@@ -44,80 +43,92 @@ local function banner(text, room)
   return canvas.chip(text, 'CinchBanner', inner)
 end
 
---- The title row: the counts on the left, the name on a banner in the middle, the
---- tabs on the right, the border's own line between them.
+--- The header's line, `width` cells: the counts on the left, the name on a banner in
+--- the middle, the tabs on the right.
 ---@param width integer
 ---@param s cinch.ui.Shape
----@return { [1]: string, [2]: string }[]
-local function title(width, s)
+---@return { [1]: string, [2]?: string }[]
+function M.header(width, s)
   local stats = package.loaded['cinch.features.stats']
   local startup = stats and (stats.marks.uienter or stats.marks.vimenter)
-  local left = {
-    {
-      (' %d plugins%s '):format(#state.yours(), startup and (' · startup ' .. canvas.ms(startup)) or ''),
-      'CinchMuted',
-    },
-  }
   local tabs = {}
   for _, v in ipairs(s.views) do
     tabs[#tabs + 1] = { ' ' .. v .. ' ', v == s.view and not s.help and 'CinchTab' or 'CinchMuted' }
   end
+  -- Short of room, the tabs keep theirs: the startup time goes, then the name.
+  local count = (' %d plugins '):format(#state.yours())
+  local with_startup = startup and (' %d plugins · startup %s '):format(#state.yours(), canvas.ms(startup))
+  if with_startup and canvas.cells(with_startup) + cells(tabs) < width then
+    count = with_startup
+  end
+  local out = { { count, 'CinchMuted' } }
   local name = banner('cinch', width)
-  local inner = width - 2
-  local b = M.border(s.opts)
-  local line = type(b) == 'string' and border_line[b] or '─'
-  -- The name centered on the whole border; the line on either side takes up the rest.
-  local at = math.floor((inner - cells(name)) / 2)
-  local before = math.max(1, at - cells(left))
-  local after = math.max(1, inner - cells(left) - before - cells(name) - cells(tabs))
-  local out = vim.list_extend(left, { { line:rep(before), 'FloatBorder' } })
+  if cells(out) + cells(name) + cells(tabs) + 2 > width then
+    name = {}
+  end
+  -- The name centered on the whole line, or as near as the tabs let it; the gaps on
+  -- either side take up the rest.
+  local room = math.max(0, width - cells(out) - cells(name) - cells(tabs))
+  local before = room
+  if #name > 0 then
+    before = math.max(1, math.min(math.floor((width - cells(name)) / 2) - cells(out), room - 1))
+  end
+  local after = math.max(0, room - before)
+  out[#out + 1] = { (' '):rep(before) }
   vim.list_extend(out, name)
-  vim.list_extend(out, { { line:rep(after), 'FloatBorder' } })
+  out[#out + 1] = { (' '):rep(after) }
   return vim.list_extend(out, tabs)
 end
 
---- The keys, on a banner centered in the bottom border.
+--- The footer's line, `width` cells: the keys on a banner in the middle.
 ---@param width integer
 ---@param text string
----@return { [1]: string, [2]: string }[]
-local function footer(width, text)
-  return banner(vim.trim(text), width - 2)
+---@return { [1]: string, [2]?: string }[]
+function M.footer(width, text)
+  local keys = banner(vim.trim(text), width)
+  return vim.list_extend({ { (' '):rep(math.max(0, math.floor((width - cells(keys)) / 2))) } }, keys)
 end
 
---- The configs of the backdrop, the frame, the list and the pane, for `s`.
+--- The configs of the backdrop, the header, the list, the pane and the footer, for `s`.
 ---@param s cinch.ui.Shape
 ---@return table<string, vim.api.keyset.win_config>
 function M.configs(s)
-  local share = s.wide and s.opts.wide or s.opts.size
+  local border = M.border(s.opts)
+  -- Cells a border adds to a window, both sides together.
+  local edge = border == 'none' and 0 or 2
   local lines = vim.o.lines - vim.o.cmdheight
-  local w = math.max(40, math.floor(vim.o.columns * share))
-  local h = math.max(10, math.floor(lines * share))
-  local row = math.max(0, math.floor((lines - h) / 2) - 1)
-  local col = math.max(0, math.floor((vim.o.columns - w) / 2) - 1)
-  local frame = { relative = 'editor', row = row, col = col, width = w, height = h, zindex = 50, focusable = false }
-  frame.border = M.border(s.opts)
-  -- Neovim allows a title and footer only on a float with a border.
-  if frame.border ~= 'none' then
-    frame.title, frame.title_pos = title(w, s), 'left'
-    frame.footer, frame.footer_pos = footer(w, s.footer), 'center'
+  local w = math.max(40, math.floor(vim.o.columns * s.opts.size))
+  local h = math.max(12, math.floor(lines * (s.tall and s.opts.tall or s.opts.size)))
+  local row = math.max(0, math.floor((lines - h) / 2))
+  local col = math.max(0, math.floor((vim.o.columns - w) / 2))
+
+  --- A window whose border box is at `r`, `c`, `width` by `height` cells.
+  ---@return vim.api.keyset.win_config
+  local function box(r, c, width, height, extra)
+    local cfg = { relative = 'editor', row = r, col = c, zindex = 51, border = border }
+    cfg.width, cfg.height = math.max(1, width - edge), math.max(1, height - edge)
+    return vim.tbl_extend('force', cfg, extra or {})
   end
-  local list = { relative = 'editor', row = row + 1, col = col + 1, width = w, height = h, zindex = 51 }
-  -- Focusable, so the mouse wheel scrolls it.
-  local pane = { relative = 'editor', zindex = 51, hide = not s.split }
-  if w >= s.opts.side_by_side then
-    -- Wide enough: the pane beside the list, a rule between them.
-    list.width = s.split and math.floor(w * s.opts.split) or w
-    pane.row, pane.col = row + 1, col + 1 + list.width
-    pane.width, pane.height = math.max(1, w - list.width - 1), h
-    pane.border = { '', '', '', '', '', '', '', { '│', 'CinchRule' } }
+
+  -- The header and the footer keep one line each; the list and the pane get the rest.
+  local bar = 1 + edge
+  local top, middle = row + bar, h - 2 * bar
+  local list, pane
+  if not s.split then
+    list = box(top, col, w, middle)
+    pane = box(top, col, w, middle, { hide = true })
+  elseif w >= s.opts.side_by_side then
+    -- Wide enough: the pane beside the list.
+    local lw = math.floor(w * (s.even and 0.5 or s.opts.split))
+    list = box(top, col, lw, middle)
+    pane = box(top, col + lw, w - lw, middle, { hide = false })
   else
-    -- Too narrow for two columns: the pane under the list, a rule between them.
-    list.height = s.split and math.max(3, math.floor(h * 0.55)) or h
-    pane.row, pane.col = row + 1 + list.height, col + 1
-    pane.width, pane.height = w, math.max(1, h - list.height - 1)
-    pane.border = { '', { '─', 'CinchRule' }, '', '', '', '', '', '' }
+    -- Too narrow for two columns: the pane under the list.
+    local lh = math.max(1 + edge, math.floor(middle * 0.55))
+    list = box(top, col, w, lh)
+    pane = box(top + lh, col, w, middle - lh, { hide = false })
   end
-  -- Under the frame, over everything else: the editor dimmed behind the window.
+  -- Under the windows, over everything else: the editor dimmed behind them.
   local backdrop = {
     relative = 'editor',
     row = 0,
@@ -127,7 +138,13 @@ function M.configs(s)
     zindex = 49,
     focusable = false,
   }
-  return { backdrop = backdrop, frame = frame, list = list, pane = pane }
+  return {
+    backdrop = backdrop,
+    header = box(row, col, w, bar, { focusable = false }),
+    list = list,
+    pane = pane,
+    footer = box(top + middle, col, w, bar, { focusable = false }),
+  }
 end
 
 return M

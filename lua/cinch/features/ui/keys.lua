@@ -10,7 +10,7 @@ local api = vim.api
 local M = {}
 
 ---@class cinch.ui.Window what the keys need from the window
----@field ui table its state: view, wide, help, selected, canvas, list, ctx
+---@field ui table its state: view, tall, even, help, selected, canvas, list, ctx
 ---@field views string[]
 ---@field render fun()
 ---@field redraw fun()
@@ -32,11 +32,11 @@ local M = {}
 ---@field [3] string what they do, in words, for ? and the mapping's desc
 ---@field asked? 'answer'|'no' while a row asks: `answer` still runs, `no` answers no; any other key waits
 
---- The keys of each view, for the frame's bottom border.
+--- The keys of each view, for the footer.
 M.hints = {
   plugins = ' / filter  l load  i install  b build  u update  d delete  s sync  S-CR select  ? keys  q close ',
   triggers = ' <CR> fold  l load what waits  <C-d> <C-u> details  <Tab> next view  ? keys  q close ',
-  stats = ' <Tab> next view  = size  ? keys  q close ',
+  stats = ' <Tab> next view  - size  ? keys  q close ',
   profile = ' <CR> fold  <C-s> sort  <C-f> hide under ms  / filter  <Tab> next view  ? keys  q close ',
   log = ' / filter  G newest  <Tab> next view  ? keys  q close ',
   help = ' ? goes back  q close ',
@@ -394,10 +394,18 @@ function M.make(w)
     {
       { '=' },
       function()
-        ui.wide = not ui.wide
+        ui.even = not ui.even
         w.render()
       end,
-      'switch between 75% and 95% of the editor',
+      'switch the list and details between 70/30 and 50/50',
+    },
+    {
+      { '-' },
+      function()
+        ui.tall = not ui.tall
+        w.render()
+      end,
+      "switch between 75% and 95% of the editor's height",
     },
     { { 'q', 'Q' }, w.close, 'close', asked = 'no' },
     {

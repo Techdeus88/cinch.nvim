@@ -87,9 +87,7 @@ H.after_startup(function()
   H.eq(#marked, 1, '<S-CR> shades the row it selects')
   go(' · cmdy ')
   H.press('<Space>')
-  local footer = table.concat(vim.tbl_map(function(c)
-    return c[1]
-  end, api.nvim_win_get_config(w.frame).footer))
+  local footer = api.nvim_buf_get_lines(api.nvim_win_get_buf(w.footer), 0, 1, false)[1]
   H.eq(footer:find('2 selected', 1, true) ~= nil, true, 'the footer counts the selection')
   H.press('d')
   H.eq(

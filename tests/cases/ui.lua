@@ -1,4 +1,4 @@
--- features/ui: the frame and its two panes, sizes, views, folding, filtering,
+-- features/ui: the header, the two panes and the footer, sizes, views, folding, filtering,
 -- the pane following the cursor, the action keys, gf, and closing.
 local H = dofile(vim.env.CINCH_ROOT .. '/tests/helpers.lua')
 local api = vim.api
@@ -60,55 +60,51 @@ H.after_startup(function()
   local w = ui.windows()
   local bd = api.nvim_win_get_config(w.backdrop)
   H.eq(
-    { bd.width, bd.height, bd.zindex < api.nvim_win_get_config(w.frame).zindex, vim.wo[w.backdrop].winblend },
+    { bd.width, bd.height, bd.zindex < api.nvim_win_get_config(w.header).zindex, vim.wo[w.backdrop].winblend },
     { vim.o.columns, vim.o.lines - vim.o.cmdheight, true, 60 },
     'a backdrop over the editor, under the window'
   )
   local lines_h = vim.o.lines - vim.o.cmdheight
-  local frame = api.nvim_win_get_config(w.frame)
+  --- The cells the four windows take, borders included: { width, height }.
+  local function size()
+    local head, foot = api.nvim_win_get_config(w.header), api.nvim_win_get_config(w.footer)
+    return { head.width + 2, foot.row + foot.height + 2 - head.row }
+  end
+  H.eq(size(), { math.floor(vim.o.columns * 0.75), math.floor(lines_h * 0.75) }, 'four windows at 75%')
+  local head_cfg, list_cfg = api.nvim_win_get_config(w.header), api.nvim_win_get_config(w.list)
+  local pane_cfg, foot_cfg = api.nvim_win_get_config(w.pane), api.nvim_win_get_config(w.footer)
   H.eq(
-    { frame.width, frame.height },
-    { math.floor(vim.o.columns * 0.75), math.floor(lines_h * 0.75) },
-    'a frame at 75%'
+    { list_cfg.row, pane_cfg.row, foot_cfg.row, head_cfg.height, foot_cfg.height },
+    { head_cfg.row + 3, list_cfg.row + list_cfg.height + 2, pane_cfg.row + pane_cfg.height + 2, 1, 1 },
+    'the header on top, then the list, the pane under it, and the footer, each bar one line'
   )
   H.eq(api.nvim_get_current_win(), w.list, 'the cursor is in the list')
   H.eq(api.nvim_win_get_config(w.pane).hide, false, 'the pane shows')
-  local pane_cfg = api.nvim_win_get_config(w.pane)
-  H.eq(pane_cfg.row > api.nvim_win_get_config(w.list).row, true, 'under the list, in an 80-column editor')
-  local title = table.concat(vim.tbl_map(function(c)
-    return c[1]
-  end, frame.title))
+  H.eq(pane_cfg.col, list_cfg.col, 'the pane under the list, in an 80-column editor')
+  local title = lines(w.header)[1]
   H.eq(
-    title:find('cinch', 1, true) ~= nil and title:find('plugins  triggers  stats  profile  log', 1, true) ~= nil,
+    title:find('^ %d+ plugins') ~= nil and title:find('plugins  triggers  stats  profile  log $') ~= nil,
     true,
-    'title and tabs'
+    'the counts on the left of the header, the tabs on the right'
   )
+  H.eq(vim.fn.strdisplaywidth(title), head_cfg.width, 'all of it in view, in an 80-column editor')
 
-  -- In a wide editor the name sits in the middle of the top border, on a banner, and
-  -- the keys sit on a banner in the middle of the bottom one.
-  local cols = vim.o.columns
-  vim.o.columns = 200
-  local wide = require('cinch.features.ui.layout').configs({
-    opts = ui.opts,
-    view = 'plugins',
-    views = ui.views,
-    help = false,
-    wide = false,
-    split = true,
-    footer = ' / filter  q close ',
-  }).frame
-  vim.o.columns = cols
+  -- In a wide header the name sits in the middle, on a banner, and the keys sit on a
+  -- banner in the middle of the footer.
+  local layout = require('cinch.features.ui.layout')
+  local shape = { opts = ui.opts, view = 'plugins', views = ui.views, help = false, split = true }
+  local head = layout.header(148, shape)
   local before, banner_at, total = 0, nil, 0
-  for i, c in ipairs(wide.title) do
+  for i, c in ipairs(head) do
     if c[2] == 'CinchBanner' and vim.trim(c[1]) == 'cinch' then
       banner_at = i
     end
   end
   assert(banner_at, 'the name is on a banner')
-  local first = banner_at - (wide.title[banner_at - 1][2] == 'CinchBannerCap' and 1 or 0)
-  local last = banner_at + (wide.title[banner_at + 1][2] == 'CinchBannerCap' and 1 or 0)
+  local first = banner_at - (head[banner_at - 1][2] == 'CinchBannerCap' and 1 or 0)
+  local last = banner_at + (head[banner_at + 1][2] == 'CinchBannerCap' and 1 or 0)
   local name_w = 0
-  for i, c in ipairs(wide.title) do
+  for i, c in ipairs(head) do
     local w_ = vim.fn.strdisplaywidth(c[1])
     total = total + w_
     if i < first then
@@ -117,13 +113,19 @@ H.after_startup(function()
       name_w = name_w + w_
     end
   end
-  H.eq(total, wide.width - 2, 'the title fills the border')
+  H.eq(total, 148, 'the header line fills its window')
   H.eq(math.abs(before - (total - before - name_w)) <= 1, true, 'with the name in the middle')
-  H.eq(wide.footer_pos, 'center', 'the keys centered')
+  local foot = layout.footer(148, ' / filter  q close ')
   local keys = vim.tbl_filter(function(c)
     return c[2] == 'CinchBanner'
-  end, wide.footer)
-  H.eq(vim.trim(keys[1][1]), '/ filter  q close', 'on a banner')
+  end, foot)
+  H.eq(vim.trim(keys[1][1]), '/ filter  q close', 'the keys on a banner')
+  local pad = vim.fn.strdisplaywidth(foot[1][1])
+  local keys_w = 0
+  for i = 2, #foot do
+    keys_w = keys_w + vim.fn.strdisplaywidth(foot[i][1])
+  end
+  H.eq(math.abs(pad - (148 - pad - keys_w)) <= 1, true, 'in the middle of the footer')
 
   local u = require('cinch.features.updates')
   H.eq(u.checking, true, 'opening starts an update check')
@@ -242,10 +244,24 @@ H.after_startup(function()
   H.eq(H.plugin('delta.nvim').state, 'loaded', 'l loads every selected plugin')
   H.eq(shaded(), 0, 'and lets go of them')
 
+  H.press('-')
+  H.eq(size(), { math.floor(vim.o.columns * 0.75), math.floor(lines_h * 0.95) }, '- makes it 95% tall')
+  H.press('-')
+  H.eq(size(), { math.floor(vim.o.columns * 0.75), math.floor(lines_h * 0.75) }, '- again goes back')
+  -- Wide enough for the pane beside the list: 150 columns at 75%.
+  local cols = vim.o.columns
+  vim.o.columns = 200
+  vim.wait(20)
+  local function widths()
+    return { api.nvim_win_get_config(w.list).width + 2, api.nvim_win_get_config(w.pane).width + 2 }
+  end
+  H.eq(widths(), { 105, 45 }, 'the list and the pane 70/30')
   H.press('=')
-  H.eq(api.nvim_win_get_config(w.frame).width, math.floor(vim.o.columns * 0.95), '= stretches to 95%')
+  H.eq(widths(), { 75, 75 }, '= makes them 50/50')
   H.press('=')
-  H.eq(api.nvim_win_get_config(w.frame).width, math.floor(vim.o.columns * 0.75), '= again goes back')
+  H.eq(widths(), { 105, 45 }, '= again goes back')
+  vim.o.columns = cols
+  vim.wait(20)
 
   go(w.list, '▾ loaded')
   H.press('<CR>')
@@ -260,9 +276,7 @@ H.after_startup(function()
   end
   ---@return string
   local function footer()
-    return table.concat(vim.tbl_map(function(c)
-      return c[1]
-    end, api.nvim_win_get_config(w.frame).footer))
+    return lines(w.footer)[1]
   end
   -- Queued, then read by cinch key by key.
   local typing = {}
@@ -277,14 +291,10 @@ H.after_startup(function()
     end,
   })
   H.eq(typing[#typing], 'ac', 'cinch reads what you type, key by key')
-  H.eq(
-    table.concat(typing, '|'):find('filter: ab▏', 1, true) ~= nil,
-    true,
-    'and shows it in the bottom border as you type'
-  )
+  H.eq(table.concat(typing, '|'):find('filter: ab▏', 1, true) ~= nil, true, 'and shows it in the footer as you type')
   H.press('/del<CR>')
   H.eq(line_of(w.list, ' alpha%.nvim ') == nil and line_of(w.list, ' delta%.nvim ') ~= nil, true, '/ filters by name')
-  H.eq(footer():find('filter:', 1, true), nil, 'and the prompt leaves the border')
+  H.eq(footer():find('filter:', 1, true), nil, 'and the prompt leaves the footer')
   go(w.list, ' delta%.nvim ')
   H.press('l')
   H.eq(H.plugin('delta.nvim').state, 'loaded', 'l loads the plugin under the cursor')
@@ -325,7 +335,7 @@ H.after_startup(function()
   H.press('<Tab>')
   H.eq(api.nvim_win_get_config(w.pane).hide, true, 'profile uses the whole width')
   H.eq(line_of(w.list, '^ in order') ~= nil and line_of(w.list, '^ ▾ cinch ') ~= nil, true, 'then profile')
-  H.eq(line_of(w.list, '^ profile'), nil, 'its name only on the frame')
+  H.eq(line_of(w.list, '^ profile'), nil, 'its name only in the header')
   local start_at, done_at = line_of(w.list, '^   CinchStart '), line_of(w.list, '^   CinchDone ')
   local enter_at = line_of(w.list, '^   VimEnter ')
   H.eq(start_at ~= nil and done_at ~= nil and enter_at ~= nil, true, 'the moments of startup')
@@ -370,8 +380,8 @@ H.after_startup(function()
   H.eq(api.nvim_get_current_line():find('alpha.nvim', 1, true) ~= nil, true, 'at the plugin')
 
   vim.cmd('Cinch open stats')
-  H.eq(floats(), 4, 'backdrop, frame, list and pane')
+  H.eq(floats(), 5, 'backdrop, header, list, pane and footer')
   H.press('q')
   vim.wait(30)
-  H.eq(floats(), 0, 'q closes all four')
+  H.eq(floats(), 0, 'q closes all five')
 end)

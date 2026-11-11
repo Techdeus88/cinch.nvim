@@ -223,7 +223,7 @@ function M.list(width, ctx)
   if min > 0 then
     notes[#notes + 1] = 'over ' .. canvas.ms(min)
   end
-  -- How the tree is shown; the view's name is already on the frame.
+  -- How the tree is shown; the view's name is already in the header.
   c:add({ { ' ' .. table.concat(notes, ' · '), 'CinchMuted' } })
   if ctx.filter then
     c:add({ { ' / ' .. ctx.filter, 'CinchKey' } })

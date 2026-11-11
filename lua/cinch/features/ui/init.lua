@@ -1,8 +1,8 @@
--- The cinch window: a bordered frame over the editor, 75% of it, 95% with `=`.
--- Inside, the Plugins view is two panes: the list, which has the cursor, and the
--- detail pane, which follows it. Stats, Profile and Log use the whole width. The title and
--- tabs sit in the top border and the keys in the bottom one. At startup this file
--- only declares `:Cinch open`; drawing code and subscriptions wait for the first open.
+-- The cinch window: four bordered windows over the editor, 75% of it, 95% of its height
+-- with `-`. The header holds the counts and the tabs, the footer the keys. Between them the
+-- Plugins view is two panes, 70/30 or 50/50 with `=`: the list, which has the cursor, and
+-- the detail pane, which follows it. Stats, Profile and Log use the whole width. At startup
+-- this file only declares `:Cinch open`; drawing code and subscriptions wait for the first open.
 
 local events = require('cinch.events')
 local state = require('cinch.state')
@@ -13,9 +13,9 @@ local M = {}
 
 ---@class cinch.ui.Opts
 ---@field size? number share of the editor, default 0.75
----@field wide? number share after `=`, default 0.95
----@field split? number the list's share of the width in the Plugins view, default 0.58
----@field side_by_side? integer frame width from which the pane sits beside the list; default 130, room for a whole row
+---@field tall? number share of the editor's height after `-`, default 0.95
+---@field split? number the list's share of the width beside the pane, default 0.7; 0.5 after `=`
+---@field side_by_side? integer window width from which the pane sits beside the list; default 130, room for a whole row
 ---@field border? string|string[] default: 'winborder', or rounded when that is empty
 ---@field open_on_install? boolean open the window when plugins install, default true
 ---@field colorscheme? string applied the moment a plugin that ships it is on disk, on a first start
@@ -24,7 +24,7 @@ local M = {}
 ---@field backdrop? integer|false how much the editor shows through the dark backdrop, 0-100; default 60, false: none
 
 ---@type cinch.ui.Opts
-M.opts = { size = 0.75, wide = 0.95, split = 0.58, side_by_side = 130, backdrop = 60 }
+M.opts = { size = 0.75, tall = 0.95, split = 0.7, side_by_side = 130, backdrop = 60 }
 
 M.views = { 'plugins', 'triggers', 'stats', 'profile', 'log' }
 
@@ -33,13 +33,15 @@ local paned = { plugins = 'selected', triggers = 'trigger' }
 
 local ui = {
   backdrop = nil, ---@type integer? window
-  frame = nil, ---@type integer? window
+  header = nil, ---@type integer? window
+  footer = nil, ---@type integer? window
   pane_of = nil, ---@type string? the plugin the pane shows, to scroll it back up for another
   released = false, -- focus may stay in an editor window: plugins load there on a first start
   list = nil, ---@type integer? window
   pane = nil, ---@type integer? window
   view = 'plugins',
-  wide = false,
+  tall = false, -- `-`: the tall height
+  even = false, -- `=`: the list and the pane 50/50
   help = false,
   selected = nil, ---@type string? plugin under the cursor
   trigger = nil, ---@type string? trigger under the cursor, in the Triggers view
@@ -50,7 +52,7 @@ local ui = {
   colors_done = false, -- opts.colorscheme was applied
   editor = nil, ---@type integer? the editor window you opened cinch from
   timer = nil, ---@type uv.uv_timer_t?
-  input = nil, ---@type string? the prompt and the text being typed, for the bottom border
+  input = nil, ---@type string? the prompt and the text being typed, for the footer
   ---@type cinch.ui.Ctx
   ctx = { folded = {}, tick = 0, info = {}, spec_lines = {} },
 }
@@ -89,15 +91,15 @@ function M.in_editor(fn)
   end
 end
 
---- The window ids of the backdrop, the frame, the list and the pane, while open.
----@return { backdrop?: integer, frame?: integer, list?: integer, pane?: integer }
+--- The window ids of the backdrop, the header, the list, the pane and the footer, while open.
+---@return { backdrop?: integer, header?: integer, list?: integer, pane?: integer, footer?: integer }
 function M.windows()
-  return { backdrop = ui.backdrop, frame = ui.frame, list = ui.list, pane = ui.pane }
+  return { backdrop = ui.backdrop, header = ui.header, list = ui.list, pane = ui.pane, footer = ui.footer }
 end
 
 -- Layout ------------------------------------------------------------------------
 
---- The keys in the bottom border: the view's own, or what the selection can do.
+--- The keys in the footer: the view's own, or what the selection can do.
 ---@return string
 local function footer_text()
   if ui.input then
@@ -113,17 +115,17 @@ local function footer_text()
 end
 
 --- The window's configs for what it shows now.
----@return table<string, vim.api.keyset.win_config>
-local function layout()
-  return part('layout').configs({
+---@return cinch.ui.Shape
+local function shape()
+  return {
     opts = M.opts,
-    wide = ui.wide,
+    tall = ui.tall,
+    even = ui.even,
     split = paned[ui.view] ~= nil and not ui.help,
     view = ui.view,
     views = M.views,
     help = ui.help,
-    footer = footer_text(),
-  })
+  }
 end
 
 -- Drawing -----------------------------------------------------------------------
@@ -146,6 +148,16 @@ local function paint(win, c)
   for l, group in pairs(c.line_hls) do
     pcall(api.nvim_buf_set_extmark, buf, ns, l - 1, 0, { line_hl_group = group })
   end
+end
+
+--- Paint the line of the header or the footer, made from its width.
+---@param win integer
+---@param make fun(width: integer): { [1]: string, [2]?: string }[]
+local function paint_bar(win, make)
+  local width = api.nvim_win_get_width(win)
+  local c = part('canvas').new(width)
+  c:add(make(width))
+  paint(win, c)
 end
 
 --- The line of a plugin's spec in its file: the first line naming its repo.
@@ -204,13 +216,21 @@ local function render()
   if not M.is_open() then
     return
   end
-  local cfg = layout()
+  local s = shape()
+  local layout = part('layout')
+  local cfg = layout.configs(s)
   if valid(ui.backdrop) then
     api.nvim_win_set_config(ui.backdrop, cfg.backdrop)
   end
-  api.nvim_win_set_config(ui.frame, cfg.frame)
-  api.nvim_win_set_config(ui.list, cfg.list)
-  api.nvim_win_set_config(ui.pane, cfg.pane)
+  for _, k in ipairs({ 'header', 'list', 'pane', 'footer' }) do
+    api.nvim_win_set_config(ui[k], cfg[k])
+  end
+  paint_bar(ui.header, function(width)
+    return layout.header(width, s)
+  end)
+  paint_bar(ui.footer, function(width)
+    return layout.footer(width, footer_text())
+  end)
   local width = api.nvim_win_get_width(ui.list)
   local c
   if ui.help then
@@ -417,7 +437,7 @@ end
 local keycodes = { cr = vim.keycode('<CR>'), esc = vim.keycode('<Esc>'), bs = vim.keycode('<BS>') }
 
 --- Take a line of text in the window: the prompt and what you type show in the
---- bottom border. <CR> ends it, <Esc> gives it up, <C-u> empties it.
+--- footer. <CR> ends it, <Esc> gives it up, <C-u> empties it.
 ---@param req { prompt: string, text?: string, change?: fun(text: string), done: fun(text?: string) }
 function M.input(req)
   local text = req.text or '' ---@type string?
@@ -554,21 +574,22 @@ function M.open(view)
     ui.editor = from
   end
 
-  local cfg = layout()
+  local cfg = part('layout').configs(shape())
   -- Blending needs 'termguicolors'; without it the backdrop would hide the editor.
   if M.opts.backdrop and vim.o.termguicolors then
     ui.backdrop = float(false, cfg.backdrop)
     vim.wo[ui.backdrop].winhighlight = 'Normal:CinchBackdrop'
     vim.wo[ui.backdrop].winblend = M.opts.backdrop
   end
-  ui.frame = float(false, cfg.frame)
+  ui.header = float(false, cfg.header)
+  ui.footer = float(false, cfg.footer)
   ui.pane = float(false, cfg.pane)
   ui.list = float(true, cfg.list)
   local buf = api.nvim_win_get_buf(ui.list)
   vim.bo[buf].filetype = 'cinch'
   vim.wo[ui.list].cursorline = true
   -- A plugin that opens a buffer "in the current window" must not take over ours.
-  for _, win in ipairs({ ui.frame, ui.pane, ui.list, ui.backdrop }) do
+  for _, win in ipairs({ ui.header, ui.footer, ui.pane, ui.list, ui.backdrop }) do
     vim.wo[win].winfixbuf = true
   end
   part('keys').map(buf, key_list())
@@ -597,10 +618,10 @@ function M.open(view)
       end)
     end,
   })
-  -- Closing any of the three closes them all. Leaving the list does not: plugins
+  -- Closing any of them closes them all. Leaving the list does not: plugins
   -- move focus as they load (dashboards, pickers, input prompts), and that must
   -- not close the window.
-  for _, win in ipairs({ ui.frame, ui.pane, ui.list }) do
+  for _, win in ipairs({ ui.header, ui.footer, ui.pane, ui.list }) do
     api.nvim_create_autocmd('WinClosed', {
       group = group,
       pattern = tostring(win),
@@ -641,7 +662,7 @@ function M.close()
       ask.done(false)
     end)
   end
-  for _, k in ipairs({ 'list', 'pane', 'frame', 'backdrop' }) do
+  for _, k in ipairs({ 'list', 'pane', 'header', 'footer', 'backdrop' }) do
     local win = ui[k] --[[@as integer?]]
     if valid(win) then
       pcall(api.nvim_win_close, win, true)

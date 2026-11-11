@@ -160,9 +160,9 @@ require('cinch').setup({
   updates = { fresh = 300, every = 86400 }, -- seconds before opening the window checks again; a background check every `every` seconds (false: none)
   ui = {
     size = 0.75,                 -- share of the editor
-    wide = 0.95,                 -- share after `=`
-    split = 0.58,                -- the list's share of the width beside the pane
-    side_by_side = 130,          -- frame width from which the pane sits beside the list, not under it
+    tall = 0.95,                 -- share of the editor's height after `-`
+    split = 0.7,                 -- the list's share of the width beside the pane; 0.5 after `=`
+    side_by_side = 130,          -- window width from which the pane sits beside the list, not under it
     border = nil,                -- default: your 'winborder', or rounded
     open_on_install = true,      -- open the window when plugins install
     colorscheme = nil,           -- e.g. 'tokyonight': applied as soon as its plugin is on disk
@@ -225,9 +225,9 @@ These use the default name. `cmd_prefix` in `setup()` renames the command, so `c
 
 ## The window
 
-A frame at 75% of the editor, over a dark backdrop that dims the editor behind it. The cursor stays in the window: moving to an editor window, with a click or `<C-w>`, comes back to the list, while a prompt or picker a plugin opens keeps focus. Its top border holds the plugin count, startup time, and the five views: plugins, triggers, stats, profile and log. The bottom border holds the keys for the view you're in.
+Four bordered windows at 75% of the editor, over a dark backdrop that dims the editor behind it: a header, the list and the details pane beside it, and a footer. The cursor stays in the window: moving to an editor window, with a click or `<C-w>`, comes back to the list, while a prompt or picker a plugin opens keeps focus. The header holds the plugin count and startup time on the left and the five views on the right: plugins, triggers, stats, profile and log. The footer holds the keys for the view you're in, centered.
 
-The **Plugins** view is two panes. The list on the left starts with **Updates (n)**, which only appears when there are updates: each plugin with its name and how many commits it is behind, like `2 commits`, and `u` applies the one under the cursor. cinch itself gets its row here. A plugin on disk that no spec names is also listed, with `not in specs`, and `d` deletes it. A plugin that is working, failed or off stays in that section, with `↑n` on its row. The rest of the list groups plugins into working, failed, loaded, waiting and disabled, with what is happening now on top. An install, a check, an update or a delete puts one line above it all, like `Installing plugins (18/48) - yanky.nvim 37%` with a bar, then a line that says how it ended, such as `Checked 61 plugins in 2.1s · 3 updates`, for a moment. A plugin being checked, updated or deleted stays in its section and says so on its row; an install or a build moves it to working. A check never opens the window; an install and `:Cinch update!` do. Each row puts its parts one after the other: a status light (lit once loaded, a spinner while it works), the name, its load time and a load-time bar once it has loaded, then how it loads: a Nerd Font icon and its name for `now` and `later`, and for a trigger plugin each trigger type with its icon and values, the value that loaded it on a chip. A plugin that is only a dependency shows the plugins that need it. Pending commits and a message come last, and only when there is something to say: an error, the newest line a build is printing, why it is off. The pane on the right follows the cursor and shows that plugin in full: how and when it loaded, its folder and url, the branch it follows or the version you pinned, the commit on disk, its readme, pending commits, its dependencies and what needs it, the config and opts it received, the last lines of its build output, live while it builds, and where its spec is. `gx` opens the url. Plugins still on disk that no spec names any more sit last, under "not in your specs", where `d` deletes them. In a frame narrower than 130 columns, where the list could not fit a whole row beside the pane, the pane sits under the list instead.
+The **Plugins** view is two panes. The list on the left starts with **Updates (n)**, which only appears when there are updates: each plugin with its name and how many commits it is behind, like `2 commits`, and `u` applies the one under the cursor. cinch itself gets its row here. A plugin on disk that no spec names is also listed, with `not in specs`, and `d` deletes it. A plugin that is working, failed or off stays in that section, with `↑n` on its row. The rest of the list groups plugins into working, failed, loaded, waiting and disabled, with what is happening now on top. An install, a check, an update or a delete puts one line above it all, like `Installing plugins (18/48) - yanky.nvim 37%` with a bar, then a line that says how it ended, such as `Checked 61 plugins in 2.1s · 3 updates`, for a moment. A plugin being checked, updated or deleted stays in its section and says so on its row; an install or a build moves it to working. A check never opens the window; an install and `:Cinch update!` do. Each row puts its parts one after the other: a status light (lit once loaded, a spinner while it works), the name, its load time and a load-time bar once it has loaded, then how it loads: a Nerd Font icon and its name for `now` and `later`, and for a trigger plugin each trigger type with its icon and values, the value that loaded it on a chip. A plugin that is only a dependency shows the plugins that need it. Pending commits and a message come last, and only when there is something to say: an error, the newest line a build is printing, why it is off. The pane on the right follows the cursor and shows that plugin in full: how and when it loaded, its folder and url, the branch it follows or the version you pinned, the commit on disk, its readme, pending commits, its dependencies and what needs it, the config and opts it received, the last lines of its build output, live while it builds, and where its spec is. `gx` opens the url. Plugins still on disk that no spec names any more sit last, under "not in your specs", where `d` deletes them. In a window narrower than 130 columns, where the list could not fit a whole row beside the pane, the pane sits under the list instead.
 
 **Triggers** shows what makes each plugin load, in two panes like Plugins. The list has a row per trigger, grouped into events, filetypes, commands, keys and your own, then the schedule: `now`, `later` and dependencies. A row shows a light (waiting to fire, fired, or never fired because its plugins loaded another way), the trigger, a dot per plugin behind it, and what happened. The pane follows the cursor: when that trigger fires in plain words, the `:help` topic for it, its plugins with their load times and whatever else would load them, and for `now` what it cost your startup. `l` loads every plugin still waiting on the trigger under the cursor.
 
@@ -237,7 +237,7 @@ The **Plugins** view is two panes. The list on the left starts with **Updates (n
 | --- | --- |
 | `j`, `k` | Move between plugins; the pane follows |
 | `<CR>` | Fold or open the section, or the Profile entry, under the cursor |
-| `/` | Filter plugins by name, Profile entries by name or path, or the log by text, as you type. The text shows in the bottom border: `<CR>` keeps it, `<Esc>` gives it up, `<C-u>` empties it, and an empty filter clears it |
+| `/` | Filter plugins by name, Profile entries by name or path, or the log by text, as you type. The text shows in the footer: `<CR>` keeps it, `<Esc>` gives it up, `<C-u>` empties it, and an empty filter clears it |
 | `l` | Load the plugin under the cursor |
 | `i` | Install it, or the ones selected, when not on disk |
 | `b` | Run its build |
@@ -256,7 +256,8 @@ The **Plugins** view is two panes. The list on the left starts with **Updates (n
 | `<C-f>` | In Profile, hide entries that took less than the ms you enter; empty shows them all |
 | `?` | Show every key |
 | `<Tab>`, `<S-Tab>` | Next or previous view |
-| `=` | Switch between 75% and 95% of the editor |
+| `=` | Switch the list and details between 70/30 and 50/50 |
+| `-` | Switch between 75% and 95% of the editor's height |
 | `q`, `Q`, `<Esc>` | Close |
 
 Opening the window starts an update check when the last one is more than 5 minutes old.
