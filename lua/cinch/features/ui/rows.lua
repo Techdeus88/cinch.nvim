@@ -190,7 +190,7 @@ local function message(p)
   elseif sec == 'disabled' then
     return M.off_reason(p), 'CinchMuted'
   elseif p.deleted then
-    return 'deleted from disk', 'CinchWarn'
+    return 'deleted', 'CinchWarn'
   end
 end
 
@@ -262,6 +262,21 @@ local function add_row(c, p, r)
   c:add(canvas.clip(join(items), c.width - 1), { plugin = p.name, line_hl = r.marked and 'CinchMarked' or nil })
 end
 
+--- A row that asks about its plugin: `● Delete <name> Yes (y) or No (n)`.
+---@param c cinch.ui.Canvas
+---@param name string
+---@param verb string
+---@param m string its mark
+---@param m_hl? string
+local function add_ask_row(c, name, verb, m, m_hl)
+  local items = {
+    { { ' ' .. m, m_hl } },
+    { { verb .. ' ' .. name, 'CinchWarn' } },
+    { { 'Yes (y) or No (n)', 'CinchKey' } },
+  }
+  c:add(canvas.clip(join(items), c.width - 1), { plugin = name })
+end
+
 --- A row in the Updates section: `● <name> 2 commits`.
 ---@param c cinch.ui.Canvas
 ---@param p cinch.Plugin
@@ -291,5 +306,6 @@ M.dependents = dependents
 M.add_row = add_row
 M.load_items = load_items
 M.add_update_row = add_update_row
+M.add_ask_row = add_ask_row
 
 return M

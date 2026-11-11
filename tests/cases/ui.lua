@@ -253,23 +253,45 @@ H.after_startup(function()
   H.press('<CR>')
   H.eq(line_of(w.list, ' alpha%.nvim ') ~= nil, true, 'and opens it again')
 
+  -- cinch takes the text itself: no input prompt of Neovim's or a plugin's.
   ---@diagnostic disable-next-line: duplicate-set-field
-  vim.ui.input = function(_, cb)
-    cb('del')
+  vim.ui.input = function()
+    error('vim.ui.input was called')
   end
-  H.press('/')
-  vim.wait(30)
+  ---@return string
+  local function footer()
+    return table.concat(vim.tbl_map(function(c)
+      return c[1]
+    end, api.nvim_win_get_config(w.frame).footer))
+  end
+  -- Queued, then read by cinch key by key.
+  local typing = {}
+  api.nvim_feedkeys(vim.keycode('ab<BS>c<CR>'), 't', false)
+  ui.input({
+    prompt = 'filter: ',
+    change = function()
+      typing[#typing + 1] = footer()
+    end,
+    done = function(text)
+      typing[#typing + 1] = text
+    end,
+  })
+  H.eq(typing[#typing], 'ac', 'cinch reads what you type, key by key')
+  H.eq(
+    table.concat(typing, '|'):find('filter: ab▏', 1, true) ~= nil,
+    true,
+    'and shows it in the bottom border as you type'
+  )
+  H.press('/del<CR>')
   H.eq(line_of(w.list, ' alpha%.nvim ') == nil and line_of(w.list, ' delta%.nvim ') ~= nil, true, '/ filters by name')
+  H.eq(footer():find('filter:', 1, true), nil, 'and the prompt leaves the border')
   go(w.list, ' delta%.nvim ')
   H.press('l')
   H.eq(H.plugin('delta.nvim').state, 'loaded', 'l loads the plugin under the cursor')
-  ---@diagnostic disable-next-line: duplicate-set-field
-  vim.ui.input = function(_, cb)
-    cb('')
-  end
-  H.press('/')
-  vim.wait(30)
+  H.press('/<C-u><CR>')
   H.eq(line_of(w.list, ' alpha%.nvim ') ~= nil, true, 'an empty filter clears it')
+  H.press('/zzz<Esc>')
+  H.eq(line_of(w.list, ' alpha%.nvim ') ~= nil, true, '<Esc> gives the filter up')
 
   -- Plugins that grab the current window as they load must not close or take over cinch.
   local editor = vim.fn.win_getid(1)
@@ -282,21 +304,6 @@ H.after_startup(function()
   H.press('l')
   H.eq(ui.is_open(), true, 'a plugin opening a focused float leaves the window open')
   api.nvim_win_close(vim.g.floaty_win, true)
-  api.nvim_set_current_win(w.list)
-  ---@diagnostic disable-next-line: duplicate-set-field
-  vim.ui.input = function(_, cb)
-    -- An input plugin: a focused float, then the answer.
-    local win = api.nvim_open_win(
-      api.nvim_create_buf(false, true),
-      true,
-      { relative = 'editor', row = 1, col = 1, width = 20, height = 1 }
-    )
-    api.nvim_win_close(win, true)
-    cb('')
-  end
-  H.press('/')
-  vim.wait(30)
-  H.eq(ui.is_open(), true, 'an input prompt in a float leaves the window open')
   api.nvim_set_current_win(w.list)
   api.nvim_set_current_win(editor)
   vim.wait(30)
@@ -332,17 +339,9 @@ H.after_startup(function()
   H.eq(line_of(w.list, ' by time') ~= nil, true, '<C-s> sorts by time')
   H.press('<C-s>')
   H.eq(line_of(w.list, ' in order') ~= nil, true, 'and back to order')
-  vim.ui.input = function(_, cb)
-    cb('100000')
-  end
-  H.press('<C-f>')
-  vim.wait(20)
+  H.press('<C-f>100000<CR>')
   H.eq(line_of(w.list, 'alpha%.nvim') == nil and line_of(w.list, ' over ') ~= nil, true, '<C-f> hides what took less')
-  vim.ui.input = function(_, cb)
-    cb('')
-  end
-  H.press('<C-f>')
-  vim.wait(20)
+  H.press('<C-f><C-u><CR>')
   H.eq(line_of(w.list, 'alpha%.nvim') ~= nil, true, 'empty shows it all again')
   go(w.list, '^ ▾ later ')
   H.press('<CR>')

@@ -50,6 +50,7 @@ local ui = {
   colors_done = false, -- opts.colorscheme was applied
   editor = nil, ---@type integer? the editor window you opened cinch from
   timer = nil, ---@type uv.uv_timer_t?
+  input = nil, ---@type string? the prompt and the text being typed, for the bottom border
   ---@type cinch.ui.Ctx
   ctx = { folded = {}, tick = 0, info = {}, spec_lines = {} },
 }
@@ -99,6 +100,9 @@ end
 --- The keys in the bottom border: the view's own, or what the selection can do.
 ---@return string
 local function footer_text()
+  if ui.input then
+    return ' ' .. ui.input .. ' '
+  end
   local holding = ui.ctx.op and ui.ctx.op.kind ~= 'check' and ui.ctx.op.kind ~= 'delete'
   local text = part('keys').hints[holding and 'install' or ui.help and 'help' or ui.view]
   local marked = vim.tbl_count(ui.ctx.marked or {})
@@ -358,6 +362,91 @@ local function newest()
   api.nvim_win_set_cursor(ui.list, { api.nvim_buf_line_count(api.nvim_win_get_buf(ui.list)), 0 })
 end
 
+--- Ask yes or no about plugins on their own rows; y and n answer, and closing is a no.
+---@param req { verb: string, names: string[], done: fun(yes: boolean) }
+---@return boolean asked false when none of them has a row to ask on
+function M.ask(req)
+  M.answer(false)
+  local names = {}
+  for _, name in ipairs(req.names) do
+    names[name] = true
+  end
+  ---@return integer?
+  local function first()
+    for l = 1, ui.canvas and #ui.canvas.lines or 0 do
+      if names[ui.canvas.rows[l]] then
+        return l
+      end
+    end
+  end
+  ui.ctx.ask = { verb = req.verb, names = names, done = req.done }
+  read_orphans()
+  M.open('plugins')
+  local line = first()
+  if not line then
+    -- Folded away or filtered out.
+    ui.ctx.folded, ui.ctx.filter = {}, nil
+    render()
+    line = first()
+  end
+  if not line then
+    ui.ctx.ask = nil
+    render()
+    return false
+  end
+  api.nvim_win_set_cursor(ui.list, { line, 0 })
+  on_cursor()
+  return true
+end
+
+--- Answer what the rows ask.
+---@param yes boolean
+function M.answer(yes)
+  local ask = ui.ctx.ask
+  if not ask then
+    return
+  end
+  ui.ctx.ask, ui.ctx.marked = nil, {}
+  render()
+  -- Not from inside the key: an install opens and focuses windows of its own.
+  vim.schedule(function()
+    ask.done(yes)
+  end)
+end
+
+local keycodes = { cr = vim.keycode('<CR>'), esc = vim.keycode('<Esc>'), bs = vim.keycode('<BS>') }
+
+--- Take a line of text in the window: the prompt and what you type show in the
+--- bottom border. <CR> ends it, <Esc> gives it up, <C-u> empties it.
+---@param req { prompt: string, text?: string, change?: fun(text: string), done: fun(text?: string) }
+function M.input(req)
+  local text = req.text or '' ---@type string?
+  while text do
+    ui.input = req.prompt .. text .. '▏'
+    render()
+    vim.cmd.redraw()
+    local ok, ch = pcall(vim.fn.getcharstr)
+    if not ok or ch == keycodes.esc then
+      text = nil
+      break
+    elseif ch == keycodes.cr or ch == '\n' then
+      break
+    elseif ch == keycodes.bs or ch == '\b' or ch == '\127' then
+      text = vim.fn.strcharpart(text, 0, vim.fn.strchars(text) - 1)
+    elseif ch == '\21' then
+      text = ''
+    elseif ch:byte() >= 32 and ch:byte() ~= 128 then
+      text = text .. ch
+    end
+    if req.change then
+      req.change(text)
+    end
+  end
+  ui.input = nil
+  req.done(text)
+  render()
+end
+
 key_list = function()
   keys = keys
     or part('keys').make({
@@ -373,6 +462,9 @@ key_list = function()
       in_editor = M.in_editor,
       open = M.open,
       close = M.close,
+      ask = M.ask,
+      answer = M.answer,
+      input = M.input,
     })
   return keys
 end
@@ -542,6 +634,13 @@ function M.open(view)
 end
 
 function M.close()
+  local ask = ui.ctx.ask
+  ui.ctx.ask = nil
+  if ask then
+    vim.schedule(function()
+      ask.done(false)
+    end)
+  end
   for _, k in ipairs({ 'list', 'pane', 'frame', 'backdrop' }) do
     local win = ui[k] --[[@as integer?]]
     if valid(win) then
@@ -619,6 +718,12 @@ function M.setup(opts)
     events.on(names[2], on_op('finish', kind))
   end
   events.on('Progress', on_op('progress'))
+  -- After startup there is a window to ask in.
+  events.on('Ask', function(d)
+    if not d.handled and vim.v.vim_did_enter == 1 then
+      d.handled = M.ask(d)
+    end
+  end)
 end
 
 return M

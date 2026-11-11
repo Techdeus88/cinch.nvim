@@ -52,15 +52,22 @@ M.commands = {
   },
   update = {
     run = function(args, bang)
-      cinch.update(#args > 0 and args or nil, { force = bang })
+      local which = #args > 0 and args or nil
+      local updates = package.loaded['cinch.features.updates']
+      -- Without !, cinch checks and asks on the rows; with no update feature, vim.pack's tab.
+      if bang or not updates then
+        cinch.update(which, { force = bang })
+      else
+        updates.review(which)
+      end
     end,
     complete = names,
   },
   -- Back to the revisions the lockfile records, after a checkout moved on its own.
-  -- With !, without vim.pack's confirmation.
+  -- With !, without asking.
   restore = {
     run = function(args, bang)
-      cinch.update(#args > 0 and args or nil, { force = bang, target = 'lockfile' })
+      cinch.restore(#args > 0 and args or nil, { confirm = not bang })
     end,
     complete = names,
   },

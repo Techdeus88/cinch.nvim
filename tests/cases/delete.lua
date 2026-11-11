@@ -37,12 +37,18 @@ local function go(pat)
   error('no line matches ' .. pat)
 end
 
-local answer = 1
-local asked = {}
+-- cinch asks on the plugin's own row; Neovim's prompt must never show.
+local prompts = 0
 ---@diagnostic disable-next-line: duplicate-set-field
-vim.fn.confirm = function(question)
-  asked[#asked + 1] = question
-  return answer
+vim.fn.confirm = function()
+  prompts = prompts + 1
+  return 2
+end
+
+---@param text string
+---@return boolean
+local function shows(text)
+  return table.concat(list_lines(), '\n'):find(text, 1, true) ~= nil
 end
 
 H.after_startup(function()
@@ -86,23 +92,41 @@ H.after_startup(function()
   end, api.nvim_win_get_config(w.frame).footer))
   H.eq(footer:find('2 selected', 1, true) ~= nil, true, 'the footer counts the selection')
   H.press('d')
-  H.eq({ on_disk('early'), on_disk('cmdy') }, { false, false }, 'd deletes every selected plugin')
+  H.eq(
+    { shows(' · Delete early Yes (y) or No (n)'), shows(' · Delete cmdy Yes (y) or No (n)') },
+    { true, true },
+    'd asks on the row of every selected plugin'
+  )
+  H.eq({ on_disk('early'), on_disk('cmdy') }, { true, true }, 'and waits for the answer')
+  H.press('l')
+  H.eq(shows('Delete early Yes (y)'), true, 'another key does not answer')
+  H.press('y')
+  H.eq({ on_disk('early'), on_disk('cmdy') }, { false, false }, 'y deletes every selected plugin')
   H.eq(on_disk('gamma'), true, 'and only those')
   go(' · gamma ')
   H.press('d')
-  H.eq(on_disk('gamma'), false, 'd deletes one')
+  H.press('y')
+  H.eq(on_disk('gamma'), false, 'd, then y, deletes one')
   H.eq(table.concat(list_lines(), '\n'):find(' · gamma ', 1, true), nil, 'and its row goes')
 
   go(' beta%.nvim ')
-  answer = 2
   H.press('d')
-  H.eq(on_disk('beta.nvim'), true, 'd asks first; no keeps it')
-  answer = 1
+  H.eq(shows('Delete beta.nvim Yes (y) or No (n)'), true, 'its row asks')
+  H.press('n')
+  H.eq({ on_disk('beta.nvim'), shows('Yes (y)') }, { true, false }, 'n keeps it, and the row is back')
   H.press('d')
-  H.eq(on_disk('beta.nvim'), false, 'yes deletes a plugin in your specs too')
+  H.press('<Esc>')
+  H.eq(
+    { on_disk('beta.nvim'), shows('Yes (y)'), require('cinch.features.ui').is_open() },
+    { true, false, true },
+    '<Esc> is a no'
+  )
+  H.press('d')
+  H.press('y')
+  H.eq(on_disk('beta.nvim'), false, 'y deletes a plugin in your specs too')
   H.eq(beta.deleted, true, 'which is marked deleted')
   local row = list_lines()[vim.fn.match(list_lines(), ' beta\\.nvim ') + 1]
-  H.eq(row:find('deleted from disk', 1, true) ~= nil, true, 'and its row says so')
+  H.eq(row:find(' deleted$') ~= nil, true, 'and its row says so')
   local pane = api.nvim_buf_get_lines(api.nvim_win_get_buf(require('cinch.features.ui').windows().pane), 0, -1, false)
   H.eq(
     table.concat(pane, '\n'):find('installs again on the next start', 1, true) ~= nil,
@@ -110,12 +134,12 @@ H.after_startup(function()
     'the pane, what comes next'
   )
 
-  answer = 2
   vim.cmd('Cinch clean')
-  H.eq(asked[#asked], 'Delete 1 plugin not in specs? delta.nvim', ':Cinch clean asks first, naming them')
+  H.eq(shows(' · Delete delta.nvim Yes (y) or No (n)'), true, ':Cinch clean asks on their rows')
+  H.press('n')
   H.eq(on_disk('delta.nvim'), true, 'and saying no keeps them')
-  answer = 1
   vim.cmd('Cinch clean')
+  H.press('y')
   H.eq(on_disk('delta.nvim'), false, ':Cinch clean deletes the rest')
   H.eq(H.noted('^Deleted 1 plugin$'), true, 'and says how it ended')
   vim.wait(50)
@@ -126,4 +150,5 @@ H.after_startup(function()
   vim.cmd('Cinch clean')
   H.eq(H.noted('nothing to clean'), true, 'then there is nothing to clean')
   H.eq(on_disk('alpha.nvim'), true, 'what your specs list is left alone')
+  H.eq(prompts, 0, "Neovim's own prompt never showed")
 end)

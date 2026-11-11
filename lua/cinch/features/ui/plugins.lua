@@ -28,6 +28,7 @@ local M = {}
 ---@field op? cinch.ui.Op set while an install, check, update or delete runs
 ---@field orphans? cinch.Orphan[] on disk, in no spec
 ---@field marked? table<string, true> plugins selected for an action
+---@field ask? { verb: string, names: table<string, true>, done: fun(yes: boolean) } a yes or no on their rows
 ---@field profile_sort? 'time' the Profile view sorts siblings by time, not order
 ---@field profile_min? number the Profile view hides what took less, in ms
 
@@ -48,6 +49,22 @@ local function visible(ctx)
   return vim.tbl_filter(function(p)
     return not ctx.filter or p.name:lower():find(ctx.filter:lower(), 1, true) ~= nil
   end, state.yours())
+end
+
+--- Draw the row as a question when one is asked about this plugin.
+---@param c cinch.ui.Canvas
+---@param ctx cinch.ui.Ctx
+---@param name string
+---@param m string its mark
+---@param m_hl? string
+---@return boolean asked
+local function asks(c, ctx, name, m, m_hl)
+  local ask = ctx.ask
+  if ask and ask.names[name] then
+    rows.add_ask_row(c, name, ask.verb, m, m_hl)
+    return true
+  end
+  return false
 end
 
 --- Plugins with pending updates, taken from the section they would be in, with cinch
@@ -88,13 +105,17 @@ local function updates_section(c, list, orphans, ctx)
     return
   end
   for _, p in ipairs(list) do
-    rows.add_update_row(c, p, ctx.tick, ctx.marked and ctx.marked[p.name])
+    if not asks(c, ctx, p.name, mark(p, ctx.tick)) then
+      rows.add_update_row(c, p, ctx.tick, ctx.marked and ctx.marked[p.name])
+    end
   end
   for _, o in ipairs(orphans) do
-    c:add(
-      { { ' · ' .. o.name .. ' ', 'CinchMuted' }, { 'not in specs', 'CinchWarn' } },
-      { plugin = o.name, line_hl = ctx.marked and ctx.marked[o.name] and 'CinchMarked' or nil }
-    )
+    if not asks(c, ctx, o.name, '·', 'CinchMuted') then
+      c:add(
+        { { ' · ' .. o.name .. ' ', 'CinchMuted' }, { 'not in specs', 'CinchWarn' } },
+        { plugin = o.name, line_hl = ctx.marked and ctx.marked[o.name] and 'CinchMarked' or nil }
+      )
+    end
   end
 end
 
@@ -167,7 +188,8 @@ end
 function M.list(width, ctx)
   local c = canvas.new(width)
   local plugins = visible(ctx)
-  if ctx.op and ctx.op.kind == 'install' then
+  -- A question is asked on the normal rows, even while an install's ending is on show.
+  if ctx.op and ctx.op.kind == 'install' and not ctx.ask then
     op_header(c, ctx.op)
     install_rows(c, ctx)
     return c
@@ -211,17 +233,19 @@ function M.list(width, ctx)
         for _, p in ipairs(list) do
           local m, m_hl = mark(p, ctx.tick)
           local msg, msg_hl = message(p)
-          add_row(c, p, {
-            mark = m,
-            mark_hl = m_hl,
-            ms = load_ms(p),
-            slowest = slowest,
-            needed_by = needed[p.name] or {},
-            up = pending(p),
-            msg = msg,
-            msg_hl = msg_hl,
-            marked = ctx.marked and ctx.marked[p.name],
-          })
+          if not asks(c, ctx, p.name, m, m_hl) then
+            add_row(c, p, {
+              mark = m,
+              mark_hl = m_hl,
+              ms = load_ms(p),
+              slowest = slowest,
+              needed_by = needed[p.name] or {},
+              up = pending(p),
+              msg = msg,
+              msg_hl = msg_hl,
+              marked = ctx.marked and ctx.marked[p.name],
+            })
+          end
         end
       end
     end

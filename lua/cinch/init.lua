@@ -234,9 +234,54 @@ local function enabled(p)
   return true
 end
 
---- Install a batch in one vim.pack.add call, telling the bus when it starts and ends.
+--- Ask yes or no about plugins. A feature that listens to `Ask` and sets `handled`
+--- asks its own way, then calls `done`. Without one, `fallback` runs, or Neovim's
+--- confirm asks `question`.
+---@param req { verb: string, names: string[], done: fun(yes: boolean), question?: string, fallback?: fun() }
+function M.ask(req)
+  local d = { verb = req.verb, names = req.names, done = req.done }
+  if events.has('Ask') then
+    events.emit('Ask', d)
+  end
+  if d.handled then
+    return
+  elseif req.fallback then
+    return req.fallback()
+  end
+  req.done(vim.fn.confirm(req.question, '&Yes\n&No', 2) == 1)
+end
+
+--- Ask before a batch installs, when `confirm` says to and a feature can ask. `cont`
+--- gets what is left for vim.pack's own prompt: `confirm` as it was when nothing
+--- asked, false after a yes, 'no' after a no.
 ---@param install cinch.Plugin[]
 ---@param confirm? boolean
+---@param cont fun(confirm?: boolean|'no')
+local function ask_install(install, confirm, cont)
+  local missing = {}
+  for _, p in ipairs(confirm and install or {}) do
+    if not vim.uv.fs_stat(vim.fs.joinpath(pack.dir, p.name)) then
+      missing[#missing + 1] = p.name
+    end
+  end
+  if #missing == 0 then
+    return cont(confirm)
+  end
+  M.ask({
+    verb = 'Install',
+    names = missing,
+    done = function(yes)
+      cont(not yes and 'no')
+    end,
+    fallback = function()
+      cont(confirm)
+    end,
+  })
+end
+
+--- Install a batch in one vim.pack.add call, telling the bus when it starts and ends.
+---@param install cinch.Plugin[]
+---@param confirm? boolean|'no'
 local function install_all(install, confirm)
   local t = hrtime()
   local missing = {}
@@ -439,10 +484,12 @@ local function activate(added, confirm, respecced)
     or vim.tbl_filter(function(p)
       return not vim.list_contains(wait, p)
     end, install)
-  if #now > 0 then
-    install_all(now, confirm)
-  end
-  start(now, respecced)
+  ask_install(now, confirm, function(c)
+    if #now > 0 then
+      install_all(now, c)
+    end
+    start(now, respecced)
+  end)
   if #wait > 0 then
     deferred = { plugins = wait, confirm = confirm }
     -- When the whole batch waits (a first start, a new machine), cinch.now()
@@ -453,12 +500,14 @@ local function activate(added, confirm, respecced)
       callback = vim.schedule_wrap(function()
         local d = deferred --[[@as table]]
         deferred = nil
-        install_all(d.plugins, d.confirm)
-        handler.held = false
-        start(d.plugins)
-        if d.done then
-          done()
-        end
+        ask_install(d.plugins, d.confirm, function(c)
+          install_all(d.plugins, c)
+          handler.held = false
+          start(d.plugins)
+          if d.done then
+            done()
+          end
+        end)
       end),
     })
   end
@@ -590,12 +639,17 @@ end
 --- deletes a plugin your specs list.
 function M.sync()
   M.install()
-  if #pack.orphans() > 0 then
-    M.clean({ confirm = true })
+  local function check()
+    local updates = package.loaded['cinch.features.updates']
+    if updates then
+      updates.check(nil, { notify = true })
+    end
   end
-  local updates = package.loaded['cinch.features.updates']
-  if updates then
-    updates.check(nil, { notify = true })
+  -- The check waits for your answer.
+  if #pack.orphans() > 0 and #spec.broken == 0 then
+    M.clean({ confirm = true, done = check })
+  else
+    check()
   end
 end
 
@@ -616,6 +670,39 @@ function M.get(name)
 end
 
 M.update = pack.update
+
+--- Put plugins back on the commits the lockfile records, after a checkout moved on
+--- its own. With `confirm`, each plugin that moved asks on its row first.
+---@param names? string[] default: every plugin on disk
+---@param opts? { confirm?: boolean }
+function M.restore(names, opts)
+  if not (opts and opts.confirm) then
+    return pack.update(names, { force = true, target = 'lockfile' })
+  end
+  local locked, moved = pack.locked(), {}
+  for _, p in ipairs(names and resolve(names) or state.list) do
+    -- Read again: the checkout moved behind cinch's back.
+    p.rev = nil
+    if p.path and locked[p.name] and pack.rev(p) ~= locked[p.name] then
+      moved[#moved + 1] = p.name
+    end
+  end
+  if #moved == 0 then
+    return events.report('nothing to restore')
+  end
+  M.ask({
+    verb = 'Restore',
+    names = moved,
+    done = function(yes)
+      if yes then
+        pack.update(moved, { force = true, target = 'lockfile' })
+      end
+    end,
+    fallback = function()
+      pack.update(moved, { target = 'lockfile' })
+    end,
+  })
+end
 
 --- Delete plugins from disk through vim.pack. A plugin your specs list is in use
 --- this session, so vim.pack deletes it only with `force`, and it installs again
@@ -654,8 +741,9 @@ end
 
 --- Delete every plugin on disk that no spec names. Not while a spec file has failed
 --- to load, since every plugin it names would look like one, unless `force`.
----@param opts? { confirm?: boolean, force?: boolean } confirm: ask first, listing them
----@return string[] deleted
+---@param opts? { confirm?: boolean, force?: boolean, done?: fun() } confirm: ask first, on their rows
+---in the window; done: called once you answered
+---@return string[] deleted none yet when the window asks: the answer comes later
 function M.clean(opts)
   opts = opts or {}
   local names = vim.tbl_map(function(o)
@@ -669,17 +757,26 @@ function M.clean(opts)
     events.report('A spec file failed to load, so nothing was deleted', levels.WARN)
     return {}
   end
-  if opts.confirm then
-    local question = ('Delete %d plugin%s not in specs? %s'):format(
+  if not opts.confirm then
+    return M.del(names) and names or {}
+  end
+  local deleted = {}
+  M.ask({
+    verb = 'Delete',
+    names = names,
+    question = ('Delete %d plugin%s not in specs? %s'):format(
       #names,
       #names == 1 and '' or 's',
       table.concat(names, ', ')
-    )
-    if vim.fn.confirm(question, '&Yes\n&No', 2) ~= 1 then
-      return {}
-    end
-  end
-  return M.del(names) and names or {}
+    ),
+    done = function(yes)
+      deleted = yes and M.del(names) and names or {}
+      if opts.done then
+        opts.done()
+      end
+    end,
+  })
+  return deleted
 end
 
 return M

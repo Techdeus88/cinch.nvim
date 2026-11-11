@@ -4,11 +4,11 @@
 local H = dofile(vim.env.CINCH_ROOT .. '/tests/helpers.lua')
 local cinch = require('cinch')
 
-local answer, asked = 2, {}
----@diagnostic disable-next-line: duplicate-set-field
-vim.fn.confirm = function(question)
-  asked[#asked + 1] = question
-  return answer
+---@return boolean whether the window asks about gamma on its row
+local function asks()
+  local w = require('cinch.features.ui').windows()
+  local lines = w.list and vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(w.list), 0, -1, false) or {}
+  return table.concat(lines, '\n'):find('Delete gamma Yes (y) or No (n)', 1, true) ~= nil
 end
 
 local alpha_src, alpha_dir = H.own('alpha.nvim')
@@ -46,17 +46,20 @@ H.after_startup(function()
   local before = require('cinch.pack').rev(H.plugin('alpha.nvim'))
   order = {}
   vim.cmd('Cinch sync')
-  idle()
   H.eq(on_disk('beta.nvim'), true, 'what is missing installs')
-  H.eq(asked[#asked], 'Delete 1 plugin not in specs? gamma', 'it asks before deleting')
+  H.eq(asks(), true, 'it asks before deleting, on the row')
+  H.eq(order, { 'Installing' }, 'and the check waits for the answer')
+  H.press('n')
+  idle()
   H.eq(on_disk('gamma'), true, 'saying no keeps it')
   H.eq(order, { 'Installing', 'Checking' }, 'install, then check')
   H.eq(H.noted('Checked 2 plugins in [%d.]+m?s · 1 update'), true, 'and says what the check found')
   H.eq(require('cinch.pack').rev(H.plugin('alpha.nvim')), before, 'without applying it')
 
-  answer, order = 1, {}
+  order = {}
   vim.cmd('Cinch')
   H.press('s')
+  H.press('y')
   idle()
   H.eq(on_disk('gamma'), false, 's deletes it once you say yes')
   H.eq(order, { 'Deleting', 'Checking' }, 'nothing to install, then delete, then check')

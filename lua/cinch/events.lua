@@ -47,6 +47,8 @@ M.names = {
   Deleted = true, -- { names, deleted, failed, ms }      and ended
   Progress = true, -- { title, done?, total?, name?, status, percent? }   vim.pack's progress, or a check's
   Report = true, -- { msg, level }                      cinch has something to tell the user
+  Ask = true, -- { verb, names, done }                  a yes or no about plugins; set handled = true and
+  --                                                    call done(yes) to ask it your own way
 }
 
 -- Mirrored as `User Cinch<Name>` for config code that prefers autocmds.

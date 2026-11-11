@@ -21,12 +21,16 @@ local M = {}
 ---@field newest fun() put the cursor on the last line
 ---@field open fun(view?: string)
 ---@field close fun()
+---@field ask fun(req: { verb: string, names: string[], done: fun(yes: boolean) }): boolean
+---@field answer fun(yes: boolean)
+---@field input fun(req: { prompt: string, text?: string, change?: fun(text: string), done: fun(text?: string) })
 ---@field in_editor fun(fn: fun()) run fn from the editor window cinch was opened from
 
 ---@class cinch.ui.Key
 ---@field [1] string[] the keys
 ---@field [2] fun() what they do
 ---@field [3] string what they do, in words, for ? and the mapping's desc
+---@field asked? 'answer'|'no' while a row asks: `answer` still runs, `no` answers no; any other key waits
 
 --- The keys of each view, for the frame's bottom border.
 M.hints = {
@@ -158,10 +162,12 @@ function M.make(w)
   end
 
   local function filter()
-    vim.ui.input({ prompt = 'filter: ', default = ui.ctx.filter }, function(text)
+    ---@param text? string
+    local function set(text)
       ui.ctx.filter = text and text ~= '' and text or nil
-      vim.schedule(w.render)
-    end)
+    end
+    -- Applied as you type.
+    w.input({ prompt = 'filter: ', text = ui.ctx.filter, change = set, done = set })
   end
 
   --- Delete the selected plugins, or the one under the cursor, once you confirm. One
@@ -180,26 +186,16 @@ function M.make(w)
     if #names == 1 and p and p.self then
       return require('cinch').del(names)
     end
-    local specs = #in_specs(names)
-    local question
-    if #names == 1 then
-      question = p
-          and ('`%s` is in your specs, so it installs again on the next start. Delete it from disk anyway?'):format(
-            names[1]
-          )
-        or ('Delete `%s` from disk?'):format(names[1])
-    else
-      question = ('Delete %d plugins from disk?%s'):format(
-        #names,
-        specs > 0 and (' %d of them are in your specs and install again on the next start.'):format(specs) or ''
-      )
-    end
-    if vim.fn.confirm(question, '&Yes\n&No', 2) ~= 1 then
-      return
-    end
-    act(function()
-      require('cinch').del(names, { force = specs > 0 })
-    end)()
+    local force = #in_specs(names) > 0
+    w.ask({
+      verb = 'Delete',
+      names = names,
+      done = function(yes)
+        if yes then
+          require('cinch').del(names, { force = force })
+        end
+      end,
+    })
   end
 
   --- Profile: siblings in the order they began, or slowest first.
@@ -216,14 +212,16 @@ function M.make(w)
       return
     end
     local now = ui.ctx.profile_min
-    vim.ui.input({ prompt = 'hide entries under (ms): ', default = now and tostring(now) or '' }, function(text)
-      if text == nil then
-        return
-      end
-      local ms = tonumber(text)
-      ui.ctx.profile_min = ms and ms > 0 and ms or nil
-      vim.schedule(w.render)
-    end)
+    w.input({
+      prompt = 'hide entries under (ms): ',
+      text = now and tostring(now) or '',
+      done = function(text)
+        if text then
+          local ms = tonumber(text)
+          ui.ctx.profile_min = ms and ms > 0 and ms or nil
+        end
+      end,
+    })
   end
 
   local function goto_spec()
@@ -240,7 +238,8 @@ function M.make(w)
     end
   end
 
-  return {
+  ---@type cinch.ui.Key[]
+  local list = {
     {
       { '<CR>' },
       fold,
@@ -323,6 +322,22 @@ function M.make(w)
     },
     { { 'd' }, delete, 'delete the plugin, or the ones selected, from disk, once you confirm' },
     {
+      { 'y' },
+      function()
+        w.answer(true)
+      end,
+      'yes, when a row asks',
+      asked = 'answer',
+    },
+    {
+      { 'n' },
+      function()
+        w.answer(false)
+      end,
+      'no, when a row asks',
+      asked = 'answer',
+    },
+    {
       { 's' },
       function()
         w.in_editor(require('cinch').sync)
@@ -384,7 +399,7 @@ function M.make(w)
       end,
       'switch between 75% and 95% of the editor',
     },
-    { { 'q', 'Q' }, w.close, 'close' },
+    { { 'q', 'Q' }, w.close, 'close', asked = 'no' },
     {
       { '<Esc>' },
       function()
@@ -395,8 +410,21 @@ function M.make(w)
         w.close()
       end,
       'let go of the selection, or close',
+      asked = 'no',
     },
   }
+  -- While a row asks, only an answer gets through.
+  for _, k in ipairs(list) do
+    local fn = k[2]
+    k[2] = function()
+      if not ui.ctx.ask or k.asked == 'answer' then
+        fn()
+      elseif k.asked == 'no' then
+        w.answer(false)
+      end
+    end
+  end
+  return list
 end
 
 --- Map every key on the list's buffer.

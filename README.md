@@ -144,7 +144,7 @@ A plugin with no trigger and no `lazy` loads `later`, where lazy.nvim loads it d
 ```lua
 require('cinch').setup({
   spec = { 'plugins' },          -- module paths, folders, or specs; default lua/plugins/
-  confirm = true,                -- ask before installing, with vim.pack's prompt
+  confirm = true,                -- ask before installing: on the rows in the window, or with vim.pack's prompt during init.lua
   budget = 5,                    -- ms of `later` loading per event-loop tick
   defer = true,                  -- install missing plugins once the UI is up
   build_timeout = 300,           -- seconds an async function build may take before it fails
@@ -215,10 +215,10 @@ These use the default name. `cmd_prefix` in `setup()` renames the command, so `c
 | `:Cinch install [names]` | Install plugins your specs list that aren't on disk: a failed install, or one deleted this session. They then load as their specs say |
 | `:Cinch build {names}` | Run their builds again |
 | `:Cinch check [names]` | Check for updates in the background |
-| `:Cinch update [names]` | Update with `vim.pack`'s review tab. `:Cinch update!` applies without it, opens the window, and shows the progress and how it ended |
-| `:Cinch restore [names]` | Put plugins back on the revisions the lockfile records, after a checkout moved on its own. `:Cinch restore!` does not ask |
+| `:Cinch update [names]` | Check, then ask on the row of each plugin that has something new. `:Cinch update!` applies without asking. Both open the window and show the progress and how it ended. With the `updates` feature off, it is `vim.pack`'s review tab |
+| `:Cinch restore [names]` | Put plugins back on the revisions the lockfile records, after a checkout moved on its own. Each plugin that moved asks on its row. `:Cinch restore!` does not ask |
 | `:Cinch del {names}` | Delete plugins from disk. One your specs list is in use, so it needs `:Cinch del!`, and it installs again on the next start |
-| `:Cinch clean` | Delete every plugin on disk that no spec names, once you confirm. Not while a spec file has failed to load, since its plugins would look like strays. `:Cinch clean!` skips both |
+| `:Cinch clean` | Delete every plugin on disk that no spec names, once you say yes on their rows. Not while a spec file has failed to load, since its plugins would look like strays. `:Cinch clean!` skips both |
 | `:Cinch sync` | Install what is missing, offer to delete what no spec names, then check for updates. It never applies an update, and never deletes a plugin your specs list |
 | `:Cinch stats` | Print this session's stats |
 | `:checkhealth cinch` | Neovim, git, the lockfile, plugin states, orphans, features, and whether startup timing came from the OS |
@@ -237,14 +237,15 @@ The **Plugins** view is two panes. The list on the left starts with **Updates (n
 | --- | --- |
 | `j`, `k` | Move between plugins; the pane follows |
 | `<CR>` | Fold or open the section, or the Profile entry, under the cursor |
-| `/` | Filter plugins by name, Profile entries by name or path, or the log by text. An empty filter clears it |
+| `/` | Filter plugins by name, Profile entries by name or path, or the log by text, as you type. The text shows in the bottom border: `<CR>` keeps it, `<Esc>` gives it up, `<C-u>` empties it, and an empty filter clears it |
 | `l` | Load the plugin under the cursor |
 | `i` | Install it, or the ones selected, when not on disk |
 | `b` | Run its build |
 | `u` | Apply its pending update |
 | `U` | Apply every pending update |
 | `c` | Check for updates |
-| `d` | Delete the plugin under the cursor from disk, once you confirm |
+| `d` | Delete the plugin under the cursor from disk. Its row asks first |
+| `y`, `n` | Answer a row that asks. `q` and `<Esc>` are a no, and other keys wait |
 | `s` | Sync, as `:Cinch sync` does |
 | `<S-CR>`, `<Space>` | Select the plugin under the cursor, shading its row; `l`, `b`, `u`, `c` and `d` then act on every selected plugin, and `<Esc>` lets go of them |
 | `<C-d>`, `<C-u>` | Scroll the details pane; the mouse wheel scrolls it too |
@@ -259,6 +260,12 @@ The **Plugins** view is two panes. The list on the left starts with **Updates (n
 | `q`, `Q`, `<Esc>` | Close |
 
 Opening the window starts an update check when the last one is more than 5 minutes old.
+
+### Questions
+
+cinch asks every yes or no itself, on the row of the plugin it is about: `Delete real-icons.nvim Yes (y) or No (n)`. `y` goes ahead and `n`, `q` or `<Esc>` does not; until you answer, other keys do nothing. Deleting, cleaning, installing with `confirm = true`, updating and restoring all ask this way, and a command that asks opens the window to do it. A deleted plugin your specs still list keeps its row, which says `deleted`.
+
+Neovim's own prompt is left for two cases: the `ui` feature is off, or an install happens during `init.lua` before there is a window (headless, or `defer = false`).
 
 ## Features
 
@@ -313,6 +320,7 @@ end)
 | `Deleting`, `Deleted` | `names`, and after it `deleted`, `failed` and `ms` |
 | `Progress` | `title`, `done`, `total`, `name`, `status`, `percent`: `vim.pack`'s progress, and an update check's |
 | `Report` | `msg`, `level`: something for you to read |
+| `Ask` | `verb`, `names`, `done`: a yes or no about plugins. Set `handled = true` and call `done(yes)` to ask it your own way |
 
 The message feature adds `Progress` (`title`, `done`, `total`, `name`: `vim.pack`'s progress, one plugin at a time) and `Message` (an entry added to the log).
 
@@ -355,6 +363,7 @@ cinch.get(name)           -- one plugin record, or all of them
 cinch.update(names, opts) -- vim.pack.update through cinch
 cinch.del(names, opts)    -- vim.pack.del through cinch; says why when it refuses
 cinch.clean({ confirm = true }) -- delete every plugin on disk that no spec names; force ignores a broken spec file
+cinch.restore(names, { confirm = true }) -- back to the commits the lockfile records
 cinch.sync()              -- install what is missing, offer to clean, check for updates
 cinch.now(fn)
 cinch.later(fn)

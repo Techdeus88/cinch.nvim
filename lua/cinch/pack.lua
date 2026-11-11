@@ -105,6 +105,17 @@ local function read_json(path)
   return ok and type(res) == 'table' and res or nil
 end
 
+--- The commit the lockfile records for each plugin.
+---@return table<string, string>
+function M.locked()
+  local lock = read_json(M.lockfile())
+  local res = {}
+  for name, l in pairs(lock and type(lock.plugins) == 'table' and lock.plugins or {}) do
+    res[name] = type(l) == 'table' and l.rev or nil
+  end
+  return res
+end
+
 --- Plugins the lockfile lists that are not on disk. The first vim.pack.add of a
 --- session installs these, whatever it was asked to add.
 ---@return string[]
@@ -407,7 +418,7 @@ end
 --- Add plugins to vim.pack, installing the missing ones in one parallel batch.
 --- Records `path` for each plugin on disk; cinch does the loading itself.
 ---@param plugins cinch.Plugin[]
----@param confirm? boolean ask before installing, vim.pack's prompt
+---@param confirm? boolean|'no' ask before installing, vim.pack's prompt; 'no': answered, with no
 ---@return cinch.Plugin[] failed not on disk afterwards
 function M.add(plugins, confirm)
   -- Only vim.pack's own fields: it deep-copies every spec, and `data` holds functions.
@@ -418,6 +429,15 @@ function M.add(plugins, confirm)
     names[i] = p.name
   end
   adding = true
+  -- A no cinch already got: vim.pack's prompt gets it too, and takes its own way out.
+  local prompt = vim.fn.confirm
+  if confirm == 'no' then
+    confirm = true
+    ---@diagnostic disable-next-line: duplicate-set-field
+    vim.fn.confirm = function()
+      return 2
+    end
+  end
   local _, err = call('add', names, vim.pack.add, specs, {
     confirm = confirm,
     load = function(d)
@@ -427,6 +447,7 @@ function M.add(plugins, confirm)
       end
     end,
   })
+  vim.fn.confirm = prompt
   adding, synced = false, true
 
   local failed = {}
