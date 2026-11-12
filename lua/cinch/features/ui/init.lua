@@ -1,5 +1,6 @@
 -- The cinch window: four bordered windows over the editor, 75% of it, 95% of its height
--- with `-`. The header holds the counts and the tabs, the footer the keys. Between them the
+-- with `-`. The header's two lines hold the counts, the name, the tabs and what is under way;
+-- the footer holds the keys. Between them the
 -- Plugins view is two panes, 70/30 or 50/50 with `=`: the list, which has the cursor, and
 -- the detail pane, which follows it. Stats, Profile and Log use the whole width. At startup
 -- this file only declares `:Cinch open`; drawing code and subscriptions wait for the first open.
@@ -125,6 +126,7 @@ local function shape()
     view = ui.view,
     views = M.views,
     help = ui.help,
+    op = ui.ctx.op,
   }
 end
 
@@ -150,13 +152,15 @@ local function paint(win, c)
   end
 end
 
---- Paint the line of the header or the footer, made from its width.
+--- Paint the lines of the header or the footer, made from its width.
 ---@param win integer
----@param make fun(width: integer): { [1]: string, [2]?: string }[]
+---@param make fun(width: integer): { [1]: string, [2]?: string }[][]
 local function paint_bar(win, make)
   local width = api.nvim_win_get_width(win)
   local c = part('canvas').new(width)
-  c:add(make(width))
+  for _, line in ipairs(make(width)) do
+    c:add(line)
+  end
   paint(win, c)
 end
 
@@ -229,7 +233,7 @@ local function render()
     return layout.header(width, s)
   end)
   paint_bar(ui.footer, function(width)
-    return layout.footer(width, footer_text())
+    return { layout.footer(width, footer_text()) }
   end)
   local width = api.nvim_win_get_width(ui.list)
   local c

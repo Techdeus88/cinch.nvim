@@ -1,4 +1,4 @@
--- Updates in the window: applying shows a header with the progress and a line that
+-- Updates in the window: applying shows the progress in the header, then a line that
 -- says how it ended, here and in messages, with a restart only when a loaded plugin
 -- moved. `:Cinch update!` opens the window; a restore from the lockfile is not framed.
 local H = dofile(vim.env.CINCH_ROOT .. '/tests/helpers.lua')
@@ -25,7 +25,7 @@ H.after_startup(function()
   end
   local seen = {}
   events.on('Updating', function()
-    seen.updating = ui.is_open() and lines()[1]
+    seen.updating = ui.is_open() and H.header()[2]
   end, { priority = 90 })
 
   local rows = require('cinch.features.ui.rows')
@@ -43,13 +43,14 @@ H.after_startup(function()
 
   -- U: everything pending, a loaded plugin among them.
   vim.api.nvim_feedkeys('U', 'x', false)
-  H.eq(seen.updating:find('^ Updating plugins %(0/2%)') ~= nil, true, 'the header: ' .. tostring(seen.updating))
+  H.eq(seen.updating:find(' Updating plugins %(0/2%)') ~= nil, true, 'the header: ' .. tostring(seen.updating))
   vim.wait(50)
   local ended = 'Updated 2 of 2 plugins in [%d.]+m?s · restart to use them'
-  H.eq(lines()[1]:find('^ ' .. ended) ~= nil, true, 'how it ended: ' .. lines()[1])
+  H.eq(H.header()[2]:find(' ' .. ended) ~= nil, true, 'how it ended: ' .. H.header()[2])
   H.eq(H.noted(ended), true, 'and in messages')
   vim.wait(1300)
-  H.eq(table.concat(lines(), '\n'):find('Updated', 1, true), nil, 'the ending goes after a moment')
+  H.eq(H.header()[2]:find('Updated', 1, true), nil, 'the ending goes after a moment')
+  H.eq(table.concat(lines(), '\n'):find('Updated', 1, true), nil, 'and was never in the list')
 
   -- u on a plugin that is not loaded: no restart.
   H.commit(beta_dir, 'feat: three')

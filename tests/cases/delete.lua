@@ -141,7 +141,7 @@ H.after_startup(function()
   H.eq(on_disk('delta.nvim'), false, ':Cinch clean deletes the rest')
   H.eq(H.noted('^Deleted 1 plugin$'), true, 'and says how it ended')
   vim.wait(50)
-  H.eq(list_lines()[1], ' Deleted 1 plugin', 'in the window too')
+  H.eq(H.header()[2]:find(' Deleted 1 plugin ', 1, true) ~= nil, true, 'in the header too: ' .. H.header()[2])
   H.wait(function()
     return table.concat(list_lines(), '\n'):find('not in specs', 1, true) == nil
   end, 'the section to go')

@@ -34,6 +34,7 @@ cinch.setup({
 events.on('Installing', function()
   seen.open_at_installing = require('cinch.features.ui').is_open()
   seen.first_lines = list_lines()
+  seen.first_header = H.header()[2] or ''
 end, { priority = 90 })
 events.on('Progress', function(d)
   if d.name then
@@ -43,6 +44,7 @@ end, { priority = 90 })
 events.on('Installed', function()
   seen.colors_at_installed = vim.g.colors_name
   seen.done_lines = list_lines()
+  seen.done_header = H.header()[2] or ''
 end, { priority = 90 })
 
 H.after_startup(function()
@@ -53,44 +55,42 @@ H.after_startup(function()
   end, 'the install')
 
   H.eq(seen.open_at_installing, true, 'the window is open before vim.pack.add starts')
-  H.eq(seen.first_lines[1]:find('Installing plugins (0/5)', 1, true) ~= nil, true, 'in its install phase')
-  H.eq(seen.first_lines[1]:find('0% ', 1, true) ~= nil, true, 'with how far along it is')
-  H.eq(seen.first_lines[1]:find('━', 1, true) ~= nil, true, 'and the graph, on the same line')
-  H.eq(seen.first_lines[2], ' ▾ installing 5', 'the rows right under it')
+  H.eq(seen.first_header:find('Installing plugins (0/5)', 1, true) ~= nil, true, 'in its install phase')
+  H.eq(seen.first_header:find('0% ', 1, true) ~= nil, true, 'with how far along it is')
+  H.eq(seen.first_header:find('━', 1, true) ~= nil, true, 'and the graph, on the same line of the header')
+  H.eq(seen.first_lines[1], ' ▾ installing 5', 'the rows at the top of the list')
   H.eq(table.concat(seen.first_lines, '\n'):find('cloning…', 1, true) ~= nil, true, 'every row cloning')
   H.eq(vim.list_contains(seen.first_lines, ' ▾ installing 5'), true, 'the rows under their section header')
   H.eq(#seen.progress >= 3, true, 'progress arrives for each plugin')
   H.eq(seen.progress[1].handled, true, 'and the window takes it over from the command line')
   H.eq(seen.colors_at_installed, 'colory', 'the colorscheme applied before the batch ended')
   local done = table.concat(seen.done_lines, '\n')
-  H.eq(done:find('Installed 4 of 5 plugins', 1, true) ~= nil, true, 'the outcome, when it ends')
+  H.eq(seen.done_header:find('Installed 4 of 5 plugins', 1, true) ~= nil, true, 'the outcome, when it ends')
   H.eq(done:find('could not install', 1, true) ~= nil, true, 'and which one failed')
 
   H.wait(function()
     return table.concat(list_lines(), '\n'):find('▾ loaded', 1, true) ~= nil
   end, 'the Plugins view')
-  H.eq(list_lines()[1]:find('Installing plugins', 1, true), nil, 'the same window, now the Plugins view')
+  H.eq(H.header()[2]:find('Install', 1, true), nil, 'the same window, now the Plugins view')
 
-  local view = require('cinch.features.ui.plugins')
-  local running = view.list(60, {
-    folded = {},
-    tick = 0,
-    info = {},
-    spec_lines = {},
-    op = { kind = 'install', total = 48, done = 18, status = {}, current = 'yanky.nvim' },
-  }).lines[1]
-  H.eq(running:find('^ Installing plugins %(18/48%) %- yanky%.nvim 37%% ━') ~= nil, true, running)
-  H.eq(vim.fn.strdisplaywidth(running), 59, 'the graph runs to the edge')
-  local narrow = view.list(36, {
-    folded = {},
-    tick = 0,
-    info = {},
-    spec_lines = {},
-    op = { kind = 'install', total = 48, done = 18, status = {}, current = 'a-very-long-plugin-name.nvim' },
-  }).lines[1]
+  local ops = require('cinch.features.ui.ops')
+  ---@param op table
+  ---@param room integer
+  local function op_line(op, room)
+    return table.concat(vim.tbl_map(function(c)
+      return c[1]
+    end, ops.line(op, room)))
+  end
+  local running = op_line({ kind = 'install', total = 48, done = 18, status = {}, current = 'yanky.nvim' }, 60)
+  H.eq(running:find('^Installing plugins %(18/48%) %- yanky%.nvim 37%% ━') ~= nil, true, running)
+  H.eq(vim.fn.strdisplaywidth(running), 60, 'the graph takes the rest of the room')
+  local wide = op_line({ kind = 'install', total = 48, done = 18, status = {}, current = 'yanky.nvim' }, 120)
+  H.eq(vim.endswith(wide, ' 37% ' .. ('━'):rep(20)), true, 'up to 20 cells: ' .. wide)
+  local op = { kind = 'install', total = 48, done = 18, status = {}, current = 'a-very-long-plugin-name.nvim' }
+  local narrow = op_line(op, 35)
   H.eq(
-    narrow:find(' 37%% ━━━━━━$') ~= nil,
-    true,
+    { narrow:find(' 37%% ━━━━━━$') ~= nil, vim.fn.strdisplaywidth(narrow) },
+    { true, 35 },
     'a long name gives way to the percent and graph: ' .. narrow
   )
 

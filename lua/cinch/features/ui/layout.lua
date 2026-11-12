@@ -1,7 +1,7 @@
--- The window's geometry: four bordered windows over the editor, the header on top, the
--- list and the pane beside it (or under it when narrow) in the middle, the footer at the
--- bottom, and the backdrop. Given what the window shows, it returns the config of each
--- window and the lines of the header and the footer; it reads no window state.
+-- The window's geometry: four bordered windows over the editor, the two-line header on
+-- top, the list and the pane beside it (or under it when narrow) in the middle, the footer
+-- at the bottom, and the backdrop. Given what the window shows, it returns the config of
+-- each window and the lines of the header and the footer; it reads no window state.
 
 local canvas = require('cinch.features.ui.canvas')
 local state = require('cinch.state')
@@ -16,6 +16,7 @@ local M = {}
 ---@field tall boolean the tall height, after `-`
 ---@field even boolean the list and the pane share the width evenly, after `=`
 ---@field split boolean the pane is on show, beside or under the list
+---@field op? cinch.ui.Op an install, check, update or delete under way, or just ended
 
 --- The border style: yours, else winborder, else rounded.
 ---@param opts cinch.ui.Opts
@@ -43,11 +44,59 @@ local function banner(text, room)
   return canvas.chip(text, 'CinchBanner', inner)
 end
 
---- The header's line, `width` cells: the counts on the left, the name on a banner in
---- the middle, the tabs on the right.
+--- One line of `width` cells from its left, middle and right: the middle centered on the
+--- whole line, or as near as the sides let it; the gaps on either side take up the rest.
+---@param width integer
+---@param left { [1]: string, [2]?: string }[]
+---@param middle { [1]: string, [2]?: string }[]
+---@param right { [1]: string, [2]?: string }[]
+---@return { [1]: string, [2]?: string }[]
+local function spread(width, left, middle, right)
+  local room = math.max(0, width - cells(left) - cells(middle) - cells(right))
+  local before = room
+  if #middle > 0 then
+    before = math.max(1, math.min(math.floor((width - cells(middle)) / 2) - cells(left), room - 1))
+  end
+  local out = vim.list_extend({}, left)
+  out[#out + 1] = { (' '):rep(before) }
+  vim.list_extend(out, middle)
+  out[#out + 1] = { (' '):rep(math.max(0, room - before)) }
+  return vim.list_extend(out, right)
+end
+
+--- How many of your plugins are in each state, with the marks their rows show; a state
+--- with none is left out.
+---@return { [1]: string, [2]?: string }[]
+local function counts()
+  local by = {}
+  for _, p in ipairs(state.yours()) do
+    local k = (p.state == 'pending' or p.state == 'registered') and 'waiting' or p.state
+    by[k] = (by[k] or 0) + 1
+  end
+  local updates = package.loaded['cinch.features.updates']
+  local marks = require('cinch.features.ui.rows').marks
+  local out = {}
+  for _, c in ipairs({
+    { by.loaded, marks.loaded, 'CinchLoaded' },
+    { by.waiting, marks.waiting, 'CinchWaiting' },
+    { by.failed, marks.failed, 'CinchFailed' },
+    { by.disabled, marks.disabled, 'CinchMuted' },
+    { updates and vim.tbl_count(updates.results), '↑', 'CinchUpdate' },
+  }) do
+    if (c[1] or 0) > 0 then
+      out[#out + 1] = { ' ' .. c[2] .. ' ', c[3] }
+      out[#out + 1] = { c[1] .. ' ', 'CinchMuted' }
+    end
+  end
+  return out
+end
+
+--- The header's two lines, `width` cells. The first: the plugin count and startup time
+--- on the left, the name on a banner in the middle, the tabs on the right. The second:
+--- the count in each state on the left, an install, check, update or delete in the middle.
 ---@param width integer
 ---@param s cinch.ui.Shape
----@return { [1]: string, [2]?: string }[]
+---@return { [1]: string, [2]?: string }[][]
 function M.header(width, s)
   local stats = package.loaded['cinch.features.stats']
   local startup = stats and (stats.marks.uienter or stats.marks.vimenter)
@@ -61,23 +110,23 @@ function M.header(width, s)
   if with_startup and canvas.cells(with_startup) + cells(tabs) < width then
     count = with_startup
   end
-  local out = { { count, 'CinchMuted' } }
+  local left = { { count, 'CinchMuted' } }
   local name = banner('cinch', width)
-  if cells(out) + cells(name) + cells(tabs) + 2 > width then
+  if cells(left) + cells(name) + cells(tabs) + 2 > width then
     name = {}
   end
-  -- The name centered on the whole line, or as near as the tabs let it; the gaps on
-  -- either side take up the rest.
-  local room = math.max(0, width - cells(out) - cells(name) - cells(tabs))
-  local before = room
-  if #name > 0 then
-    before = math.max(1, math.min(math.floor((width - cells(name)) / 2) - cells(out), room - 1))
+
+  local states, op = counts(), {}
+  if s.op then
+    -- Short of room, the counts make way for what is under way, which soon goes.
+    local line = require('cinch.features.ui.ops').line
+    local cut
+    op, cut = line(s.op, math.max(0, width - cells(states) - 2))
+    if cut then
+      states, op = {}, line(s.op, math.max(0, width - 2))
+    end
   end
-  local after = math.max(0, room - before)
-  out[#out + 1] = { (' '):rep(before) }
-  vim.list_extend(out, name)
-  out[#out + 1] = { (' '):rep(after) }
-  return vim.list_extend(out, tabs)
+  return { spread(width, left, name, tabs), spread(width, states, op, {}) }
 end
 
 --- The footer's line, `width` cells: the keys on a banner in the middle.
@@ -110,9 +159,9 @@ function M.configs(s)
     return vim.tbl_extend('force', cfg, extra or {})
   end
 
-  -- The header and the footer keep one line each; the list and the pane get the rest.
-  local bar = 1 + edge
-  local top, middle = row + bar, h - 2 * bar
+  -- The header keeps two lines and the footer one; the list and the pane get the rest.
+  local head, bar = 2 + edge, 1 + edge
+  local top, middle = row + head, h - head - bar
   local list, pane
   if not s.split then
     list = box(top, col, w, middle)
@@ -140,7 +189,7 @@ function M.configs(s)
   }
   return {
     backdrop = backdrop,
-    header = box(row, col, w, bar, { focusable = false }),
+    header = box(row, col, w, head, { focusable = false }),
     list = list,
     pane = pane,
     footer = box(top + middle, col, w, bar, { focusable = false }),

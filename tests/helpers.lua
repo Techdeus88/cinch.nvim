@@ -96,6 +96,14 @@ function H.plugin(name)
   return require('cinch.state').plugins[name]
 end
 
+--- The cinch window's header, both its lines, while it is open.
+---@return string[]
+function H.header()
+  local w = require('cinch.features.ui').windows()
+  local ok, buf = pcall(vim.api.nvim_win_get_buf, w.header or -1)
+  return ok and vim.api.nvim_buf_get_lines(buf, 0, -1, false) or {}
+end
+
 --- Wait until `cond` holds, or fail after `ms`.
 ---@param cond fun(): boolean
 ---@param what string

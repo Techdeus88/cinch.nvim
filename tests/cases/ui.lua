@@ -75,8 +75,8 @@ H.after_startup(function()
   local pane_cfg, foot_cfg = api.nvim_win_get_config(w.pane), api.nvim_win_get_config(w.footer)
   H.eq(
     { list_cfg.row, pane_cfg.row, foot_cfg.row, head_cfg.height, foot_cfg.height },
-    { head_cfg.row + 3, list_cfg.row + list_cfg.height + 2, pane_cfg.row + pane_cfg.height + 2, 1, 1 },
-    'the header on top, then the list, the pane under it, and the footer, each bar one line'
+    { head_cfg.row + 4, list_cfg.row + list_cfg.height + 2, pane_cfg.row + pane_cfg.height + 2, 2, 1 },
+    'the header on top, two lines, then the list, the pane under it, and the footer, one line'
   )
   H.eq(api.nvim_get_current_win(), w.list, 'the cursor is in the list')
   H.eq(api.nvim_win_get_config(w.pane).hide, false, 'the pane shows')
@@ -88,12 +88,42 @@ H.after_startup(function()
     'the counts on the left of the header, the tabs on the right'
   )
   H.eq(vim.fn.strdisplaywidth(title), head_cfg.width, 'all of it in view, in an 80-column editor')
+  local by = { loaded = 0, waiting = 0, disabled = 0 }
+  for _, p in ipairs(require('cinch.state').yours()) do
+    local k = (p.state == 'pending' or p.state == 'registered') and 'waiting' or p.state
+    by[k] = (by[k] or 0) + 1
+  end
+  local want, absent = {}, true
+  for _, c in ipairs({ { '●', by.loaded }, { '○', by.waiting }, { '✗', by.failed or 0 }, { '✕', by.disabled } }) do
+    if c[2] > 0 then
+      want[#want + 1] = ('%s %d'):format(c[1], c[2])
+    end
+  end
+  H.eq(#want < 4, true, 'some state has none, so this checks that it is left out')
+  local states = lines(w.header)[2]
+  for _, c in ipairs({ { '●', by.loaded }, { '○', by.waiting }, { '✗', by.failed or 0 }, { '✕', by.disabled } }) do
+    absent = absent and (c[2] > 0 or not states:find(c[1], 1, true))
+  end
+  H.eq(
+    vim.startswith(states, ' ' .. table.concat(want, '  ') .. '  ') and absent,
+    true,
+    'the second line: the count in each state, none left out: ' .. states
+  )
+  H.eq(states:find('Checking plugins', 1, true) ~= nil, true, 'then the check that opening started')
+  local one = require('cinch.state').yours()[1]
+  local was = one.state
+  one.state = 'failed'
+  local row2 = table.concat(vim.tbl_map(function(c)
+    return c[1]
+  end, require('cinch.features.ui.layout').header(148, { views = ui.views, view = 'plugins' })[2]))
+  one.state = was
+  H.eq(row2:find(' ✗ 1 ', 1, true) ~= nil, true, 'a failed plugin is counted: ' .. row2)
 
   -- In a wide header the name sits in the middle, on a banner, and the keys sit on a
   -- banner in the middle of the footer.
   local layout = require('cinch.features.ui.layout')
   local shape = { opts = ui.opts, view = 'plugins', views = ui.views, help = false, split = true }
-  local head = layout.header(148, shape)
+  local head = layout.header(148, shape)[1]
   local before, banner_at, total = 0, nil, 0
   for i, c in ipairs(head) do
     if c[2] == 'CinchBanner' and vim.trim(c[1]) == 'cinch' then

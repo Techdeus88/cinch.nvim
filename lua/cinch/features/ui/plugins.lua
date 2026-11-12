@@ -119,32 +119,6 @@ local function updates_section(c, list, orphans, ctx)
   end
 end
 
-local graph_min = 6
-
--- What the progress line says for each operation; a delete only shows its ending.
-local doing = { install = 'Installing plugins', check = 'Checking plugins', update = 'Updating plugins' }
-
---- Progress on one line: `Installing plugins (18/48) - yanky.nvim 37% ━━━━`, or how it ended.
----@param c cinch.ui.Canvas
----@param op cinch.ui.Op
-local function op_header(c, op)
-  if op.message or not doing[op.kind] then
-    c:add({ { ' ' .. (op.message or ''), 'CinchTitle' } })
-    return
-  end
-  local current = op.current and (' - ' .. op.current) or ''
-  local left = (' %s (%d/%d)%s '):format(doing[op.kind], op.done, op.total, current)
-  local percent = ('%d%% '):format(op.total > 0 and math.floor(op.done / op.total * 100) or 0)
-  -- A long name gives way first, so the percent and the graph stay in view.
-  local room = c.width - 1 - canvas.cells(percent) - graph_min
-  if canvas.cells(left) > room then
-    left = canvas.fit(left, room - 1) .. ' '
-  end
-  local graph = c.width - 1 - canvas.cells(left) - canvas.cells(percent)
-  local line = { { left, 'CinchTitle' }, { percent, 'CinchMuted' } }
-  c:add(vim.list_extend(line, canvas.pill(op.done, op.total, graph)))
-end
-
 -- Each install status: its mark (nil: the spinner), its color, the message.
 local install_look = {
   queued = { '·', 'CinchMuted', 'queued' },
@@ -190,12 +164,8 @@ function M.list(width, ctx)
   local plugins = visible(ctx)
   -- A question is asked on the normal rows, even while an install's ending is on show.
   if ctx.op and ctx.op.kind == 'install' and not ctx.ask then
-    op_header(c, ctx.op)
     install_rows(c, ctx)
     return c
-  end
-  if ctx.op then
-    op_header(c, ctx.op)
   end
   local slowest = 0
   for _, p in ipairs(plugins) do

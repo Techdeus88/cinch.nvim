@@ -1,13 +1,42 @@
--- Install, check, update and delete in the window, all the same way: a header line
--- with the progress, rows that change in place, then a line that says how it ended.
+-- Install, check, update and delete in the window, all the same way: the progress in
+-- the middle of the header, rows that change in place, then a line that says how it ended.
 -- An install also opens the window and lists every plugin with its install status;
 -- an update opens it too. A check never opens it, and a delete only gets the ending.
 -- ui/init.lua listens for the events and loads this file the first time one fires.
 
+local canvas = require('cinch.features.ui.canvas')
 local state = require('cinch.state')
 local summary = require('cinch.ops').summary
 
 local M = {}
+
+-- What the progress line says for each operation; a delete only shows its ending.
+local doing = { install = 'Installing plugins', check = 'Checking plugins', update = 'Updating plugins' }
+local graph_min, graph_max = 6, 20
+
+--- The operation in at most `room` cells: `Installing plugins (18/48) - yanky.nvim 37% ━━━━`,
+--- or how it ended; and whether its words had to be cut to fit.
+---@param op cinch.ui.Op
+---@param room integer
+---@return { [1]: string, [2]?: string }[] line, boolean cut
+function M.line(op, room)
+  if op.message or not doing[op.kind] then
+    local text = op.message or ''
+    return canvas.clip({ { text, 'CinchTitle' } }, room), canvas.cells(text) > room
+  end
+  local current = op.current and (' - ' .. op.current) or ''
+  local left = ('%s (%d/%d)%s '):format(doing[op.kind], op.done, op.total, current)
+  local percent = ('%d%% '):format(op.total > 0 and math.floor(op.done / op.total * 100) or 0)
+  -- A long name gives way first, so the percent and the graph stay in view.
+  local fits = room - canvas.cells(percent) - graph_min
+  local cut = canvas.cells(left) > fits
+  if cut then
+    left = canvas.fit(left, fits - 1) .. ' '
+  end
+  local graph = math.min(graph_max, room - canvas.cells(left) - canvas.cells(percent))
+  local line = { { left, 'CinchTitle' }, { percent, 'CinchMuted' } }
+  return vim.list_extend(line, canvas.pill(op.done, op.total, graph)), cut
+end
 
 ---@class cinch.ui.OpHost what an operation needs from the window
 ---@field ui table its state: ctx, colors_done

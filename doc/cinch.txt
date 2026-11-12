@@ -522,9 +522,16 @@ Four bordered windows at 75% of the editor, over a dark backdrop that dims
 the editor behind it: a header, the list and the details pane beside it, and
 a footer. The cursor stays in the window: moving to an editor window, with a
 click or `<C-w>`, comes back to the list, while a prompt or picker a plugin
-opens keeps focus. The header holds the plugin count and startup time on the
-left and the five views on the right: plugins, triggers, stats, profile and
-log. The footer holds the keys for the view you're in, centered.
+opens keeps focus. The header has two lines. The first holds the plugin
+count and startup time on the left, the name in the middle and the five views
+on the right: plugins, triggers, stats, profile and log. The second holds how
+many plugins are loaded (`●`), waiting (`○`), failed (`✗`) and disabled
+(`✕`) and how many updates are pending (`↑`), leaving out any that are 0. An install, a check, an
+update or a delete shows in the middle of that line, like
+`Installing plugins (18/48) - yanky.nvim 37%` with a bar, then a line that
+says how it ended, such as `Checked 61 plugins in 2.1s · 3 updates`, for a
+moment. When the counts leave too little room for it, they make way until it
+goes. The footer holds the keys for the view you're in, centered.
 
 PLUGINS                                                 *cinch-window-plugins*
 
@@ -537,13 +544,10 @@ A plugin that is working, failed or off stays in that section, with `↑n` on
 its row.
 
 The rest of the list groups plugins into working, failed, loaded, waiting
-and disabled, with what is happening now on top. An install, a check, an
-update or a delete puts one line above it all, like
-`Installing plugins (18/48) - yanky.nvim 37%` with a bar, then a line that
-says how it ended, such as `Checked 61 plugins in 2.1s · 3 updates`, for
-a moment. A plugin being checked, updated or deleted stays in its section and
-says so on its row; an install or a build moves it to working. A check never
-opens the window; an install and `:Cinch update!` do.
+and disabled, with what is happening now on top. A plugin being checked,
+updated or deleted stays in its section and says so on its row; an install or
+a build moves it to working. A check never opens the window; an install and
+`:Cinch update!` do.
 
 Each row puts its parts one after the other: a status light (lit once
 loaded, a spinner while it works), the name, its load time and a load-time
