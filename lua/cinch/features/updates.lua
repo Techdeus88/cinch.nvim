@@ -1,7 +1,8 @@
 -- Update checks: which plugins have new commits, without changing anything on disk.
 --   1. `git fetch` every plugin in parallel, in the background, with vim.pack's arguments
 --   2. one offline vim.pack.get: vim.pack works out each plugin's target the way an update would;
---      on Neovim 0.12, whose get() does not, git does, plugin by plugin
+--      on Neovim 0.12, whose get() does not, git does, plugin by plugin. The checked-out
+--      commit always comes from git: get() gives the lockfile's
 --   3. `git log` for each plugin that would move, also in parallel
 -- Applying runs vim.pack.update offline, so it uses what the check fetched.
 
@@ -75,6 +76,8 @@ end
 
 ---@type integer hrtime the current check started
 local started = 0
+---@type integer the check's fetches still running
+local fetching = 0
 
 ---@param plugins cinch.Plugin[]
 ---@param results table<string, cinch.Update>
@@ -156,19 +159,25 @@ local function target(d, cb)
   end)
 end
 
---- Neovim 0.12's vim.pack.get() has no `rev_to`: fill it in, then call `cb`.
+--- vim.pack.get() gives the lockfile's `rev`, but an update moves from the checked-out
+--- commit, and the two part when git moves a plugin by hand: read `rev` from HEAD.
+--- Neovim 0.12's get() has no `rev_to` either: fill it in. Then call `cb`.
 ---@param data vim.pack.PlugData[]
 ---@param cb fun()
-local function with_targets(data, cb)
-  if vim.fn.has('nvim-0.13') == 1 then
-    return cb()
-  end
-  local resolved = join(#data, cb)
+local function with_revs(data, cb)
+  local old = vim.fn.has('nvim-0.13') == 0
+  local resolved = join(#data * (old and 2 or 1), cb)
   for _, d in ipairs(data) do
-    target(d, function(sha)
-      d.rev_to = sha
+    rev_parse('HEAD', d.path, function(sha)
+      d.rev = sha
       resolved()
     end)
+    if old then
+      target(d, function(sha)
+        d.rev_to = sha
+        resolved()
+      end)
+    end
   end
 end
 
@@ -202,6 +211,12 @@ end
 ---@param plugins cinch.Plugin[]
 ---@param opts table
 local function resolve(plugins, opts)
+  -- The fetches may end while vim.pack runs, an update say: read once it returns.
+  if pack.busy() then
+    return vim.defer_fn(function()
+      resolve(plugins, opts)
+    end, 50)
+  end
   local names = vim.tbl_map(function(p)
     return p.name
   end, plugins)
@@ -211,7 +226,7 @@ local function resolve(plugins, opts)
     return finish(plugins, {}, opts, true)
   end
   ---@cast data vim.pack.PlugData[]
-  with_targets(data, function()
+  with_revs(data, function()
     log(plugins, data, opts)
   end)
 end
@@ -243,7 +258,9 @@ function M.check(names, opts)
       state.activity(p, 'checking')
     end
     -- vim.pack's own fetch: tags too, and conflicting tags follow the remote.
+    fetching = fetching + 1
     git({ 'fetch', '--quiet', '--tags', '--force', '--recurse-submodules=yes', 'origin' }, p.path, function(r)
+      fetching = fetching - 1
       if r.code ~= 0 then
         M.failed[p.name] = vim.trim(r.stderr or ('exit ' .. r.code))
       end
@@ -360,6 +377,15 @@ end
 function M.setup(opts)
   M.opts = vim.tbl_extend('force', M.opts, opts or {})
   events.define('Updates') -- { results }: a check finished
+  -- Two fetches in one repo race for its refs, and vim.pack's loses quietly: an update
+  -- waits for the check's.
+  events.on('PackOpPre', function(d)
+    if d.op == 'update' and fetching > 0 then
+      vim.wait(60000, function()
+        return fetching == 0
+      end, 10)
+    end
+  end)
   -- An update that landed is no longer pending, whoever applied it.
   events.on('Pack', function(d)
     if d.kind ~= 'install' and M.results[d.name] then

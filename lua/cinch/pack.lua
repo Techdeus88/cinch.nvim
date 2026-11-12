@@ -173,6 +173,12 @@ function M.idle()
   return synced and busy == 0
 end
 
+--- Whether a vim.pack call is running now: callbacks run while it waits for git.
+---@return boolean
+function M.busy()
+  return busy > 0
+end
+
 -- Builds -------------------------------------------------------------------
 
 -- Written when a build starts and removed when it succeeds, so a build that
@@ -506,6 +512,37 @@ local function missed(names, reached)
   end, names)
 end
 
+local log_file = vim.fs.joinpath(vim.fn.stdpath('log') --[[@as string]], 'nvim-pack.log')
+
+---@return integer
+local function log_size()
+  local stat = uv.fs_stat(log_file)
+  return stat and stat.size or 0
+end
+
+--- The plugins a forced update could not move. vim.pack returns fine and says so only in
+--- its log: under `# Error`, in what it appended after byte `from`.
+---@param from integer
+---@return string[]
+local function update_errors(from)
+  local f = io.open(log_file, 'rb')
+  if not f then
+    return {}
+  end
+  f:seek('set', from)
+  local text = f:read('*a') or ''
+  f:close()
+  local names, section = {}, nil
+  for line in vim.gsplit(text, '\n', { plain = true }) do
+    if line:find('^# ') or line:find('^=') then
+      section = line:match('^# (%S+)')
+    elseif section == 'Error' then
+      names[#names + 1] = line:match('^## (%S+)')
+    end
+  end
+  return names
+end
+
 --- vim.pack.update through cinch, so the bus sees it. One that applies without the
 --- review tab is framed by Updating and Updated, and says how it ended; a review tab
 --- and a restore from the lockfile are not.
@@ -528,6 +565,7 @@ function M.update(names, opts)
     )
   local start = uv.hrtime()
   events.emit('Updating', { names = asked })
+  local logged = log_size()
   local updated, ok, res = reaching('update', function()
     return call('update', names, vim.pack.update, names, opts)
   end)
@@ -537,6 +575,11 @@ function M.update(names, opts)
   end)
   -- Without names a plugin with nothing new is not a failure; with them, it is.
   local failed = (not ok and names) and missed(names, updated) or {}
+  for _, name in ipairs(ok and update_errors(logged) or {}) do
+    if not vim.list_contains(failed, name) then
+      failed[#failed + 1] = name
+    end
+  end
   local d = {
     names = asked,
     updated = updated,
