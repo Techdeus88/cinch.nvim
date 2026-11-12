@@ -592,12 +592,10 @@ local function queue_later(p)
   end
 end
 
---- Set up what loads a pending plugin, by its `when`. Nothing loads a `never` one.
+--- Set up what loads a pending plugin, by its `when`.
 ---@param p cinch.Plugin
 function M.arm(p)
-  if p.when == 'never' then
-    return
-  elseif p.when == 'now' then
+  if p.when == 'now' then
     now_queue[#now_queue + 1] = p
   elseif p.when == 'later' then
     queue_later(p)

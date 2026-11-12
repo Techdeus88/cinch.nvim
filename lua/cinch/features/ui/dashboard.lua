@@ -132,10 +132,7 @@ local function draw_counts(c)
   local by = {}
   local yours = state.yours()
   for _, p in ipairs(yours) do
-    -- An install-only plugin waits for nothing.
-    if not (p.state == 'pending' and p.when == 'never') then
-      by[p.state] = (by[p.state] or 0) + 1
-    end
+    by[p.state] = (by[p.state] or 0) + 1
   end
   local updates = feature('updates')
   local chips = {

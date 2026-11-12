@@ -17,13 +17,12 @@ end
 -- Sections, in the order they are shown: what is happening now first, so it is in
 -- view while it changes, then what went wrong. section_of() puts a plugin in one,
 -- so a loaded plugin that is updating is "working". Only `titled` ones get a title in the
--- list: the header counts the rest, all but `never`, which only installs.
+-- list: the header counts the rest.
 M.sections = {
   { key = 'working', title = 'working', hl = 'CinchActive', titled = true },
   { key = 'failed', title = 'failed', hl = 'CinchFailed' },
   { key = 'loaded', title = 'loaded', hl = 'CinchLoaded' },
   { key = 'waiting', title = 'waiting', hl = 'CinchWaiting' },
-  { key = 'never', title = 'never', hl = 'CinchMuted' },
   { key = 'disabled', title = 'disabled', hl = 'CinchMuted' },
 }
 
@@ -42,13 +41,11 @@ function M.section_of(p)
     return 'loaded'
   elseif p.state == 'disabled' then
     return 'disabled'
-  elseif p.when == 'never' then
-    return 'never'
   end
   return 'waiting'
 end
 
-local marks = { failed = '✗', loaded = '●', waiting = '○', disabled = '✕', never = '·' }
+local marks = { failed = '✗', loaded = '●', waiting = '○', disabled = '✕' }
 M.marks = marks
 
 --- Nerd Font icons for how a plugin loads. `ui.icons` in setup() replaces any of
@@ -63,7 +60,6 @@ M.icons = {
   dep = '\u{f487}',
   trigger = '\u{f013}',
   off = '\u{f011}',
-  never = '\u{f019}',
 }
 
 --- Why a plugin is off, as its spec says it: `cond = false`, or `cond() returned false`
@@ -151,7 +147,7 @@ end
 ---@param needed_by string[]
 ---@return cinch.ui.Item[]
 local function load_items(p, needed_by)
-  if p.dep_only and p.when ~= 'never' then
+  if p.dep_only then
     local item = M.kind_chip('dep')
     item[#item + 1] = { ' ' .. table.concat(needed_by, ', '), 'CinchMuted' }
     return { item }

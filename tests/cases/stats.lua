@@ -19,7 +19,7 @@ H.after_startup(function()
   local stats = require('cinch.features.stats')
   local s = stats.summary()
   H.eq(s.plugins.total, 3, 'plugins counted')
-  H.eq(s.by_when, { now = 1, later = 1, trigger = 1, never = 0 }, 'by when')
+  H.eq(s.by_when, { now = 1, later = 1, trigger = 1 }, 'by when')
   H.eq(s.loaded_by, { now = 1, later = 1 }, 'by what loaded them')
   for _, phase in ipairs({ 'specs', 'install', 'init', 'now' }) do
     H.eq(type(stats.phases[phase]), 'number', 'phase ' .. phase)

@@ -72,10 +72,7 @@ local function counts(labels)
   local by = {}
   for _, p in ipairs(state.yours()) do
     local k = (p.state == 'pending' or p.state == 'registered') and 'waiting' or p.state
-    -- An install-only plugin waits for nothing.
-    if not (k == 'waiting' and p.when == 'never') then
-      by[k] = (by[k] or 0) + 1
-    end
+    by[k] = (by[k] or 0) + 1
   end
   local updates = package.loaded['cinch.features.updates']
   local marks = require('cinch.features.ui.rows').marks

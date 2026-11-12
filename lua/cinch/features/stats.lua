@@ -203,7 +203,7 @@ function M.summary()
   local s = {
     plugins = { total = #state.yours() },
     by_state = {},
-    by_when = { now = 0, later = 0, trigger = 0, never = 0 },
+    by_when = { now = 0, later = 0, trigger = 0 },
     loaded_by = {},
     startup = {
       vimenter = M.marks.vimenter,
@@ -838,12 +838,7 @@ function M.lines()
   local st = s.startup
   local lines = {
     ('plugins     %d: %s'):format(s.plugins.total, vim.inspect(s.by_state, { newline = ' ', indent = '' })),
-    ('when        now %d · later %d · trigger %d%s'):format(
-      s.by_when.now,
-      s.by_when.later,
-      s.by_when.trigger,
-      s.by_when.never > 0 and (' · never %d'):format(s.by_when.never) or ''
-    ),
+    ('when        now %d · later %d · trigger %d'):format(s.by_when.now, s.by_when.later, s.by_when.trigger),
     ('loaded by   %s'):format(vim.inspect(s.loaded_by, { newline = ' ', indent = '' })),
     ('startup     VimEnter %s · UIEnter %s · later done %s'):format(
       fmt(st.vimenter),
