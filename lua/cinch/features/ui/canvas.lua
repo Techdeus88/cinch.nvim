@@ -132,7 +132,7 @@ local role_of = {
 -- Each way a plugin loads has its own color, so `now`, `later`, an event, a filetype, a
 -- command, a key and a dependency each read apart at a glance: in this order, each takes
 -- the first of its sources with a hue no kind before it took.
-local kinds = { 'now', 'later', 'event', 'ft', 'cmd', 'keys', 'dep', 'trigger', 'off' }
+local kinds = { 'now', 'later', 'event', 'ft', 'cmd', 'keys', 'dep', 'trigger', 'off', 'never' }
 local kind_sources = {
   now = roles.ok,
   later = roles.info,
@@ -143,6 +143,7 @@ local kind_sources = {
   dep = { { 'DiagnosticHint' }, { 'Comment' } },
   trigger = { { 'Special' }, { 'DiagnosticWarn' } },
   off = { { 'Comment' } },
+  never = { { 'Comment' } },
 }
 -- Without colors to blend, the chips link to groups every colorscheme styles.
 local kind_links = {
@@ -155,11 +156,12 @@ local kind_links = {
   dep = 'DiagnosticVirtualTextHint',
   trigger = 'DiagnosticVirtualTextWarn',
   off = 'Comment',
+  never = 'Comment',
 }
 
 --- The chip group and the text group of a kind: 'CinchKindCmd', 'CinchKindCmdText'.
 --- A trigger of your own has the `trigger` colors.
----@param kind string now, later, event, ft, cmd, keys, dep, off, or your own
+---@param kind string now, later, event, ft, cmd, keys, dep, off, never, or your own
 ---@return string chip, string text
 function M.kind_hl(kind)
   local k = kind_sources[kind] and kind or 'trigger'

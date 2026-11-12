@@ -256,6 +256,11 @@ function M.load(p, reason, done)
     done()
     return p.state == 'loaded'
   end
+  if p.when == 'never' then
+    events.report(('`%s` not loaded: it sets load = `never`'):format(p.name))
+    done()
+    return false
+  end
   -- Its build makes something it needs: load once the build ends, never block.
   local b = building(p)
   if b then
@@ -292,7 +297,8 @@ function M.load(p, reason, done)
     local d = state.plugins[name]
     if d.state == 'loading' then
       events.report(('dependency cycle: `%s` and `%s`'):format(p.name, name), vim.log.levels.WARN)
-    elseif not M.load(d, 'dep of ' .. p.name) then
+    -- A `never` dependency on disk is ready: the plugin needing it uses its files by path.
+    elseif not (d.when == 'never' and d.state == 'pending') and not M.load(d, 'dep of ' .. p.name) then
       -- No build is running anywhere below (checked above), so it will not load
       -- later either: disabled, failed, cancelled or not installed. Loading without
       -- it would only fail in a stranger way.

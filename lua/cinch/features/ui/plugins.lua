@@ -78,7 +78,7 @@ local function with_updates(plugins, ctx)
     local key = M.section_of(p)
     local shown = p.self and (not ctx.filter or p.name:lower():find(ctx.filter:lower(), 1, true))
       or vim.list_contains(plugins, p)
-    if shown and pending(p) and (key == 'loaded' or key == 'waiting') then
+    if shown and pending(p) and (key == 'loaded' or key == 'waiting' or key == 'never') then
       out[#out + 1] = p
     end
   end

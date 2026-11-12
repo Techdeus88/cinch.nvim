@@ -39,12 +39,12 @@ end
 ---@param p cinch.Plugin
 ---@return { [1]: string, [2]?: string }[]
 local function load_line(p)
-  if p.dep_only then
+  if p.dep_only and p.when ~= 'never' then
     return { { glyph('dep') .. ' before its dependents', select(2, canvas.kind_hl('dep')) } }
   elseif p.when == 'trigger' then
     return join(trigger_items(p))
   end
-  local words = p.when == 'now' and 'at startup' or 'after startup'
+  local words = ({ now = 'at startup', never = 'installed, not loaded' })[p.when] or 'after startup'
   local text = glyph(p.when)
     .. ' '
     .. p.load

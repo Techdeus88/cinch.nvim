@@ -370,6 +370,9 @@ local waiting = {}
 ---@param p cinch.Plugin
 ---@param cmd string
 local function cmd_build(p, cmd)
+  if p.when == 'never' then
+    return finish(p, uv.hrtime(), 'it needs the plugin loaded, and it sets load = `never`')
+  end
   if vim.v.vim_did_enter == 0 or p.state == 'registered' then
     waiting[#waiting + 1] = p
     if #waiting == 1 and vim.v.vim_did_enter == 0 then

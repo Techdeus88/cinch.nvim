@@ -249,7 +249,9 @@ end
 ---@param p cinch.Plugin
 ---@return string
 local function waits_for(p)
-  if p.when ~= 'trigger' then
+  if p.when == 'never' then
+    return 'nothing: load = never'
+  elseif p.when ~= 'trigger' then
     return p.when == 'later' and 'later, after startup' or 'now'
   end
   local parts = {}

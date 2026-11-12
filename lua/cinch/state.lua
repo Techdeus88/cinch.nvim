@@ -10,13 +10,13 @@ local M = {}
 ---@alias cinch.State
 ---| 'registered' a record, not yet checked against the disk
 ---| 'disabled'   `enabled` or `cond` is false, turned off this session, or only off plugins need it
----| 'pending'    on disk, waiting for its moment: now, later or a trigger
+---| 'pending'    on disk, waiting for its moment: now, later or a trigger; with load = 'never', none comes
 ---| 'loading'
 ---| 'loaded'
 ---| 'failed'     install or load failed; `failed_in` says which
 
----@alias cinch.Load 'now'|'later'|'now_if_args'|'trigger'
----@alias cinch.When 'now'|'later'|'trigger'
+---@alias cinch.Load 'now'|'later'|'now_if_args'|'trigger'|'never'
+---@alias cinch.When 'now'|'later'|'trigger'|'never'
 ---@alias cinch.Activity 'installing'|'updating'|'deleting'|'building'|'checking'
 
 ---@class cinch.Plugin

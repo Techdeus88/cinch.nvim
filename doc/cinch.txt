@@ -167,7 +167,8 @@ FIELDS                                                     *cinch-spec-fields*
     warning.
 
 `load`                                                      *cinch-spec-load*
-    `'now'`, `'later'`, `'now_if_args'` or `'trigger'`. See |cinch-load|.
+    `'now'`, `'later'`, `'now_if_args'`, `'trigger'` or `'never'`. See
+    |cinch-load|.
 
 `lazy`                                                      *cinch-spec-lazy*
     lazy.nvim's field. `false` is `load = 'now'` and `true` is
@@ -295,11 +296,11 @@ An explicit `load` always wins. `load = 'now'` with a `cmd` loads at startup,
 and cinch warns that the `cmd` is ignored.
 
                                                                *cinch-require*
-Whatever `load` says, `require()` of a plugin's module loads a plugin that has
-not loaded yet. Its dependencies, `config` and events run as they do for any
-load, and the reason, such as `require telescope.builtin`, shows in the log
-and the window. `module = false` turns this off in |cinch.setup()| or on one
-spec.
+Unless `load` is `'never'`, `require()` of a plugin's module loads a plugin
+that has not loaded yet. Its dependencies, `config` and events run as they do
+for any load, and the reason, such as `require telescope.builtin`, shows in
+the log and the window. `module = false` turns this off in |cinch.setup()| or
+on one spec.
 
 `now` plugins load while `init.lua` runs, in the order you declared them,
 dependencies first. On a first start they load right after the install
@@ -307,6 +308,16 @@ instead (see |cinch-first-start|). Neovim then sources their `plugin/` files
 in its normal startup pass, so a `now` plugin's `config` runs before its own
 `plugin/` files. A plugin whose `config` needs something its `plugin/` file
 defines should use `later`.
+
+`load = 'never'` is for a plugin you only want on disk, such as one that
+ships a binary or files another tool reads. It installs, updates and builds
+like any other plugin, and its `init` runs at startup with its `path`, say to
+add its `bin/` to `$PATH`. Nothing loads it: no trigger, no `require()`, no
+|:Cinch-load|. A plugin that lists it in `deps` loads without it, using its
+files by path. cinch warns about `opts`, `config`, `after` and triggers on
+such a spec, which never run, and about a `:` build, which needs the plugin
+loaded and fails. Its row shows a `never` chip, and the header does not count
+it as waiting.
 
 ------------------------------------------------------------------------------
 THE FIRST START                                            *cinch-first-start*
@@ -546,7 +557,8 @@ its row.
 
 The rest of the list keeps a title only for "working", the plugins
 installing, building or loading, on top. The header counts the other states,
-so failed, loaded, waiting and disabled follow in that order with no titles.
+so failed, loaded, waiting, install-only (`load = 'never'`) and disabled
+follow in that order with no titles.
 A plugin being checked,
 updated or deleted stays in its section and says so on its row; an install or
 a build moves it to working. A check never opens the window; an install and

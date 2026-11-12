@@ -16,7 +16,7 @@ local M = {}
 ---@class cinch.Data
 ---@field enabled? boolean|fun(p: cinch.Plugin): boolean false: not installed, never loaded
 ---@field cond? boolean|fun(p: cinch.Plugin): boolean same as enabled; both exist for lazy.nvim specs
----@field load? cinch.Load default: 'trigger' with a trigger, else 'later'
+---@field load? cinch.Load default: 'trigger' with a trigger, else 'later'; 'never': installed, not loaded
 ---@field deps? (string|cinch.Spec)[] a name like 'plenary.nvim' refers to another spec
 ---@field event? string|string[] "Event" or "Event pattern"; 'VeryLazy' means later, or a deadline beside others
 ---@field ft? string|string[]
@@ -74,7 +74,7 @@ end
 local aliases = { dependencies = 'deps' }
 -- sarcina's order: commit beats tag beats version beats branch.
 local pins = { 'commit', 'tag', 'version', 'branch' }
-local loads = { now = true, later = true, now_if_args = true, trigger = true }
+local loads = { now = true, later = true, now_if_args = true, trigger = true, never = true }
 
 --- Make a custom trigger field known. handler.lua calls this for every handler it registers.
 ---@param name string
@@ -268,6 +268,17 @@ local function resolve_load(data, dep_only, notes)
     end
   elseif load ~= 'trigger' and triggered then
     notes[#notes + 1] = ('sets load = `%s`, so its triggers are ignored'):format(load)
+  end
+  if load == 'never' then
+    -- Nothing runs what needs the plugin loaded: name what is ignored.
+    for _, field in ipairs({ 'opts', 'config', 'after' }) do
+      if data[field] ~= nil then
+        notes[#notes + 1] = ('sets load = `never`, so its `%s` is ignored'):format(field)
+      end
+    end
+    if type(data.build) == 'string' and data.build:sub(1, 1) == ':' then
+      notes[#notes + 1] = 'sets load = `never`, so its `:` build cannot run'
+    end
   end
   local when = load
   if load == 'now_if_args' then

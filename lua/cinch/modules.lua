@@ -85,7 +85,7 @@ end
 local function providers(mod)
   tops = tops or scan()
   return vim.tbl_filter(function(p)
-    return p.state ~= 'loaded' and p.data.module ~= false and provides(p, mod)
+    return p.state ~= 'loaded' and p.data.module ~= false and p.when ~= 'never' and provides(p, mod)
   end, tops[mod:match('^[^.]+')] or {})
 end
 
