@@ -173,17 +173,35 @@ H.after_startup(function()
   end
   H.eq(total, 148, 'the header line fills its window')
   H.eq(math.abs(before - (total - before - name_w)) <= 1, true, 'with the name in the middle')
-  local foot = layout.footer(148, ' / filter  q close ')
-  local keys = vim.tbl_filter(function(c)
-    return c[2] == 'CinchBanner'
-  end, foot)
-  H.eq(vim.trim(keys[1][1]), '/ filter  q close', 'the keys on a banner')
+  local foot = layout.footer(148, { { '/', 'filter' }, { 'q', 'close' } })
+  local function parts(group)
+    return vim.tbl_map(
+      function(c)
+        return vim.trim(c[1])
+      end,
+      vim.tbl_filter(function(c)
+        return c[2] == group
+      end, foot)
+    )
+  end
+  H.eq(parts('CinchFooterKey'), { '/', 'q' }, 'each key on its own inset')
+  H.eq(parts('CinchBanner'), { 'filter', 'close' }, 'with what it does beside it, on the banner')
   local pad = vim.fn.strdisplaywidth(foot[1][1])
   local keys_w = 0
   for i = 2, #foot do
     keys_w = keys_w + vim.fn.strdisplaywidth(foot[i][1])
   end
   H.eq(math.abs(pad - (148 - pad - keys_w)) <= 1, true, 'in the middle of the footer')
+  local narrow = layout.footer(40, require('cinch.features.ui.keys').hints.plugins)
+  local narrow_text = table.concat(vim.tbl_map(function(c)
+    return c[1]
+  end, narrow))
+  H.eq(vim.fn.strdisplaywidth(narrow_text) <= 40, true, 'a narrow footer fits')
+  H.eq(
+    { narrow_text:find(' ? ', 1, true) ~= nil, narrow_text:find(' close ', 1, true) ~= nil },
+    { true, true },
+    'and keeps ? and q'
+  )
 
   local u = require('cinch.features.updates')
   H.eq(u.checking, true, 'opening starts an update check')

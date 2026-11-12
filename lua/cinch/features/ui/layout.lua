@@ -149,13 +149,53 @@ function M.header(width, s)
   return { spread(width, left, name, tabs), spread(width, states, op or {}, {}) }
 end
 
---- The footer's line, `width` cells: the keys on a banner in the middle.
+--- A key and what it does as one pill: the key on a dark inset, what it does on the
+--- banner color. Text that is no key is all banner.
+---@param hint cinch.ui.Hint
+---@return { [1]: string, [2]: string }[]
+local function pill(hint)
+  local key, does = hint[2] and hint[1], hint[2] or hint[1]
+  local out = {}
+  if canvas.rounded then
+    out[1] = { canvas.caps[1], key and 'CinchFooterKeyCap' or 'CinchBannerCap' }
+  end
+  if key then
+    out[#out + 1] = { ' ' .. key .. ' ', 'CinchFooterKey' }
+  end
+  out[#out + 1] = { ' ' .. does .. ' ', 'CinchBanner' }
+  if canvas.rounded then
+    out[#out + 1] = { canvas.caps[2], 'CinchBannerCap' }
+  end
+  return out
+end
+
+--- The footer's line, `width` cells, in the middle: a pill per key, or `text` on a banner.
+--- Short of room, the keys before the last two (`?` and `q`) go first, from the end.
 ---@param width integer
----@param text string
+---@param what string|cinch.ui.Hint[]
 ---@return { [1]: string, [2]?: string }[]
-function M.footer(width, text)
-  local keys = banner(vim.trim(text), width)
-  return vim.list_extend({ { (' '):rep(math.max(0, math.floor((width - cells(keys)) / 2))) } }, keys)
+function M.footer(width, what)
+  local line
+  if type(what) == 'string' then
+    line = banner(vim.trim(what), width)
+  else
+    local hints = vim.list_slice(what)
+    while true do
+      line = {}
+      for i, hint in ipairs(hints) do
+        if i > 1 then
+          line[#line + 1] = { ' ' }
+        end
+        vim.list_extend(line, pill(hint))
+      end
+      if cells(line) <= width or #hints <= 2 then
+        break
+      end
+      table.remove(hints, #hints - 2)
+    end
+    line = canvas.clip(line, width)
+  end
+  return vim.list_extend({ { (' '):rep(math.max(0, math.floor((width - cells(line)) / 2))) } }, line)
 end
 
 --- The configs of the backdrop, the header, the list, the pane and the footer, for `s`.

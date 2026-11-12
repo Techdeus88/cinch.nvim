@@ -535,8 +535,11 @@ with a bar, then a line that says how it ended, such as
 cinch has shows there too, for 4 seconds, or 10 for a warning or an error,
 and the Log keeps them all. cinch never writes to the command line: a warning
 or an error opens the window to show it, and anything else waits in the
-header for the next time you open it. When room is short for it, the names of the states go first, then the counts make way until it
-goes. The footer holds the keys for the view you're in, centered.
+header for the next time you open it. When room is short for it, the names
+of the states go first, then the counts make way until it goes. The footer
+holds the keys for the view you're in, centered, each on a pill: the key on
+a dark inset, what it does beside it. When room is short, the keys before
+`?` and `q` go first, from the end.
 
 PLUGINS                                                 *cinch-window-plugins*
 

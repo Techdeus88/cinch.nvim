@@ -32,15 +32,45 @@ local M = {}
 ---@field [3] string what they do, in words, for ? and the mapping's desc
 ---@field asked? 'answer'|'no' while a row asks: `answer` still runs, `no` answers no; any other key waits
 
+--- A key and what it does, for the footer; text alone when it is no key.
+---@alias cinch.ui.Hint { [1]: string, [2]?: string }
+
 --- The keys of each view, for the footer.
+---@type table<string, cinch.ui.Hint[]>
 M.hints = {
-  plugins = ' / filter  l load  i install  b build  u update  d delete  s sync  S-CR select  ? keys  q close ',
-  triggers = ' <CR> fold  l load what waits  <C-d> <C-u> details  <Tab> next view  ? keys  q close ',
-  stats = ' <Tab> next view  - size  ? keys  q close ',
-  profile = ' <CR> fold  <C-s> sort  <C-f> hide under ms  / filter  <Tab> next view  ? keys  q close ',
-  log = ' / filter  G newest  <Tab> next view  ? keys  q close ',
-  help = ' ? goes back  q close ',
-  install = " installing · keys you press now run when it's done · q hides this ",
+  plugins = {
+    { '/', 'filter' },
+    { 'l', 'load' },
+    { 'i', 'install' },
+    { 'b', 'build' },
+    { 'u', 'update' },
+    { 'd', 'delete' },
+    { 's', 'sync' },
+    { 'S-CR', 'select' },
+    { '?', 'keys' },
+    { 'q', 'close' },
+  },
+  triggers = {
+    { '<CR>', 'fold' },
+    { 'l', 'load what waits' },
+    { '<C-d> <C-u>', 'details' },
+    { '<Tab>', 'next view' },
+    { '?', 'keys' },
+    { 'q', 'close' },
+  },
+  stats = { { '<Tab>', 'next view' }, { '-', 'size' }, { '?', 'keys' }, { 'q', 'close' } },
+  profile = {
+    { '<CR>', 'fold' },
+    { '<C-s>', 'sort' },
+    { '<C-f>', 'hide under ms' },
+    { '/', 'filter' },
+    { '<Tab>', 'next view' },
+    { '?', 'keys' },
+    { 'q', 'close' },
+  },
+  log = { { '/', 'filter' }, { 'G', 'newest' }, { '<Tab>', 'next view' }, { '?', 'keys' }, { 'q', 'close' } },
+  help = { { '?', 'goes back' }, { 'q', 'close' } },
+  install = { { "installing · keys you press now run when it's done" }, { 'q', 'hides this' } },
 }
 
 ---@return table?

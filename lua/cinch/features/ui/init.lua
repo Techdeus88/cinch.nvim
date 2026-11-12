@@ -112,19 +112,26 @@ end
 
 -- Layout ------------------------------------------------------------------------
 
---- The keys in the footer: the view's own, or what the selection can do.
----@return string
+--- The footer: the keys of the view, what the selection can do, or the text being typed.
+---@return string|cinch.ui.Hint[]
 local function footer_text()
   if ui.input then
     return ' ' .. ui.input .. ' '
   end
-  local holding = ui.ctx.op and ui.ctx.op.kind ~= 'check' and ui.ctx.op.kind ~= 'delete'
-  local text = part('keys').hints[holding and 'install' or ui.help and 'help' or ui.view]
   local marked = vim.tbl_count(ui.ctx.marked or {})
   if ui.view == 'plugins' and marked > 0 and not ui.help then
-    text = (' %d selected · l load  b build  u update  c check  d delete · <Esc> lets go '):format(marked)
+    return {
+      { ('%d selected'):format(marked) },
+      { 'l', 'load' },
+      { 'b', 'build' },
+      { 'u', 'update' },
+      { 'c', 'check' },
+      { 'd', 'delete' },
+      { '<Esc>', 'lets go' },
+    }
   end
-  return text
+  local holding = ui.ctx.op and ui.ctx.op.kind ~= 'check' and ui.ctx.op.kind ~= 'delete'
+  return part('keys').hints[holding and 'install' or ui.help and 'help' or ui.view]
 end
 
 --- The window's configs for what it shows now.

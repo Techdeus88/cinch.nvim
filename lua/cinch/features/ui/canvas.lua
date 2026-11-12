@@ -39,6 +39,7 @@ M.highlights = {
 
 -- Nerd Font half circles: the ends of a rounded chip or bar.
 local cap_left, cap_right = '\u{e0b6}', '\u{e0b4}'
+M.caps = { cap_left, cap_right }
 
 --- Whether chips and bars get rounded ends. define_colors() decides: it needs
 --- 'termguicolors', so it can color the ends, and `rounded` not turned off.
@@ -254,9 +255,15 @@ function M.define_colors(rounded)
   if vim.o.termguicolors and title and base then
     set(0, 'CinchBanner', { fg = base, bg = title, bold = true })
     set(0, 'CinchBannerCap', { fg = title })
+    -- A footer key: the banner color on a dark inset of it, beside what it does.
+    local inset = blend(title, base, 0.25)
+    set(0, 'CinchFooterKey', { fg = title, bg = inset, bold = true })
+    set(0, 'CinchFooterKeyCap', { fg = inset })
   else
     set(0, 'CinchBanner', { link = 'IncSearch' })
     set(0, 'CinchBannerCap', { link = 'IncSearch' })
+    set(0, 'CinchFooterKey', { link = 'PmenuSel' })
+    set(0, 'CinchFooterKeyCap', { link = 'PmenuSel' })
   end
   if not M.colored then
     for kind, link in pairs(kind_links) do
