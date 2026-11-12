@@ -191,9 +191,18 @@ function M.list(width, ctx)
     return not ctx.filter or o.name:lower():find(ctx.filter:lower(), 1, true) ~= nil
   end, ctx.orphans or {})
   updates_section(c, updating, orphans, ctx)
-  -- One list in section order, with no title between them: the header counts each.
+  -- One list in section order. The header counts the states, so only work under way,
+  -- such as a build, keeps its title.
   for _, s in ipairs(M.sections) do
-    for _, p in ipairs(by[s.key] or {}) do
+    local list = by[s.key] or {}
+    local open = not (s.titled and ctx.folded[s.key])
+    if s.titled and #list > 0 then
+      c:add({
+        { (open and ' ▾ ' or ' ▸ ') .. s.title, 'CinchSection' },
+        { ' ' .. #list, 'CinchMuted' },
+      }, { section = s.key })
+    end
+    for _, p in ipairs(open and list or {}) do
       local m, m_hl = mark(p, ctx.tick)
       local msg, msg_hl = message(p)
       if not asks(c, ctx, p.name, m, m_hl) then

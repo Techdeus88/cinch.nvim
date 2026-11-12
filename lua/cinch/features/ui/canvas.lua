@@ -47,7 +47,7 @@ M.rounded = false
 M.colored = false
 
 ---@param name string
----@param key 'fg'|'bg'|'ctermfg'
+---@param key 'fg'|'bg'|'sp'|'ctermfg'
 ---@return integer?
 local function color(name, key)
   return vim.api.nvim_get_hl(0, { name = name, link = false })[key]
@@ -67,19 +67,82 @@ local function blend(fg, bg, a)
   return out
 end
 
--- Each way a plugin loads has its own color, taken from the first of these groups
--- the colorscheme sets: so `now`, `later`, an event, a filetype, a command, a key and
--- a dependency each read apart at a glance.
+---@param c integer 0xRRGGBB
+---@return number r, number g, number b each 0-1
+local function rgb(c)
+  return bit.rshift(c, 16) / 255, bit.band(bit.rshift(c, 8), 255) / 255, bit.band(c, 255) / 255
+end
+
+--- Whether a color has a hue, rather than being a gray.
+---@param c integer
+---@return boolean
+local function chromatic(c)
+  local r, g, b = rgb(c)
+  local hi = math.max(r, g, b)
+  return hi > 0 and (hi - math.min(r, g, b)) / hi > 0.2
+end
+
+--- How far apart two colors read, as WCAG's contrast ratio: 1 to 21.
+---@param a integer
+---@param b integer
+---@return number
+local function contrast(a, b)
+  local function lum(c)
+    local out = 0
+    for i, v in ipairs({ rgb(c) }) do
+      v = v <= 0.03928 and v / 12.92 or ((v + 0.055) / 1.055) ^ 2.4
+      out = out + ({ 0.2126, 0.7152, 0.0722 })[i] * v
+    end
+    return out
+  end
+  local x, y = lum(a), lum(b)
+  return (math.max(x, y) + 0.05) / (math.min(x, y) + 0.05)
+end
+
+-- Where each role's color comes from: the first of these with a hue, else the first set.
+-- A colorscheme may keep a group gray, as Ashen does its diagnostics, and its hues in
+-- others: the diagnostics' underlines, or its syntax.
+---@type table<string, { [1]: string, [2]?: 'fg'|'sp' }[]>
+local roles = {
+  ok = { { 'DiagnosticOk' }, { 'DiagnosticUnderlineOk', 'sp' }, { 'Added' }, { 'String' } },
+  info = { { 'DiagnosticInfo' }, { 'DiagnosticUnderlineInfo', 'sp' }, { 'Function' }, { 'Boolean' } },
+  hint = { { 'DiagnosticHint' }, { 'DiagnosticUnderlineHint', 'sp' } },
+  warn = { { 'DiagnosticWarn' }, { 'DiagnosticUnderlineWarn', 'sp' }, { 'Changed' } },
+  error = { { 'DiagnosticError' }, { 'DiagnosticUnderlineError', 'sp' }, { 'Removed' } },
+  title = { { 'FloatTitle' }, { 'Title' } },
+  section = { { 'Label' }, { 'Title' } },
+}
+-- The window's groups that take a role's color when the colorscheme's can be read.
+local role_of = {
+  CinchTitle = 'title',
+  CinchTab = 'title',
+  CinchSection = 'section',
+  CinchLoaded = 'ok',
+  CinchWaiting = 'hint',
+  CinchFailed = 'error',
+  CinchWarn = 'warn',
+  CinchActive = 'info',
+  CinchUpdate = 'warn',
+  CinchIconNow = 'ok',
+  CinchIconLater = 'info',
+  CinchIconTrigger = 'warn',
+  CinchDep = 'hint',
+}
+
+-- Each way a plugin loads has its own color, so `now`, `later`, an event, a filetype, a
+-- command, a key and a dependency each read apart at a glance: in this order, each takes
+-- the first of its sources with a hue no kind before it took.
+local kinds = { 'now', 'later', 'event', 'ft', 'cmd', 'keys', 'dep', 'trigger', 'off' }
 local kind_sources = {
-  now = { 'DiagnosticOk' },
-  later = { 'DiagnosticInfo' },
-  event = { 'DiagnosticWarn' },
-  ft = { 'Type', 'DiagnosticHint' },
-  cmd = { 'Keyword', 'Statement', 'Function' },
-  keys = { 'Constant', 'Number', 'Special' },
-  dep = { 'DiagnosticHint', 'Comment' },
-  trigger = { 'Special', 'DiagnosticWarn' },
-  off = { 'Comment' },
+  now = roles.ok,
+  later = roles.info,
+  event = roles.warn,
+  ft = { { 'Type' }, { 'DiagnosticHint' } },
+  cmd = { { 'Keyword' }, { 'Statement' }, { 'Function' }, { 'String' } },
+  keys = { { 'Constant' }, { 'Number' }, { 'Special' }, { 'PreProc' } },
+  dep = { { 'DiagnosticHint' }, { 'Comment' } },
+  trigger = { { 'Special' }, { 'DiagnosticWarn' } },
+  off = { { 'Comment' } },
 }
 -- Without colors to blend, the chips link to groups every colorscheme styles.
 local kind_links = {
@@ -104,17 +167,78 @@ function M.kind_hl(kind)
   return name, name .. 'Text'
 end
 
--- The chips' colors come from the diagnostic colors every colorscheme sets.
-local chip_sources = { CinchNow = 'DiagnosticOk', CinchLater = 'DiagnosticInfo', CinchTrigger = 'DiagnosticWarn' }
+-- The chips' colors, by role.
+local chip_sources = { CinchNow = 'ok', CinchLater = 'info', CinchTrigger = 'warn' }
 
---- Set the window's highlight groups: links for most, and for the chips and the
---- progress bar colors worked out from the colorscheme, as the mockup tinted them.
+--- The color of the first source with a hue, not in `taken`; else the first with a hue;
+--- else the first that is set. Also whether it is an underline's, not meant as text.
+---@param sources { [1]: string, [2]?: 'fg'|'sp' }[]
+---@param taken? table<integer, true>
+---@return integer?, boolean?
+local function pick(sources, taken)
+  local first, hued
+  for _, s in ipairs(sources) do
+    local c = color(s[1], s[2] or 'fg')
+    if c then
+      local found = { c, s[2] == 'sp' }
+      first = first or found
+      if chromatic(c) then
+        if not (taken and taken[c]) then
+          return c, s[2] == 'sp'
+        end
+        hued = hued or found
+      end
+    end
+  end
+  local out = hued or first or {}
+  return out[1], out[2]
+end
+
+--- `fg`, lightened toward `text` until it reads on `base`: 4.5:1, as WCAG asks of text.
+---@param fg integer
+---@param base integer
+---@param text integer
+---@return integer
+local function readable(fg, base, text)
+  local out = fg
+  for a = 0.9, 0, -0.1 do
+    if contrast(out, base) >= 4.5 then
+      break
+    end
+    out = blend(fg, text, a)
+  end
+  return out
+end
+
+---@type table<string, vim.api.keyset.get_hl_info> what define_colors() last set each group to
+local ours = {}
+
+--- Set a group, unless you set it yourself: it is still the link M.highlights gives it,
+--- empty, or what cinch set it to last.
+---@param group string
+---@param attrs vim.api.keyset.highlight
+local function own(group, attrs)
+  local now = vim.api.nvim_get_hl(0, { name = group })
+  local mine = vim.tbl_isempty(now) or now.link == M.highlights[group] or vim.deep_equal(now, ours[group])
+  if mine then
+    vim.api.nvim_set_hl(0, group, attrs)
+    ours[group] = vim.api.nvim_get_hl(0, { name = group })
+  end
+end
+
+--- Set the window's highlight groups: links for most, and for the states, the chips and
+--- the progress bar colors worked out from the colorscheme, as the mockup tinted them.
 --- Runs on every open and every ColorScheme, so a new colorscheme carries over.
 ---@param rounded boolean
 function M.define_colors(rounded)
   local set = vim.api.nvim_set_hl
   set(0, 'CinchBackdropDefault', { bg = 0 })
   for group, link in pairs(M.highlights) do
+    -- Back to its link, from a color of an earlier colorscheme, then colored below.
+    if ours[group] and vim.deep_equal(vim.api.nvim_get_hl(0, { name = group }), ours[group]) then
+      set(0, group, { link = link })
+      ours[group] = nil
+    end
     set(0, group, { link = link, default = true })
   end
   local base = color('NormalFloat', 'bg') or color('Normal', 'bg')
@@ -125,8 +249,8 @@ function M.define_colors(rounded)
   set(0, 'CinchOffName', { fg = color('Comment', 'fg'), ctermfg = color('Comment', 'ctermfg') })
   -- The trigger that loaded a plugin, among the others it waits on.
   set(0, 'CinchFired', { fg = color('Normal', 'fg'), bold = true, underline = true })
-  -- The name in the top border and the keys in the bottom one: filled, so they stand out.
-  local title = color('FloatTitle', 'fg') or color('Title', 'fg')
+  -- The name in the header and the keys in the footer: filled, so they stand out.
+  local title = pick(roles.title)
   if vim.o.termguicolors and title and base then
     set(0, 'CinchBanner', { fg = base, bg = title, bold = true })
     set(0, 'CinchBannerCap', { fg = title })
@@ -139,37 +263,52 @@ function M.define_colors(rounded)
       local chip, text = M.kind_hl(kind)
       set(0, chip, { link = link })
       set(0, chip .. 'Cap', { link = link })
-      set(0, text, { link = kind_sources[kind][1] })
+      set(0, text, { link = kind_sources[kind][1][1] })
     end
     M.rounded = false
     return
   end
   ---@cast base integer
-  for kind, sources in pairs(kind_sources) do
-    local fg
-    for _, source in ipairs(sources) do
-      fg = fg or color(source, 'fg')
+  local text = color('NormalFloat', 'fg') or color('Normal', 'fg') or 0xffffff
+  --- A role's color. The colorscheme's text colors are used as they are; an underline's
+  --- is lightened until it reads on the window.
+  ---@param sources { [1]: string, [2]?: 'fg'|'sp' }[]
+  ---@param taken? table<integer, true>
+  ---@return integer? color, integer? picked
+  local function tone(sources, taken)
+    local c, sp = pick(sources, taken)
+    return c and (sp and readable(c, base, text) or c), c
+  end
+  for group, role in pairs(role_of) do
+    local fg = tone(roles[role])
+    if fg then
+      own(group, { fg = fg })
     end
-    fg = fg or color('Normal', 'fg') or 0xffffff
-    local chip, text = M.kind_hl(kind)
+  end
+  local taken = {}
+  for _, kind in ipairs(kinds) do
+    local fg, raw = tone(kind_sources[kind], taken)
+    fg = fg or text
+    taken[raw or fg] = true
+    local chip, text_hl = M.kind_hl(kind)
     local bg = blend(fg, base, 0.2)
     set(0, chip, { fg = fg, bg = bg })
     set(0, chip .. 'Cap', { fg = bg })
-    set(0, text, { fg = fg })
+    set(0, text_hl, { fg = fg })
   end
-  for group, source in pairs(chip_sources) do
-    local fg = color(source, 'fg') or color('Normal', 'fg') or 0xffffff
+  for group, role in pairs(chip_sources) do
+    local fg = tone(roles[role]) or text
     local bg = blend(fg, base, 0.2)
-    set(0, group, { fg = fg, bg = bg })
+    own(group, { fg = fg, bg = bg })
     -- fg only: the end takes the row's own background, the cursor line's included.
     set(0, group .. 'Cap', { fg = bg })
   end
   -- A link reads as one: underlined, in the color of a directory name.
   set(0, 'CinchLink', { fg = color('Directory', 'fg') or color('Underlined', 'fg'), underline = true })
-  -- Every bar, install progress and load times: a thin line in the green of an
-  -- installed plugin's ✓, on a faint track of the same green.
-  local fill = color('DiagnosticOk', 'fg') or color('String', 'fg') or 0x9ece6a
-  set(0, 'CinchPillFill', { fg = fill })
+  -- Every bar, install progress and load times: a thin line in the color of a loaded
+  -- plugin, on a faint track of the same color.
+  local fill = tone(roles.ok) or 0x9ece6a
+  own('CinchPillFill', { fg = fill })
   set(0, 'CinchPillTrack', { fg = blend(fill, base, 0.25) })
   M.rounded = rounded
 end

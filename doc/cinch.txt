@@ -544,9 +544,10 @@ that no spec names is also listed, with `not in specs`, and `d` deletes it.
 A plugin that is working, failed or off stays in that section, with `↑n` on
 its row.
 
-The rest of the list has no titles: the header counts each state. Plugins
-come in the order working, failed, loaded, waiting and disabled, so what is
-happening now is on top. A plugin being checked,
+The rest of the list keeps a title only for "working", the plugins
+installing, building or loading, on top. The header counts the other states,
+so failed, loaded, waiting and disabled follow in that order with no titles.
+A plugin being checked,
 updated or deleted stays in its section and says so on its row; an install or
 a build moves it to working. A check never opens the window; an install and
 `:Cinch update!` do.
@@ -569,6 +570,12 @@ url. Plugins still on disk that no spec names any more sit last, under "not
 in your specs", where `d` deletes them. In a window narrower than 130 columns,
 where the list could not fit a whole row beside the pane, the pane sits
 under the list instead.
+
+The window's colors come from your colorscheme: the diagnostic colors where
+it gives them a hue, otherwise the hues it keeps elsewhere, such as the color
+of a diagnostic's underline, `Title`, or its syntax. A colorscheme that keeps
+its diagnostics gray, like Ashen, still colors the window. A `Cinch*`
+highlight group you set yourself is left as you set it.
 
 In the Plugins view each way of loading has a chip of its own color: `now`,
 `later`, and every trigger kind. The value that fired is bold and underlined.

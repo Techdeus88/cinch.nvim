@@ -16,9 +16,10 @@ end
 
 -- Sections, in the order they are shown: what is happening now first, so it is in
 -- view while it changes, then what went wrong. section_of() puts a plugin in one,
--- so a loaded plugin that is updating is "working".
+-- so a loaded plugin that is updating is "working". Only `titled` ones get a title in the
+-- list: the header counts the rest.
 M.sections = {
-  { key = 'working', title = 'working', hl = 'CinchActive' },
+  { key = 'working', title = 'working', hl = 'CinchActive', titled = true },
   { key = 'failed', title = 'failed', hl = 'CinchFailed' },
   { key = 'loaded', title = 'loaded', hl = 'CinchLoaded' },
   { key = 'waiting', title = 'waiting', hl = 'CinchWaiting' },
