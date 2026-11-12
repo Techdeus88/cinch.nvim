@@ -874,9 +874,13 @@ function M.lines()
   return lines
 end
 
--- `:Cinch stats`, found by command.lua.
+-- `:Cinch stats`, found by command.lua: the Stats view, or these lines without the ui feature.
 M.command = {
   run = function()
+    local ui = package.loaded['cinch.features.ui']
+    if ui then
+      return ui.open('stats')
+    end
     vim.api.nvim_echo({ { table.concat(M.lines(), '\n') } }, false, {})
   end,
 }

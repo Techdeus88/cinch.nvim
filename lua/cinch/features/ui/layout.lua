@@ -17,6 +17,7 @@ local M = {}
 ---@field even boolean the list and the pane share the width evenly, after `=`
 ---@field split boolean the pane is on show, beside or under the list
 ---@field op? cinch.ui.Op an install, check, update or delete under way, or just ended
+---@field notice? { text: string, level: integer } a message for the header, when no operation has it
 
 --- The border style: yours, else winborder, else rounded.
 ---@param opts cinch.ui.Opts
@@ -97,7 +98,8 @@ end
 
 --- The header's two lines, `width` cells. The first: the plugin count and startup time
 --- on the left, the name on a banner in the middle, the tabs on the right. The second:
---- the count in each state on the left, an install, check, update or delete in the middle.
+--- the count in each state on the left, an install, check, update or delete in the middle,
+--- or else cinch's latest message.
 ---@param width integer
 ---@param s cinch.ui.Shape
 ---@return { [1]: string, [2]?: string }[][]
@@ -123,6 +125,15 @@ function M.header(width, s)
   -- Short of room, the labels go first; then the counts make way for what is under
   -- way, which soon goes.
   local line = s.op and require('cinch.features.ui.ops').line
+  if not line and s.notice then
+    local levels = vim.log.levels
+    local hl = s.notice.level >= levels.ERROR and 'CinchFailed'
+      or s.notice.level >= levels.WARN and 'CinchWarn'
+      or 'CinchTitle'
+    line = function(_, room)
+      return canvas.clip({ { s.notice.text, hl } }, room), canvas.cells(s.notice.text) > room
+    end
+  end
   local states, op
   for _, try in ipairs({ counts(true), counts(false), {} }) do
     local room = math.max(0, width - cells(try) - 2)

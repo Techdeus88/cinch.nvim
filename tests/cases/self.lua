@@ -66,9 +66,13 @@ H.after_startup(function()
   H.eq(require('cinch.features.stats').summary().plugins.total, 1, 'and not counted')
   H.eq(require('cinch.state').yours()[1].name, 'alpha.nvim', 'only your plugins')
 
+  local u = require('cinch.features.updates')
+  -- vim.pack's warning at startup opened the window, which checks in the background.
+  H.wait(function()
+    return not u.checking
+  end, 'the check on open')
   local before = pack.rev(p)
   H.commit(origin, 'feat: newer cinch')
-  local u = require('cinch.features.updates')
   u.check()
   H.wait(function()
     return not u.checking

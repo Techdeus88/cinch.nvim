@@ -197,7 +197,7 @@ local function finish(p, start, err, output)
   if not err then
     os.remove(marker(p))
   else
-    events.report(('build of `%s` failed: %s'):format(p.name, err), vim.log.levels.ERROR)
+    events.report(('build of `%s` failed: %s'):format(p.name, err), vim.log.levels.ERROR, p.name)
   end
   if events.has('Build') then
     local ms = (uv.hrtime() - start) / 1e6

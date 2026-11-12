@@ -45,8 +45,10 @@ M.names = {
   Updated = true, -- { names, updated, failed, total, ms, restart }   and ended
   Deleting = true, -- { names }                         vim.pack.del starts
   Deleted = true, -- { names, deleted, failed, ms }      and ended
-  Progress = true, -- { title, done?, total?, name?, status, percent? }   vim.pack's progress, or a check's
-  Report = true, -- { msg, level }                      cinch has something to tell the user
+  Progress = true, -- { title, done?, total?, name?, status, percent?, build? }
+  --                                                    vim.pack's progress, a check's or a build's
+  Report = true, -- { msg, level, plugin?, source? }    cinch has something to tell the user; plugin: the name
+  --                                                    it is about. A subscriber that shows it sets handled = true
   Ask = true, -- { verb, names, done }                  a yes or no about plugins; set handled = true and
   --                                                    call done(yes) to ask it your own way
 }
@@ -151,11 +153,12 @@ end
 --- to Report; with no subscriber it falls back to vim.notify.
 ---@param msg string
 ---@param level? integer vim.log.levels, default INFO
-function M.report(msg, level)
+---@param plugin? string the plugin it is about
+function M.report(msg, level, plugin)
   level = level or vim.log.levels.INFO
   local list = subs.Report
   if list and #list > 0 then
-    M.emit('Report', { msg = msg, level = level })
+    M.emit('Report', { msg = msg, level = level, plugin = plugin })
   else
     vim.notify('cinch: ' .. msg, level)
   end

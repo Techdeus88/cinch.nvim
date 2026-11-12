@@ -4,6 +4,9 @@
 -- Plugins view is two panes, 70/30 or 50/50 with `=`: the list, which has the cursor, and
 -- the detail pane, which follows it. Stats, Profile and Log use the whole width. At startup
 -- this file only declares `:Cinch open`; drawing code and subscriptions wait for the first open.
+-- Every message cinch has shows here, never on the command line: one about a plugin's build
+-- on its row, the rest in the middle of the header's second line. A warning or an error
+-- opens the window; anything else waits in the header for the next open, and in the Log.
 
 local events = require('cinch.events')
 local state = require('cinch.state')
@@ -59,6 +62,15 @@ local ui = {
 }
 
 local ns = api.nvim_create_namespace('cinch_ui')
+
+--- A note on a plugin's row: how its last build went. A `sticky` one, a failure, stays
+--- until the next build; the rest go after a moment.
+---@type table<string, { text: string, hl: string, sticky?: boolean }>
+M.notes = {}
+
+-- How long a message stays in the header once on screen, in ms, by whether it is a
+-- warning or an error.
+local notice_ms = { [false] = 4000, [true] = 10000 }
 
 --- One of the window's files, loaded on first use: canvas, plugins, layout, triggers, dashboard, profile, keys.
 ---@param name string
@@ -127,6 +139,7 @@ local function shape()
     views = M.views,
     help = ui.help,
     op = ui.ctx.op,
+    notice = ui.ctx.notice,
   }
 end
 
@@ -219,6 +232,18 @@ end
 local function render()
   if not M.is_open() then
     return
+  end
+  -- A message's moment starts when it is first on screen, so one that waited for
+  -- the window to open still gets it.
+  local notice = ui.ctx.notice
+  if notice and not notice.shown then
+    notice.shown = true
+    vim.defer_fn(function()
+      if ui.ctx.notice == notice then
+        ui.ctx.notice = nil
+        render()
+      end
+    end, notice_ms[notice.level >= vim.log.levels.WARN])
   end
   local s = shape()
   local layout = part('layout')
@@ -729,9 +754,95 @@ local function on_op(fn, kind)
   end
 end
 
+--- The first line of a message, without Lua's `file.lua:12:` prefixes.
+---@param msg string
+---@return string
+local function first_line(msg)
+  for _, line in ipairs(vim.split(msg, '\n')) do
+    line = vim.trim((line:gsub('%S+%.lua:%d+: ', '')))
+    if line ~= '' and line ~= 'vim.pack:' then
+      return line
+    end
+  end
+  return ''
+end
+
+-- A warning or an error came while Neovim started: the window opens once it is up.
+local open_after_start = false
+
+--- Show a Report: on its plugin's row when the Plugins view has one for it, else in
+--- the header. A warning or an error opens the window.
+---@param d { msg: string, level: integer, plugin?: string }
+local function on_report(d)
+  d.handled = true
+  local op = ui.ctx.op
+  -- An operation's ending already says it.
+  if op and op.message == d.msg then
+    return
+  end
+  local on_row = d.plugin and state.plugins[d.plugin] and ui.view == 'plugins' and not ui.help
+  if not on_row then
+    ui.ctx.notice = { text = first_line(d.msg), level = d.level }
+  end
+  if d.level < vim.log.levels.WARN or M.is_open() then
+    return redraw()
+  end
+  if vim.v.vim_did_enter == 0 then
+    open_after_start = true
+  else
+    vim.schedule(function()
+      if not M.is_open() then
+        M.open('plugins')
+      end
+    end)
+  end
+end
+
+---@param p cinch.Plugin
+---@param note? { text: string, hl: string, sticky?: boolean }
+local function set_note(p, note)
+  M.notes[p.name] = note
+  if note and not note.sticky then
+    vim.defer_fn(function()
+      if M.notes[p.name] == note then
+        M.notes[p.name] = nil
+        redraw()
+      end
+    end, notice_ms[false])
+  end
+end
+
 ---@param opts? cinch.ui.Opts
 function M.setup(opts)
   M.opts = vim.tbl_extend('force', M.opts, opts or {})
+  -- Before the message feature's, so it only logs what shows here.
+  events.on('Report', on_report, { priority = 10 })
+  -- A build says how it went on its row: a failure until the next build.
+  events.on('Build', function(d)
+    local note
+    if not d.ok then
+      local why = first_line(tostring(d.err or ''))
+      note = { text = why == '' and 'build failed' or 'build failed: ' .. why, hl = 'CinchFailed', sticky = true }
+    elseif M.is_open() then
+      note = { text = 'built in ' .. require('cinch.ops').duration(d.ms), hl = 'CinchLoaded' }
+    end
+    set_note(d.plugin, note)
+  end, { priority = 10 })
+  events.on('Activity', function(d)
+    if d.to == 'building' then
+      M.notes[d.plugin.name] = nil
+    end
+  end)
+  if vim.v.vim_did_enter == 0 then
+    api.nvim_create_autocmd('VimEnter', {
+      once = true,
+      callback = vim.schedule_wrap(function()
+        if open_after_start and not M.is_open() then
+          M.open('plugins')
+        end
+      end),
+    })
+  end
   -- These fire only when something runs, so listening from startup costs nothing.
   for kind, names in pairs({
     install = { 'Installing', 'Installed' },
@@ -742,7 +853,15 @@ function M.setup(opts)
     events.on(names[1], on_op('start', kind))
     events.on(names[2], on_op('finish', kind))
   end
-  events.on('Progress', on_op('progress'))
+  local progress = on_op('progress')
+  events.on('Progress', function(d)
+    if d.build then
+      -- Its row shows it.
+      d.handled = true
+    else
+      progress(d)
+    end
+  end)
   -- After startup there is a window to ask in.
   events.on('Ask', function(d)
     if not d.handled and vim.v.vim_did_enter == 1 then

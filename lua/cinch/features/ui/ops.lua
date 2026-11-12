@@ -129,6 +129,9 @@ end
 ---@param w cinch.ui.OpHost
 ---@param d { title: string, name?: string, done?: integer, handled?: boolean }
 function M.progress(w, d)
+  -- The window shows it, and the command line never does once Neovim is up; while it
+  -- starts, the message feature holds it for then.
+  d.handled = w.is_open() or vim.v.vim_did_enter == 1
   local op = w.ui.ctx.op
   local kind, counts
   for _, t in ipairs(titles) do
@@ -150,8 +153,6 @@ function M.progress(w, d)
   elseif counts and d.done then
     op.done = math.min(d.done, op.total)
   end
-  -- The window shows it, so the command line does not.
-  d.handled = w.is_open()
   w.redraw()
 end
 

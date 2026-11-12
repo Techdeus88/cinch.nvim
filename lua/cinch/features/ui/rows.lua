@@ -178,6 +178,8 @@ end
 ---@return string? text, string? group
 local function message(p)
   local sec = M.section_of(p)
+  local ui = package.loaded['cinch.features.ui']
+  local note = ui and ui.notes[p.name]
   if sec == 'failed' then
     return vim.split(p.err or 'failed', '\n')[1], 'CinchFailed'
   elseif sec == 'working' then
@@ -189,6 +191,8 @@ local function message(p)
     return (p.activity or 'loading') .. '…', 'CinchActive'
   elseif p.activity then
     return p.activity .. '…', 'CinchActive'
+  elseif note then
+    return note.text, note.hl
   elseif sec == 'disabled' then
     return M.off_reason(p), 'CinchMuted'
   elseif p.deleted then

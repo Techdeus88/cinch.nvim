@@ -3,6 +3,8 @@
 -- while cinch is calling it: its progress becomes cinch's own progress message,
 -- updated in place, and its notices and git's warnings go to the log. Builds get
 -- a progress message each. Everything is kept in M.log for the UI to show.
+-- A Report or a Progress that a subscriber shows itself, like the ui feature's
+-- window, sets `handled` and is only logged here.
 
 local events = require('cinch.events')
 
@@ -196,10 +198,12 @@ local function on_notify(msg, level, o)
     return notify(msg, level, o)
   end
   local text = msg:gsub('^vim%.pack: ', '')
-  record(level or levels.INFO, text, source)
-  -- Notices are logged; warnings and errors are shown too.
-  if (level or levels.INFO) >= levels.WARN then
-    show(level or levels.INFO, text)
+  level = level or levels.INFO
+  -- Notices are logged; warnings and errors are reported, to be shown too.
+  if level >= levels.WARN then
+    events.emit('Report', { msg = text, level = level, source = source })
+  else
+    record(level, text, source)
   end
 end
 
@@ -363,11 +367,14 @@ function M.setup(opts)
     vim.api.nvim_create_autocmd('VimEnter', { once = true, callback = vim.schedule_wrap(release_held) })
   end
   events.define('Message') -- { time, level, msg, source, plugin? }: something was logged
-  events.define('Progress') -- { title, done?, total?, name?, status, percent? }: vim.pack's progress
+  -- { title, done?, total?, name?, status, percent?, build? }: vim.pack's or a build's progress
+  events.define('Progress')
 
   events.on('Report', function(d)
-    record(d.level, d.msg, 'cinch')
-    show(d.level, d.msg)
+    record(d.level, d.msg, d.source or 'cinch', d.plugin)
+    if not d.handled then
+      show(d.level, d.msg)
+    end
   end)
 
   events.on('PackOpPre', capture)
@@ -377,16 +384,27 @@ function M.setup(opts)
     vim.schedule(release)
   end)
 
+  --- A build's progress, unless a Progress subscriber shows builds itself.
+  ---@param name string
+  ---@param msg string
+  ---@param status 'running'|'success'|'failed'
+  local function build_progress(name, msg, status)
+    local ev = events.emit('Progress', { title = msg, name = name, status = status, build = true })
+    if not ev.handled then
+      progress(name, msg, status)
+    end
+  end
+
   events.on('Activity', function(d)
     if d.to == 'building' then
-      progress(d.plugin.name, 'building ' .. d.plugin.name, 'running')
+      build_progress(d.plugin.name, 'building ' .. d.plugin.name, 'running')
     end
   end)
 
   events.on('Build', function(d)
     local name = d.plugin.name
     local msg = d.ok and ('built %s in %s'):format(name, ms(d.ms)) or ('build of %s failed'):format(name)
-    progress(name, msg, d.ok and 'success' or 'failed')
+    build_progress(name, msg, d.ok and 'success' or 'failed')
     record(
       d.ok and levels.INFO or levels.ERROR,
       d.output and d.output ~= '' and (msg .. '\n' .. d.output) or msg,

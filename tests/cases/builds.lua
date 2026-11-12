@@ -10,6 +10,17 @@ end
 -- The function build hides the plugin from vim.loader's cache too.
 vim.loader.enable()
 
+-- Nothing about a build reaches the command line: its row shows it.
+local echoed = {}
+local echo = vim.api.nvim_echo
+---@diagnostic disable-next-line: duplicate-set-field
+vim.api.nvim_echo = function(chunks, history, opts)
+  for _, c in ipairs(chunks) do
+    echoed[#echoed + 1] = c[1]
+  end
+  return echo(chunks, history, opts)
+end
+
 local built = {}
 events.on('Build', function(d)
   built[#built + 1] = d.plugin.name .. (d.ok and '' or ' failed')
@@ -130,4 +141,32 @@ H.after_startup(function()
   end, 'gamma build')
   H.eq(H.noted('build of `gamma` failed'), true, 'a failed build is reported')
   H.eq(vim.uv.fs_stat(gamma.path .. '/.git/cinch-build') ~= nil, true, 'and stays marked')
+
+  local ui = require('cinch.features.ui')
+  H.wait(ui.is_open, 'the failed build to open the window')
+  local function row_of(name)
+    return vim.iter(plugins.list(120, ctx).lines):find(function(l) ---@param l string
+      return l:find(' ' .. vim.pesc(name) .. ' ') ~= nil
+    end) or ''
+  end
+  H.eq(row_of('gamma'):find('build failed: exit 3', 1, true) ~= nil, true, 'its row says the build failed')
+
+  require('cinch').build({ 'alpha.nvim' })
+  H.wait(function()
+    return row_of('alpha.nvim'):find('built in %d') ~= nil
+  end, 'the row to say how long the build took')
+  H.eq(row_of('gamma'):find('build failed', 1, true) ~= nil, true, 'a failure stays on its row')
+  H.wait(function()
+    return row_of('alpha.nvim'):find('built in', 1, true) == nil
+  end, 'a build that worked to leave the row', 6000)
+
+  local said = table.concat(echoed, '\n')
+  H.eq({ said:find('build', 1, true), said:find('built', 1, true) }, {}, 'no build reached the command line')
+
+  ui.close()
+  events.report('a note for later')
+  vim.wait(50)
+  H.eq({ ui.is_open(), said == table.concat(echoed, '\n') }, { false, true }, 'information waits, silently')
+  ui.open()
+  H.eq(H.header()[2]:find('a note for later', 1, true) ~= nil, true, 'in the header of the next open')
 end)

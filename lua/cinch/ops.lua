@@ -3,11 +3,13 @@
 
 local M = {}
 
+--- `1.2s`, or `350ms` under a second.
 ---@param ms number
 ---@return string
 local function duration(ms)
   return ms >= 1000 and ('%.1fs'):format(ms / 1000) or ('%dms'):format(ms)
 end
+M.duration = duration
 
 ---@param n integer
 ---@param word string
