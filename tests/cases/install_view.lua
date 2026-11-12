@@ -69,7 +69,8 @@ H.after_startup(function()
   H.eq(done:find('could not install', 1, true) ~= nil, true, 'and which one failed')
 
   H.wait(function()
-    return table.concat(list_lines(), '\n'):find('▾ loaded', 1, true) ~= nil
+    local text = table.concat(list_lines(), '\n')
+    return text:find('▾ installing', 1, true) == nil and text:find(' alpha%.nvim ') ~= nil
   end, 'the Plugins view')
   H.eq(H.header()[2]:find('Install', 1, true), nil, 'the same window, now the Plugins view')
 

@@ -39,6 +39,16 @@ H.after_startup(function()
   vim.cmd('Cinch')
   idle()
   vim.wait(1300)
+  --- The plugin rows, in order.
+  local function names()
+    local out = {}
+    for _, l in ipairs(lines()) do
+      out[#out + 1] = l:match('^ %S+ ([%w._-]+) ')
+    end
+    return out
+  end
+  local before = names()
+  H.eq(#before, 3, 'a row for each plugin, with no titles between them')
   H.commit(alpha_dir, 'feat: one')
   vim.fn.rename(gamma_dir, gamma_dir .. '-gone')
   u.check(nil, { notify = true })
@@ -46,8 +56,7 @@ H.after_startup(function()
     return text():find('checking…', 1, true) ~= nil
   end, 'rows to say they are checking')
   H.eq(H.header()[2]:find(' Checking plugins %(%d/3%)') ~= nil, true, 'the header: ' .. H.header()[2])
-  H.eq(text():find('▾ working', 1, true), nil, 'rows stay in their section')
-  H.eq(text():find('▾ loaded', 1, true) ~= nil, true, 'loaded is still there')
+  H.eq(names(), before, 'rows stay where they were')
 
   idle()
   vim.wait(50)

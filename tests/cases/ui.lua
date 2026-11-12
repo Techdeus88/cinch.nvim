@@ -88,36 +88,64 @@ H.after_startup(function()
     'the counts on the left of the header, the tabs on the right'
   )
   H.eq(vim.fn.strdisplaywidth(title), head_cfg.width, 'all of it in view, in an 80-column editor')
-  local by = { loaded = 0, waiting = 0, disabled = 0 }
+  local layout_ = require('cinch.features.ui.layout')
+  --- The header's second line, `width` cells, with `op` under way.
+  local function row2(width, op)
+    local chunks = layout_.header(width, { views = ui.views, view = 'plugins', op = op })[2]
+    return table.concat(vim.tbl_map(function(c)
+      return c[1]
+    end, chunks))
+  end
+  local by = { loaded = 0, waiting = 0, disabled = 0, failed = 0 }
   for _, p in ipairs(require('cinch.state').yours()) do
     local k = (p.state == 'pending' or p.state == 'registered') and 'waiting' or p.state
     by[k] = (by[k] or 0) + 1
   end
-  local want, absent = {}, true
-  for _, c in ipairs({ { '●', by.loaded }, { '○', by.waiting }, { '✗', by.failed or 0 }, { '✕', by.disabled } }) do
+  local kinds = { { '●', by.loaded, 'loaded' }, { '○', by.waiting, 'waiting' } }
+  vim.list_extend(kinds, { { '✗', by.failed, 'failed' }, { '✕', by.disabled, 'disabled' } })
+  local labeled, bare = {}, {}
+  for _, c in ipairs(kinds) do
     if c[2] > 0 then
-      want[#want + 1] = ('%s %d'):format(c[1], c[2])
+      labeled[#labeled + 1] = ('%s %d %s'):format(c[1], c[2], c[3])
+      bare[#bare + 1] = ('%s %d'):format(c[1], c[2])
     end
   end
-  H.eq(#want < 4, true, 'some state has none, so this checks that it is left out')
-  local states = lines(w.header)[2]
-  for _, c in ipairs({ { '●', by.loaded }, { '○', by.waiting }, { '✗', by.failed or 0 }, { '✕', by.disabled } }) do
-    absent = absent and (c[2] > 0 or not states:find(c[1], 1, true))
+  H.eq(#labeled < 4, true, 'some state has none, so this checks that it is left out')
+  local wide = row2(148)
+  local absent = true
+  for _, c in ipairs(kinds) do
+    absent = absent and (c[2] > 0 or not wide:find(c[1], 1, true))
   end
+  labeled, bare = ' ' .. table.concat(labeled, '  ') .. ' ', ' ' .. table.concat(bare, '  ') .. ' '
   H.eq(
-    vim.startswith(states, ' ' .. table.concat(want, '  ') .. '  ') and absent,
+    vim.startswith(wide, labeled) and absent,
     true,
-    'the second line: the count in each state, none left out: ' .. states
+    'the second line: the count in each state with its label, none left out: ' .. wide
   )
-  H.eq(states:find('Checking plugins', 1, true) ~= nil, true, 'then the check that opening started')
+  H.eq(lines(w.header)[2]:find('Checking plugins', 1, true) ~= nil, true, 'then the check that opening started')
+
+  -- Short of room for what is under way, the labels go, then the counts.
+  local check = { kind = 'check', total = 6, done = 0, status = {} }
+  local need = vim.fn.strdisplaywidth('Checking plugins (0/6) 0% ') + 6 + 2
+  local function tier(width)
+    local r = row2(width, check)
+    return {
+      vim.startswith(r, labeled),
+      vim.startswith(r, bare),
+      r:find('●', 1, true) ~= nil,
+      r:find('Checking') ~= nil,
+    }
+  end
+  local lw, bw = vim.fn.strdisplaywidth(labeled), vim.fn.strdisplaywidth(bare)
+  H.eq(tier(lw + need), { true, false, true, true }, 'room for all of it')
+  H.eq(tier(lw + need - 1), { false, true, true, true }, 'a cell short: the labels go')
+  H.eq(tier(bw + need - 1), { false, false, false, true }, 'shorter still: the counts make way')
   local one = require('cinch.state').yours()[1]
   local was = one.state
   one.state = 'failed'
-  local row2 = table.concat(vim.tbl_map(function(c)
-    return c[1]
-  end, require('cinch.features.ui.layout').header(148, { views = ui.views, view = 'plugins' })[2]))
+  local failed_row = row2(148)
   one.state = was
-  H.eq(row2:find(' ✗ 1 ', 1, true) ~= nil, true, 'a failed plugin is counted: ' .. row2)
+  H.eq(failed_row:find(' ✗ 1 failed ', 1, true) ~= nil, true, 'a failed plugin is counted: ' .. failed_row)
 
   -- In a wide header the name sits in the middle, on a banner, and the keys sit on a
   -- banner in the middle of the footer.
@@ -218,12 +246,16 @@ H.after_startup(function()
   local state = require('cinch.state')
   state.activity(H.plugin('beta.nvim'), 'building')
   vim.wait(50)
-  local working = line_of(w.list, '▾ working')
-  H.eq(working, line_of(w.list, '^ ▾ '), 'working comes first')
-  H.eq(lines(w.list)[working + 1]:find('beta%.nvim .*building…') ~= nil, true, 'with what it is doing')
-  go(w.list, '▾ loaded')
+  local working = line_of(w.list, 'beta%.nvim .*building…')
+  H.eq(working ~= nil and working < line_of(w.list, ' alpha%.nvim '), true, 'working comes first, saying what it does')
+  H.eq(line_of(w.list, '▾ working'), nil, 'with no title over it')
+  go(w.list, ' alpha%.nvim ')
   vim.wait(250)
-  H.eq(api.nvim_win_get_cursor(w.list)[1], line_of(w.list, '▾ loaded'), 'the spinner leaves the cursor on a title')
+  H.eq(
+    api.nvim_win_get_cursor(w.list)[1],
+    line_of(w.list, ' alpha%.nvim '),
+    'the spinner leaves the cursor where it is'
+  )
   state.activity(H.plugin('beta.nvim'), nil)
   vim.wait(50)
 
@@ -293,11 +325,11 @@ H.after_startup(function()
   vim.o.columns = cols
   vim.wait(20)
 
-  go(w.list, '▾ loaded')
+  go(w.list, '▾ Updates')
   H.press('<CR>')
-  H.eq(line_of(w.list, '▸ loaded') ~= nil and line_of(w.list, ' alpha%.nvim ') == nil, true, '<CR> folds a section')
+  H.eq(line_of(w.list, '▸ Updates') ~= nil and line_of(w.list, ' beta%.nvim ') == nil, true, '<CR> folds a section')
   H.press('<CR>')
-  H.eq(line_of(w.list, ' alpha%.nvim ') ~= nil, true, 'and opens it again')
+  H.eq(line_of(w.list, ' beta%.nvim ') ~= nil, true, 'and opens it again')
 
   -- cinch takes the text itself: no input prompt of Neovim's or a plugin's.
   ---@diagnostic disable-next-line: duplicate-set-field

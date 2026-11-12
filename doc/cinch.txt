@@ -525,12 +525,13 @@ click or `<C-w>`, comes back to the list, while a prompt or picker a plugin
 opens keeps focus. The header has two lines. The first holds the plugin
 count and startup time on the left, the name in the middle and the five views
 on the right: plugins, triggers, stats, profile and log. The second holds how
-many plugins are loaded (`●`), waiting (`○`), failed (`✗`) and disabled
-(`✕`) and how many updates are pending (`↑`), leaving out any that are 0. An install, a check, an
-update or a delete shows in the middle of that line, like
-`Installing plugins (18/48) - yanky.nvim 37%` with a bar, then a line that
-says how it ended, such as `Checked 61 plugins in 2.1s · 3 updates`, for a
-moment. When the counts leave too little room for it, they make way until it
+many plugins are in each state, with the light their rows show and its name,
+such as `● 18 loaded  ○ 39 waiting  ✗ 1 failed  ✕ 7 disabled  ↑ 2 updates`,
+leaving out any that are 0. An install, a check, an update or a delete shows
+in the middle of that line, like `Installing plugins (18/48) - yanky.nvim 37%`
+with a bar, then a line that says how it ended, such as
+`Checked 61 plugins in 2.1s · 3 updates`, for a moment. When room is short
+for it, the names of the states go first, then the counts make way until it
 goes. The footer holds the keys for the view you're in, centered.
 
 PLUGINS                                                 *cinch-window-plugins*
@@ -543,8 +544,9 @@ that no spec names is also listed, with `not in specs`, and `d` deletes it.
 A plugin that is working, failed or off stays in that section, with `↑n` on
 its row.
 
-The rest of the list groups plugins into working, failed, loaded, waiting
-and disabled, with what is happening now on top. A plugin being checked,
+The rest of the list has no titles: the header counts each state. Plugins
+come in the order working, failed, loaded, waiting and disabled, so what is
+happening now is on top. A plugin being checked,
 updated or deleted stays in its section and says so on its row; an install or
 a build moves it to working. A check never opens the window; an install and
 `:Cinch update!` do.

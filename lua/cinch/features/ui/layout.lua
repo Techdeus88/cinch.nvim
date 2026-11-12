@@ -64,10 +64,11 @@ local function spread(width, left, middle, right)
   return vim.list_extend(out, right)
 end
 
---- How many of your plugins are in each state, with the marks their rows show; a state
---- with none is left out.
+--- How many of your plugins are in each state, `● 18 loaded`, with the marks their rows
+--- show, or `● 18` without labels; a state with none is left out.
+---@param labels boolean
 ---@return { [1]: string, [2]?: string }[]
-local function counts()
+local function counts(labels)
   local by = {}
   for _, p in ipairs(state.yours()) do
     local k = (p.state == 'pending' or p.state == 'registered') and 'waiting' or p.state
@@ -77,15 +78,18 @@ local function counts()
   local marks = require('cinch.features.ui.rows').marks
   local out = {}
   for _, c in ipairs({
-    { by.loaded, marks.loaded, 'CinchLoaded' },
-    { by.waiting, marks.waiting, 'CinchWaiting' },
-    { by.failed, marks.failed, 'CinchFailed' },
-    { by.disabled, marks.disabled, 'CinchMuted' },
-    { updates and vim.tbl_count(updates.results), '↑', 'CinchUpdate' },
+    { by.loaded, marks.loaded, 'CinchLoaded', 'loaded' },
+    { by.waiting, marks.waiting, 'CinchWaiting', 'waiting' },
+    { by.failed, marks.failed, 'CinchFailed', 'failed' },
+    { by.disabled, marks.disabled, 'CinchMuted', 'disabled' },
+    { updates and vim.tbl_count(updates.results), '↑', 'CinchUpdate', 'updates' },
   }) do
     if (c[1] or 0) > 0 then
       out[#out + 1] = { ' ' .. c[2] .. ' ', c[3] }
-      out[#out + 1] = { c[1] .. ' ', 'CinchMuted' }
+      out[#out + 1] = { c[1] .. ' ' }
+      if labels then
+        out[#out + 1] = { c[4] .. ' ', 'CinchMuted' }
+      end
     end
   end
   return out
@@ -116,17 +120,22 @@ function M.header(width, s)
     name = {}
   end
 
-  local states, op = counts(), {}
-  if s.op then
-    -- Short of room, the counts make way for what is under way, which soon goes.
-    local line = require('cinch.features.ui.ops').line
-    local cut
-    op, cut = line(s.op, math.max(0, width - cells(states) - 2))
-    if cut then
-      states, op = {}, line(s.op, math.max(0, width - 2))
+  -- Short of room, the labels go first; then the counts make way for what is under
+  -- way, which soon goes.
+  local line = s.op and require('cinch.features.ui.ops').line
+  local states, op
+  for _, try in ipairs({ counts(true), counts(false), {} }) do
+    local room = math.max(0, width - cells(try) - 2)
+    local cut = false
+    if line then
+      op, cut = line(s.op, room)
+    end
+    states = try
+    if not cut and cells(try) <= width then
+      break
     end
   end
-  return { spread(width, left, name, tabs), spread(width, states, op, {}) }
+  return { spread(width, left, name, tabs), spread(width, states, op or {}, {}) }
 end
 
 --- The footer's line, `width` cells: the keys on a banner in the middle.

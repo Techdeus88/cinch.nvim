@@ -191,32 +191,23 @@ function M.list(width, ctx)
     return not ctx.filter or o.name:lower():find(ctx.filter:lower(), 1, true) ~= nil
   end, ctx.orphans or {})
   updates_section(c, updating, orphans, ctx)
+  -- One list in section order, with no title between them: the header counts each.
   for _, s in ipairs(M.sections) do
-    local list = by[s.key]
-    if list then
-      local open = not ctx.folded[s.key]
-      c:add({
-        { (open and ' ▾ ' or ' ▸ ') .. s.title, 'CinchSection' },
-        { ' ' .. #list, 'CinchMuted' },
-      }, { section = s.key })
-      if open then
-        for _, p in ipairs(list) do
-          local m, m_hl = mark(p, ctx.tick)
-          local msg, msg_hl = message(p)
-          if not asks(c, ctx, p.name, m, m_hl) then
-            add_row(c, p, {
-              mark = m,
-              mark_hl = m_hl,
-              ms = load_ms(p),
-              slowest = slowest,
-              needed_by = needed[p.name] or {},
-              up = pending(p),
-              msg = msg,
-              msg_hl = msg_hl,
-              marked = ctx.marked and ctx.marked[p.name],
-            })
-          end
-        end
+    for _, p in ipairs(by[s.key] or {}) do
+      local m, m_hl = mark(p, ctx.tick)
+      local msg, msg_hl = message(p)
+      if not asks(c, ctx, p.name, m, m_hl) then
+        add_row(c, p, {
+          mark = m,
+          mark_hl = m_hl,
+          ms = load_ms(p),
+          slowest = slowest,
+          needed_by = needed[p.name] or {},
+          up = pending(p),
+          msg = msg,
+          msg_hl = msg_hl,
+          marked = ctx.marked and ctx.marked[p.name],
+        })
       end
     end
   end
