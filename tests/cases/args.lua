@@ -6,7 +6,7 @@ local H = dofile(vim.env.CINCH_ROOT .. '/tests/helpers.lua')
 
 vim.filetype.add({ extension = { cnc = 'cnc' } })
 -- Installed during init.lua, so the trigger is armed when the file is read.
-require('cinch').setup({ confirm = false, defer = false, spec = { { { H.src('alpha.nvim'), ft = 'cnc' } } } })
+require('cinch').setup({ confirm = false, spec = { { { H.src('alpha.nvim'), ft = 'cnc' } } } })
 
 local at = {}
 vim.api.nvim_create_autocmd('FileType', {

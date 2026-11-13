@@ -29,6 +29,7 @@ local M = {}
 ---@field config? true|fun(p: cinch.Plugin, opts: table) replaces the default setup(opts) call
 ---@field after? fun(p: cinch.Plugin) after the plugin loaded and its config ran
 ---@field module? boolean false: require() of its modules does not load it
+---@field group? string|false the group whose load strategy it shares; false: none
 
 ---A vim.pack.Spec, with `[1]` in place of `src` and cinch fields at the top level if you like.
 ---@class cinch.Spec: vim.pack.Spec, cinch.Data
@@ -39,11 +40,24 @@ local M = {}
 ---@field branch? string becomes version
 ---@field lazy? boolean lazy.nvim's: false is load = 'now', true is load = 'trigger'
 
----@alias cinch.Origin { file: string, index?: integer }
+---`rel` is a spec file's path under its spec root, like `lsp/servers.lua`.
+---@alias cinch.Origin { file: string, index?: integer, rel?: string }
 
 ---@class cinch.Entry
 ---@field spec string|cinch.Spec
 ---@field origin cinch.Origin
+---@field group? string the group table that wraps it
+
+---A load strategy plugins share: `load` and any trigger. In setup() it can also say
+---who joins; in a spec file it is the table that wraps its specs, named by `group`.
+---@class cinch.Group
+---@field load? cinch.Load
+---@field event? string|string[]
+---@field ft? string|string[]
+---@field cmd? string|string[]
+---@field keys? string|(string|cinch.Key)[]
+---@field plugins? string[] setup() only: the names of the plugins in it
+---@field dir? string|true setup() only: a folder under a spec root whose specs are in it; true: its name
 
 local pack_fields = { src = true, name = true, version = true, data = true }
 
@@ -61,6 +75,7 @@ M.fields = {
   config = true,
   after = true,
   module = true,
+  group = true,
 }
 ---@type table<string, true>
 M.triggers = { event = true, ft = true, cmd = true, keys = true }
@@ -212,6 +227,130 @@ function M.normalize(s)
   end
 end
 
+-- Groups ---------------------------------------------------------------------
+
+--- Each group's load strategy: `load` and triggers. One name is one group, wherever
+--- it is defined: setup() first, then spec files in the order they are read, later
+--- fields winning.
+---@type table<string, table<string, any>>
+M.groups = {}
+---@type table<string, string> plugin name -> the group whose `plugins` names it
+local listed = {}
+---@type { dir: string, group: string }[] folders whose spec files are in a group
+local dirs = {}
+
+--- Define a group, or add to one: `fields` holds its `load` and triggers.
+---@param name string
+---@param fields table
+---@param origin cinch.Origin
+function M.define_group(name, fields, origin)
+  local group = M.groups[name] or {}
+  M.groups[name] = group
+  local unknown = {}
+  for k, v in pairs(fields) do
+    -- Not a wrapping table's specs, nor its name.
+    local field = type(k) == 'string' and k ~= 'group'
+    if field and k == 'load' and not loads[v] then
+      local msg = '%s: group `%s` has unknown load `%s`; it is ignored'
+      events.report(msg:format(origin.file, name, tostring(v)), vim.log.levels.WARN)
+    elseif field and (k == 'load' or M.triggers[k]) then
+      group[k] = v
+    elseif field then
+      unknown[#unknown + 1] = k
+    end
+  end
+  table.sort(unknown)
+  for _, k in ipairs(unknown) do
+    local msg = '%s: group `%s` has unknown field `%s`; it is ignored'
+    events.report(msg:format(origin.file, name, k), vim.log.levels.WARN)
+  end
+end
+
+--- The groups of setup(): each one's strategy, and who is in it by `plugins` or `dir`.
+---@param groups table<string, cinch.Group>
+---@param origin cinch.Origin
+function M.set_groups(groups, origin)
+  local names = vim.tbl_keys(groups)
+  table.sort(names)
+  for _, name in ipairs(names) do
+    local fields = shallow(groups[name])
+    for _, plugin in ipairs(fields.plugins or {}) do
+      if listed[plugin] and listed[plugin] ~= name then
+        local msg = '%s: `%s` is listed in groups `%s` and `%s`; using `%s`'
+        events.report(msg:format(origin.file, plugin, listed[plugin], name, listed[plugin]), vim.log.levels.WARN)
+      else
+        listed[plugin] = name
+      end
+    end
+    local dir = fields.dir == true and name or fields.dir
+    if type(dir) == 'string' then
+      dirs[#dirs + 1] = { dir = vim.trim(dir):gsub('^/+', ''):gsub('/+$', '') .. '/', group = name }
+    end
+    fields.plugins, fields.dir = nil, nil
+    M.define_group(name, fields, origin)
+  end
+end
+
+--- The group whose `dir` holds a spec file.
+---@param origin cinch.Origin
+---@return string?
+local function dir_group(origin)
+  for _, d in ipairs(origin.rel and dirs or {}) do
+    if vim.startswith(origin.rel, d.dir) then
+      return d.group
+    end
+  end
+end
+
+--- Put a plugin in the group that wraps its spec or holds its file: the first one stays.
+---@param p table
+---@param key 'group_wrap'|'group_dir'
+---@param group? string
+---@param origin cinch.Origin
+local function join(p, key, group, origin)
+  if p[key] and group and p[key] ~= group then
+    local msg = '%s: `%s` is already in group `%s`; `%s` is ignored'
+    events.report(msg:format(origin.file, p.name, p[key], group), vim.log.levels.WARN)
+  end
+  p[key] = p[key] or group
+end
+
+--- The group a plugin is in: the one its spec names, else the one that wraps it, lists
+--- it or holds its file.
+---@param p table
+---@param notes string[]
+---@return string?
+local function group_of(p, notes)
+  local own = p.data.group
+  if own == false then
+    return
+  elseif own ~= nil then
+    if M.groups[own] then
+      return own
+    end
+    notes[#notes + 1] = ('names group `%s`, which nothing defines; it is ignored'):format(tostring(own))
+  end
+  return p.group_wrap or listed[p.name] or p.group_dir
+end
+
+--- Give a plugin its group's load strategy, field by field: what its own spec sets
+--- stays. A spec with a `load` other than 'trigger' takes no triggers, which it would ignore.
+---@param p table
+---@param notes string[]
+---@return string? group when `load` came from it
+local function share(p, notes)
+  p.group = group_of(p, notes)
+  local own, from = p.data.load, nil
+  for k, v in pairs(p.group and M.groups[p.group] or {}) do
+    local wanted = k == 'load' or own == nil or own == 'trigger' or not loads[own]
+    if p.data[k] == nil and wanted then
+      p.data[k] = type(v) == 'table' and vim.deepcopy(v) or v
+      from = k == 'load' and p.group or from
+    end
+  end
+  return from
+end
+
 --- The plugin name exactly as vim.pack derives it.
 ---@param spec vim.pack.Spec
 ---@return string
@@ -236,8 +375,9 @@ end
 ---@param data cinch.Data
 ---@param dep_only boolean
 ---@param notes string[]
+---@param group? string the group `load` came from
 ---@return cinch.Load load, cinch.When when, boolean very_lazy
-local function resolve_load(data, dep_only, notes)
+local function resolve_load(data, dep_only, notes, group)
   -- lazy.nvim's VeryLazy is the moment after startup, which is what `later` is.
   -- Dropping it leaves no trigger, so the default below makes it `later`. Beside
   -- other events it is a deadline: whichever comes first loads the plugin.
@@ -267,7 +407,8 @@ local function resolve_load(data, dep_only, notes)
       load = 'later'
     end
   elseif load ~= 'trigger' and triggered then
-    notes[#notes + 1] = ('sets load = `%s`, so its triggers are ignored'):format(load)
+    notes[#notes + 1] = group and ('is in group `%s` with load = `%s`, so its triggers are ignored'):format(group, load)
+      or ('sets load = `%s`, so its triggers are ignored'):format(load)
   end
   local when = load
   if load == 'now_if_args' then
@@ -288,7 +429,7 @@ local function fill(p, spec, origin, dep_only, notes)
   p.src, p.version = spec.src, spec.version
   p.dep_only = dep_only or nil
   local very_lazy
-  p.load, p.when, very_lazy = resolve_load(p.data, dep_only, notes)
+  p.load, p.when, very_lazy = resolve_load(p.data, dep_only, notes, share(p, notes))
   p.very_lazy = very_lazy or nil
 end
 
@@ -464,15 +605,19 @@ local function make(e, dep_of, batch)
     end
   end
 
+  -- A spec nested in `deps` is in no group by where it is nested.
+  local wrap, dir = not dep_of and e.group or nil, not dep_of and dir_group(e.origin) or nil
   local p = state.plugins[name]
   if p then
+    join(p, 'group_wrap', wrap, e.origin)
+    join(p, 'group_dir', dir, e.origin)
     merge_into(p, spec, e, dep_of, deps, batch)
     return p
   end
 
   -- fill() and state.add() set the rest.
   ---@diagnostic disable-next-line: missing-fields
-  p = { name = name, deps = deps }
+  p = { name = name, deps = deps, group_wrap = wrap, group_dir = dir }
   fill(p, spec, e.origin, dep_of ~= nil, {})
   state.add(p --[[@as cinch.Plugin]])
   batch.added[#batch.added + 1] = p
@@ -514,8 +659,16 @@ local function is_single(value)
   return type(value) == 'string' or value.src ~= nil or (type(value[1]) == 'string' and value[2] == nil)
 end
 
+--- Whether a list of specs is a group: `group` names it, and its `load` and triggers
+--- are the group's. `{ 'owner/repo', group = 'git' }` is a spec that joins one.
+---@param value any
+---@return boolean
+local function is_group(value)
+  return type(value) == 'table' and type(value.group) == 'string' and not is_single(value)
+end
+
 ---@param out cinch.Entry[]
----@param value any a spec, a list of specs, or a src string
+---@param value any a spec, a list of specs, a group of them, or a src string
 ---@param origin cinch.Origin
 local function push(out, value, origin)
   if type(value) ~= 'table' and type(value) ~= 'string' then
@@ -525,25 +678,38 @@ local function push(out, value, origin)
     out[#out + 1] = { spec = value, origin = origin }
     return
   end
+  local group = is_group(value) and value.group or nil
+  if group then
+    M.define_group(group, value, origin)
+  end
   for i, s in ipairs(value) do
-    out[#out + 1] = { spec = s, origin = { file = origin.file, index = i } }
+    local at = { file = origin.file, rel = origin.rel, index = i }
+    if is_group(s) then
+      push(out, s, at)
+    else
+      out[#out + 1] = { spec = s, origin = at, group = group }
+    end
   end
 end
 
 --- Spec files under a root, sorted: a module path like 'plugins' or a directory.
 ---@param root string
----@return string[]
+---@return string[] files
+---@return string under what each file's path under the root follows, as a pattern
 local function files(root)
-  local res
+  local res, under
   if root:find('^[/~.]') then
-    res = vim.fn.globpath(vim.fs.normalize(root), '**/*.lua', true, true)
+    local dir = vim.fs.normalize(root)
+    res = vim.fn.globpath(dir, '**/*.lua', true, true)
+    under = '^' .. vim.pesc(dir) .. '/'
   else
     local path = root:gsub('%.', '/')
     res = vim.api.nvim_get_runtime_file(('lua/%s.lua'):format(path), true)
     vim.list_extend(res, vim.api.nvim_get_runtime_file(('lua/%s/**/*.lua'):format(path), true))
+    under = '^.*/lua/' .. vim.pesc(path) .. '/'
   end
   table.sort(res)
-  return res
+  return res, under
 end
 
 --- Read every spec under `roots`. A table root is a spec or a list of them, taken as-is.
@@ -556,7 +722,8 @@ function M.collect(roots, origin)
     if type(root) == 'table' then
       push(out, root, origin)
     else
-      for _, file in ipairs(files(root)) do
+      local list, under = files(root)
+      for _, file in ipairs(list) do
         -- loadfile, not require: vim.loader caches it, and package.loaded never holds
         -- a stale copy when the specs are read again.
         local chunk, err = loadfile(file)
@@ -565,7 +732,8 @@ function M.collect(roots, origin)
           ok, res = pcall(chunk)
         end
         if ok then
-          ok, res = pcall(push, out, res, { file = file })
+          local rel = vim.fs.normalize(file):match(under .. '(.+)$')
+          ok, res = pcall(push, out, res, { file = file, rel = rel })
         end
         if not ok then
           M.broken[#M.broken + 1] = file

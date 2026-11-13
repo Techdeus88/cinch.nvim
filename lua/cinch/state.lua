@@ -33,6 +33,9 @@ local M = {}
 ---@field triggers? table<string, any[]> handler name -> parsed values, see handler.lua
 ---@field armed? table<string, true> handlers set up and not yet removed
 ---@field origin? { file: string, index?: integer } where the spec was declared
+---@field group? string the group whose load strategy it shares
+---@field group_wrap? string the group table that wraps its spec
+---@field group_dir? string the group whose `dir` holds its spec file
 ---@field path? string set once vim.pack reports the plugin on disk
 ---@field rev? string checked-out commit, from vim.pack
 ---@field deleted? true deleted from disk this session; installs again on the next start

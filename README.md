@@ -81,6 +81,7 @@ cinch fields can sit at the top level, as above, or inside `data`, the way `vim.
 | `config` | `function(plugin, opts)`, run after the plugin loads, in place of `require(main).setup(opts)`. `config = true` calls `setup()` with no opts |
 | `after` | `function(plugin)`, run after `config` |
 | `module` | `false` keeps `require()` of this plugin's modules from loading it |
+| `group` | The group whose load strategy the plugin shares. `false` leaves the one it would be in. See [Groups](#groups) |
 
 Specs with the same `name` merge into one before the plugin loads, in the order cinch reads them, so you can declare a plugin in one file and adjust it in another. It works like `vim.tbl_deep_extend('force', ...)`: `opts` and other nested tables merge key by key, and when two specs set the same field the later one wins. A list counts as one value, so a later `keys`, `cmd`, `event` or `ft` replaces the earlier list. `deps` is the exception: every spec's dependencies are kept, because a dependency dropped from the list and with no trigger of its own would never load. `opts` functions are the exception. Tables and functions that take no `opts` argument build the base, in the order cinch reads them. Then functions that take `opts`, like `function(_, opts)`, run in order over that base, whichever file they are in. So `{ opts = function(_, opts) opts.b = 2 end }` in one file and `{ opts = { a = 1 } }` in a file read later give `{ a = 1, b = 2 }`, and a value such a function sets beats the same key from any table. A table a function returns merges in like any other, so nothing is dropped. To remove a key, a function sets it to `nil` on `opts` and returns nothing or that same `opts`. To add to a list, use a function that takes `opts`, since a later list replaces the earlier one.
 
@@ -110,6 +111,40 @@ Whatever `load` says, `require()` of a plugin's module loads a plugin that has n
 
 `now` plugins load while `init.lua` runs, in the order you declared them, dependencies first. On a first start they load right after the install instead (see below). Neovim then sources their `plugin/` files in its normal startup pass, so a `now` plugin's `config` runs before its own `plugin/` files. A plugin whose `config` needs something its `plugin/` file defines should use `later`.
 
+### Groups
+
+A group is a load strategy several plugins share: `load` and any trigger, written once. The table a spec file returns can be the group. `group` names it, its strategy sits beside the name, and its specs are the list items:
+
+```lua
+-- lua/plugins/git.lua
+return {
+  group = 'git',
+  event = 'BufReadPre',
+  { 'lewis6991/gitsigns.nvim', opts = {} },             -- loads on BufReadPre
+  { 'sindrets/diffview.nvim', cmd = 'DiffviewOpen' },   -- on BufReadPre or :DiffviewOpen
+}
+```
+
+A file can return several group tables, with plain specs beside them, and the same works for inline specs and `add()`. `{ 'owner/repo', group = 'git' }` is a spec that joins a group. A table with `group` whose first item is a spec table, or that has more than one item, is the group itself.
+
+`setup()` can define groups too, and there a group can also say who is in it:
+
+```lua
+groups = {
+  git = { event = 'BufReadPre' },                                  -- specs with group = 'git'
+  ui  = { event = 'UIEnter', plugins = { 'lualine.nvim', 'bufferline.nvim' } },
+  lsp = { ft = { 'lua', 'python' }, dir = 'lsp' },                 -- every spec file under lua/plugins/lsp/
+}
+```
+
+`plugins` lists plugin names. `dir` is a folder under a spec root, and `dir = true` is a folder with the group's name.
+
+- One name is one group. Defined in `setup()` and in files, or in two files, its fields merge in the order cinch reads them, `setup()` first, and the later one wins.
+- A plugin is in one group: the one its spec names with `group`, else the one that wraps its spec, else the one that lists it, else the one whose `dir` holds its file. `group = false` on a spec leaves it out. A spec nested in another plugin's `deps` is not in a group because of where it is nested.
+- A plugin's own fields go over its group's, one by one. In the example, `diffview.nvim` keeps the group's `event` and adds its `cmd`. Its own `event` would replace the group's, and `event = false` drops it.
+- A `load` from a group is explicit, like one on the spec: a group with `load = 'later'` makes its plugins load later, and a trigger on one of them is ignored with a warning. A spec with its own `load` other than `'trigger'` takes none of the group's triggers.
+- A group that nothing defines, an unknown field in a group, and a plugin listed by two groups each get a warning.
+
 ### The first start
 
 When plugins are missing, cinch doesn't install them while `init.lua` runs, because there's no screen to show the install on yet. It waits for `UIEnter`, opens its window, and installs then. Exactly what waits depends on why plugins are missing:
@@ -119,7 +154,7 @@ When plugins are missing, cinch doesn't install them while `init.lua` runs, beca
 | Nothing missing | A normal start. Nothing waits |
 | A new spec, or one whose `src` doesn't exist | Plugins already on disk start during `init.lua` as usual. Only the missing ones wait for the UI |
 | Your lockfile lists plugins that aren't on disk, as on a new machine with your dotfiles | Everything waits. `vim.pack`'s first call would install those during `init.lua` anyway |
-| Headless Neovim, or `defer = false` | Installs during `init.lua`, as `vim.pack` does |
+| Headless Neovim | Installs during `init.lua`, as `vim.pack` does |
 
 While the batch installs, the keys you press are held until it's done: `vim.pack.add` waits for git, and so does Neovim's input.
 
@@ -146,7 +181,7 @@ require('cinch').setup({
   spec = { 'plugins' },          -- module paths, folders, or specs; default lua/plugins/
   confirm = true,                -- ask before installing: on the rows in the window, or with vim.pack's prompt during init.lua
   budget = 5,                    -- ms of `later` loading per event-loop tick
-  defer = true,                  -- install missing plugins once the UI is up
+  groups = {},                   -- load strategies plugins share, by name: { git = { event = 'BufReadPre' } }
   build_timeout = 300,           -- seconds an async function build may take before it fails
   disable_runtime = {},          -- Neovim's own plugins not to load: { 'netrwPlugin', 'gzip', 'tutor' }
   module = true,                 -- require() of a plugin's module loads the plugin
@@ -266,7 +301,7 @@ Opening the window starts an update check when the last one is more than 5 minut
 
 cinch asks every yes or no itself, on the row of the plugin it is about: `Delete real-icons.nvim Yes (y) or No (n)`. `y` goes ahead and `n`, `q` or `<Esc>` does not; until you answer, other keys do nothing. Deleting, cleaning, installing with `confirm = true`, updating and restoring all ask this way, and a command that asks opens the window to do it. A deleted plugin your specs still list keeps its row, which says `deleted`.
 
-Neovim's own prompt is left for two cases: the `ui` feature is off, or an install happens during `init.lua` before there is a window (headless, or `defer = false`).
+Neovim's own prompt is left for two cases: the `ui` feature is off, or an install happens during `init.lua` before there is a window (headless Neovim).
 
 ## Features
 

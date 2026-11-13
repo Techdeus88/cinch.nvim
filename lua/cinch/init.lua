@@ -53,7 +53,7 @@ end
 ---@field spec? (string|cinch.Spec|cinch.Spec[])[] module paths, directories or specs; default { 'plugins' }
 ---@field confirm? boolean ask before installing, vim.pack's prompt; default true
 ---@field budget? integer ms of `later` loading per event-loop tick; default 5
----@field defer? boolean when plugins are missing, install once the UI is up, not during init.lua; default true
+---@field groups? table<string, cinch.Group> load strategies plugins share, by group name; default {}
 ---@field build_timeout? integer seconds an async function build may take before it fails; default 300
 ---@field disable_runtime? string[] Neovim's own plugins not to load: 'netrwPlugin', 'gzip', 'tutor'; default {}
 ---@field module? boolean require() of a plugin's module loads the plugin; default true
@@ -68,7 +68,7 @@ local defaults = {
   spec = { 'plugins' },
   confirm = true,
   budget = 5,
-  defer = true,
+  groups = {},
   build_timeout = 300,
   disable_runtime = {},
   module = true,
@@ -407,7 +407,7 @@ end
 ---@param install cinch.Plugin[]
 ---@return cinch.Plugin[]
 local function to_defer(install)
-  if (M.opts or defaults).defer == false or vim.v.vim_did_enter == 1 or not M.ui_coming() then
+  if vim.v.vim_did_enter == 1 or not M.ui_coming() then
     return {}
   end
   local missing = vim.tbl_filter(function(p)
@@ -550,7 +550,9 @@ function M.setup(opts)
   pack.timeout = M.opts.build_timeout * 1000
   load_features(M.opts)
   local t = hrtime()
-  local added, respecced = spec.register(spec.collect(M.opts.spec, caller()))
+  local origin = caller()
+  spec.set_groups(M.opts.groups, origin)
+  local added, respecced = spec.register(spec.collect(M.opts.spec, origin))
   adopt_self(added)
   phase('specs', t)
   activate(added, M.opts.confirm, respecced)

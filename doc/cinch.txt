@@ -10,6 +10,7 @@ CONTENTS                                              *cinch* *cinch-contents*
      Fields .............................................. |cinch-spec-fields|
      Merging specs ....................................... |cinch-merge|
      When a plugin loads ................................. |cinch-load|
+     Groups .............................................. |cinch-groups|
      The first start ..................................... |cinch-first-start|
   5. Coming from lazy.nvim ............................... |cinch-lazy.nvim|
   6. Setup ............................................... |cinch-setup|
@@ -229,6 +230,10 @@ FIELDS                                                     *cinch-spec-fields*
 `module`                                                  *cinch-spec-module*
     `false` keeps `require()` of this plugin's modules from loading it.
 
+`group`                                                    *cinch-spec-group*
+    The group whose load strategy the plugin shares. `false` leaves the one
+    it would be in. See |cinch-groups|.
+
 A field cinch does not know gets a warning naming the spec file, and is
 ignored.
 
@@ -309,6 +314,62 @@ in its normal startup pass, so a `now` plugin's `config` runs before its own
 defines should use `later`.
 
 ------------------------------------------------------------------------------
+GROUPS                                                          *cinch-groups*
+
+A group is a load strategy several plugins share: `load` and any trigger,
+written once. The table a spec file returns can be the group. `group` names
+it, its strategy sits beside the name, and its specs are the list items: >lua
+
+    -- lua/plugins/git.lua
+    return {
+      group = 'git',
+      event = 'BufReadPre',
+      -- loads on BufReadPre
+      { 'lewis6991/gitsigns.nvim', opts = {} },
+      -- on BufReadPre or :DiffviewOpen
+      { 'sindrets/diffview.nvim', cmd = 'DiffviewOpen' },
+    }
+<
+A file can return several group tables, with plain specs beside them, and the
+same works for inline specs and `add()`. `{ 'owner/repo', group = 'git' }` is
+a spec that joins a group. A table with `group` whose first item is a spec
+table, or that has more than one item, is the group itself.
+
+`setup()` can define groups too, and there a group can also say who is in
+it: >lua
+
+    groups = {
+      -- specs with group = 'git'
+      git = { event = 'BufReadPre' },
+      ui = {
+        event = 'UIEnter',
+        plugins = { 'lualine.nvim', 'bufferline.nvim' },
+      },
+      -- every spec file under lua/plugins/lsp/
+      lsp = { ft = { 'lua', 'python' }, dir = 'lsp' },
+    }
+<
+`plugins` lists plugin names. `dir` is a folder under a spec root, and
+`dir = true` is a folder with the group's name.
+
+- One name is one group. Defined in `setup()` and in files, or in two files,
+  its fields merge in the order cinch reads them, `setup()` first, and the
+  later one wins.
+- A plugin is in one group: the one its spec names with `group`, else the one
+  that wraps its spec, else the one that lists it, else the one whose `dir`
+  holds its file. `group = false` on a spec leaves it out. A spec nested in
+  another plugin's `deps` is not in a group because of where it is nested.
+- A plugin's own fields go over its group's, one by one. In the example,
+  `diffview.nvim` keeps the group's `event` and adds its `cmd`. Its own
+  `event` would replace the group's, and `event = false` drops it.
+- A `load` from a group is explicit, like one on the spec: a group with
+  `load = 'later'` makes its plugins load later, and a trigger on one of them
+  is ignored with a warning. A spec with its own `load` other than
+  `'trigger'` takes none of the group's triggers.
+- A group that nothing defines, an unknown field in a group, and a plugin
+  listed by two groups each get a warning.
+
+------------------------------------------------------------------------------
 THE FIRST START                                            *cinch-first-start*
 
 When plugins are missing, cinch doesn't install them while `init.lua` runs,
@@ -322,8 +383,7 @@ why plugins are missing:
 - Your lockfile lists plugins that aren't on disk, as on a new machine with
   your dotfiles: everything waits. `vim.pack`'s first call would install
   those during `init.lua` anyway.
-- Headless Neovim, or `defer = false`: installs during `init.lua`, as
-  `vim.pack` does.
+- Headless Neovim: installs during `init.lua`, as `vim.pack` does.
 
 While the batch installs, the keys you press are held until it's done:
 `vim.pack.add()` waits for git, and so does Neovim's input.
@@ -369,8 +429,8 @@ The defaults: >lua
       confirm = true,
       -- ms of `later` loading per event-loop tick
       budget = 5,
-      -- install missing plugins once the UI is up
-      defer = true,
+      -- load strategies plugins share, by name; see |cinch-groups|
+      groups = {},
       -- seconds an async function build may take before it fails
       build_timeout = 300,
       -- Neovim's own plugins not to load: { 'netrwPlugin', 'gzip', 'tutor' }

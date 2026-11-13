@@ -160,8 +160,10 @@ H.after_startup(function()
     return row_of('alpha.nvim'):find('built in', 1, true) == nil
   end, 'a build that worked to leave the row', 6000)
 
+  -- vim.pack's install progress names the plugin it just cloned, `builder` among them.
   local said = table.concat(echoed, '\n')
-  H.eq({ said:find('build', 1, true), said:find('built', 1, true) }, {}, 'no build reached the command line')
+  local quiet = said:gsub('builder', '')
+  H.eq({ quiet:find('build', 1, true), quiet:find('built', 1, true) }, {}, 'no build reached the command line')
 
   ui.close()
   events.report('a note for later')
