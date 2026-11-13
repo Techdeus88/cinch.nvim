@@ -54,6 +54,13 @@ H.after_startup(function()
   H.eq(list()[1], ' ▾ Updates (2)', 'the section is on top, with how many plugins')
   H.eq(list()[2]:find('alpha.nvim 2 commits', 1, true) ~= nil, true, 'two commits')
   H.eq(list()[3]:find('beta.nvim 1 commit$') ~= nil, true, 'one commit')
+  H.eq(
+    { list()[2]:find('^   %S') ~= nil, list()[3]:find('^   %S') ~= nil },
+    { true, true },
+    'its rows sit two cells in'
+  )
+  H.eq(list()[4], '', 'a blank row parts the section from the rest')
+  H.eq(list()[5]:find('^ %S') ~= nil, true, 'whose rows are not indented')
   local all = text()
   H.eq(all:find('u updates it', 1, true), nil, 'no hint in the row')
   H.eq(select(2, all:gsub('alpha%.nvim', '')), 1, 'alpha has one row')
@@ -75,7 +82,8 @@ H.after_startup(function()
   -- What is on disk in no spec joins the section, and is counted.
   ctx.orphans = { { name = 'stray.nvim', path = '/x/stray.nvim', src = 'file:///x/stray' } }
   H.eq(list()[1], ' ▾ Updates (3)', 'counted with the updates')
-  H.eq(list()[4], ' · stray.nvim not in specs', 'after them, saying why')
+  H.eq(list()[4], '   · stray.nvim not in specs', 'after them, saying why')
+  H.eq(list()[5], '', 'and the blank row comes after it')
   H.eq(text():find('not in your specs', 1, true), nil, 'no section of its own')
   local stray = view.list(100, ctx)
   H.eq(stray.rows[4], 'stray.nvim', 'its row selects it, for `d` and the pane')
@@ -93,5 +101,10 @@ H.after_startup(function()
     return u.results['alpha.nvim'] == nil and u.results['beta.nvim'] == nil
   end, 'the updates')
   H.eq(text():find('Updates', 1, true), nil, 'the section goes once they are applied')
+  H.eq(text():find('\n\n', 1, true), nil, 'and its blank row with it')
+  local back = vim.iter(list()):find(function(l) ---@param l string
+    return l:find('alpha.nvim', 1, true) ~= nil
+  end)
+  H.eq(back:find('^ %S') ~= nil, true, 'alpha is back in the list, not indented')
   H.eq(text():find('alpha.nvim', 1, true) ~= nil, true, 'and they go back to their sections')
 end)

@@ -57,11 +57,12 @@ end
 ---@param name string
 ---@param m string its mark
 ---@param m_hl? string
+---@param indent? boolean under a section title
 ---@return boolean asked
-local function asks(c, ctx, name, m, m_hl)
+local function asks(c, ctx, name, m, m_hl, indent)
   local ask = ctx.ask
   if ask and ask.names[name] then
-    rows.add_ask_row(c, name, ask.verb, m, m_hl)
+    rows.add_ask_row(c, name, ask.verb, m, m_hl, indent)
     return true
   end
   return false
@@ -91,10 +92,11 @@ end
 ---@param list cinch.Plugin[]
 ---@param orphans cinch.Orphan[]
 ---@param ctx cinch.ui.Ctx
+---@return boolean drawn
 local function updates_section(c, list, orphans, ctx)
   local count = #list + #orphans
   if count == 0 then
-    return
+    return false
   end
   local open = not ctx.folded.updates
   c:add({
@@ -102,21 +104,23 @@ local function updates_section(c, list, orphans, ctx)
     { (' (%d)'):format(count), 'CinchMuted' },
   }, { section = 'updates' })
   if not open then
-    return
+    return true
   end
   for _, p in ipairs(list) do
-    if not asks(c, ctx, p.name, mark(p, ctx.tick)) then
+    local m, m_hl = mark(p, ctx.tick)
+    if not asks(c, ctx, p.name, m, m_hl, true) then
       rows.add_update_row(c, p, ctx.tick, ctx.marked and ctx.marked[p.name])
     end
   end
   for _, o in ipairs(orphans) do
-    if not asks(c, ctx, o.name, '·', 'CinchMuted') then
+    if not asks(c, ctx, o.name, '·', 'CinchMuted', true) then
       c:add(
-        { { ' · ' .. o.name .. ' ', 'CinchMuted' }, { 'not in specs', 'CinchWarn' } },
+        { { '   · ' .. o.name .. ' ', 'CinchMuted' }, { 'not in specs', 'CinchWarn' } },
         { plugin = o.name, line_hl = ctx.marked and ctx.marked[o.name] and 'CinchMarked' or nil }
       )
     end
   end
+  return true
 end
 
 -- Each install status: its mark (nil: the spinner), its color, the message.
@@ -151,6 +155,7 @@ local function install_rows(c, ctx)
       needed_by = needed[p.name] or {},
       msg = look[3],
       msg_hl = look[2],
+      indent = true,
     })
   end
 end
@@ -190,22 +195,29 @@ function M.list(width, ctx)
   local orphans = vim.tbl_filter(function(o)
     return not ctx.filter or o.name:lower():find(ctx.filter:lower(), 1, true) ~= nil
   end, ctx.orphans or {})
-  updates_section(c, updating, orphans, ctx)
+  -- A titled section's rows sit two cells in, and a blank row parts it from what follows.
+  local gap = updates_section(c, updating, orphans, ctx)
   -- One list in section order. The header counts the states, so only work under way,
   -- such as a build, keeps its title.
   for _, s in ipairs(M.sections) do
     local list = by[s.key] or {}
     local open = not (s.titled and ctx.folded[s.key])
-    if s.titled and #list > 0 then
+    local titled = s.titled and #list > 0
+    if gap and #list > 0 then
+      c:add({})
+      gap = false
+    end
+    if titled then
       c:add({
         { (open and ' ▾ ' or ' ▸ ') .. s.title, 'CinchSection' },
         { ' ' .. #list, 'CinchMuted' },
       }, { section = s.key })
+      gap = true
     end
     for _, p in ipairs(open and list or {}) do
       local m, m_hl = mark(p, ctx.tick)
       local msg, msg_hl = message(p)
-      if not asks(c, ctx, p.name, m, m_hl) then
+      if not asks(c, ctx, p.name, m, m_hl, titled) then
         add_row(c, p, {
           mark = m,
           mark_hl = m_hl,
@@ -216,6 +228,7 @@ function M.list(width, ctx)
           msg = msg,
           msg_hl = msg_hl,
           marked = ctx.marked and ctx.marked[p.name],
+          indent = titled,
         })
       end
     end

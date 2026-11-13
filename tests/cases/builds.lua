@@ -92,12 +92,26 @@ H.after_startup(function()
     return l:find(' delta%.nvim ') ~= nil
   end)
   H.eq(vim.endswith(row, 'step one'), true, 'the row shows the newest line')
+  H.eq(row:find('^   %S') ~= nil, true, 'two cells in, under the working title')
+  local lines = plugins.list(120, ctx).lines
+  local title = vim.iter(ipairs(lines)):find(function(_, l) ---@param l string
+    return l:find('^ ▾ working') ~= nil
+  end)
+  local after = title + 1
+  while lines[after]:find('^   %S') do
+    after = after + 1
+  end
+  H.eq(lines[after], '', 'and a blank row parts working from the rest')
   H.eq(require('cinch').load('delta.nvim'), nil, 'load returns at once')
   H.eq(delta.state, 'pending', 'and waits for the build')
   H.wait(function()
     return delta.state == 'loaded'
   end, 'delta to load after its build')
   H.eq(vim.g.made_at_load, true, 'the build had finished when it loaded')
+  local settled = vim.iter(plugins.list(120, ctx).lines):find(function(l) ---@param l string
+    return l:find(' delta%.nvim ') ~= nil
+  end)
+  H.eq(settled:find('^ %S') ~= nil, true, 'done, it is back in the list without the indent')
   H.eq(delta.build_log, { 'step one', '50%', '100%' }, 'a carriage return ends a line too')
   local pane = table.concat(plugins.pane('delta.nvim', 80, ctx).lines, '\n')
   H.eq(pane:find('output +step one\n +50%%\n +100%%') ~= nil, true, 'the pane keeps the last build output')

@@ -72,7 +72,7 @@ H.after_startup(function()
 
   vim.cmd('Cinch')
   H.eq(vim.list_contains(list_lines(), ' ▾ Updates (4)'), true, 'the window lists them under Updates')
-  H.eq(vim.list_contains(list_lines(), ' · cmdy not in specs'), true, 'each saying it is not in specs')
+  H.eq(vim.list_contains(list_lines(), '   · cmdy not in specs'), true, 'each saying it is not in specs')
 
   -- Several at once: select them, then d.
   local w = require('cinch.features.ui').windows()

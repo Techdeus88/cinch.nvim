@@ -239,6 +239,10 @@ end
 ---@field msg? string
 ---@field msg_hl? string
 ---@field marked? boolean selected for an action: the row gets a shade
+---@field indent? boolean under a section title: two cells in, so the section stands out
+
+-- What a row under a section title starts with, and any other row.
+local lead = { [true] = '   ', [false] = ' ' }
 
 --- One plugin's line, each part right after the last, cut at the list's edge:
 ---   ● <name> (<load time>) <bar> <how it loads> <↑updates> <message>
@@ -248,7 +252,7 @@ end
 local function add_row(c, p, r)
   local off = p.state == 'disabled'
   local items = {
-    { { ' ' .. r.mark, r.mark_hl } },
+    { { lead[r.indent == true] .. r.mark, r.mark_hl } },
     { { p.name, off and 'CinchOffName' or p.dep_only and 'CinchDepName' or 'CinchName' } },
   }
   if r.ms then
@@ -274,16 +278,17 @@ end
 ---@param verb string
 ---@param m string its mark
 ---@param m_hl? string
-local function add_ask_row(c, name, verb, m, m_hl)
+---@param indent? boolean under a section title
+local function add_ask_row(c, name, verb, m, m_hl, indent)
   local items = {
-    { { ' ' .. m, m_hl } },
+    { { lead[indent == true] .. m, m_hl } },
     { { verb .. ' ' .. name, 'CinchWarn' } },
     { { 'Yes (y) or No (n)', 'CinchKey' } },
   }
   c:add(canvas.clip(join(items), c.width - 1), { plugin = name })
 end
 
---- A row in the Updates section: `● <name> 2 commits`.
+--- A row in the Updates section, two cells in: `● <name> 2 commits`.
 ---@param c cinch.ui.Canvas
 ---@param p cinch.Plugin
 ---@param tick integer spinner frame
@@ -294,7 +299,7 @@ local function add_update_row(c, p, tick, marked)
   local status = p.activity and { p.activity .. '…', 'CinchActive' }
     or { ('%d commit%s'):format(n, n == 1 and '' or 's'), 'CinchUpdate' }
   local items = {
-    { { ' ' .. m, m_hl } },
+    { { lead[true] .. m, m_hl } },
     { { p.name, 'CinchName' } },
     { status },
   }

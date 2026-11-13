@@ -554,7 +554,10 @@ its row.
 The rest of the list keeps a title only for "working", the plugins
 installing, building or loading, on top. The header counts the other states,
 so failed, loaded, waiting and disabled follow in that order with no titles.
-A plugin being checked,
+Rows under a title, which are Updates, working and the first start's
+installing, sit two cells in, and a blank row parts the section from the rest
+of the list. When its work is done a plugin goes back to its place in the
+list, without the indent. A plugin being checked,
 updated or deleted stays in its section and says so on its row; an install or
 a build moves it to working. A check never opens the window; an install and
 `:Cinch update!` do.
