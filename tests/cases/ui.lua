@@ -252,11 +252,7 @@ H.after_startup(function()
   )
   H.eq(groups(gamma_at).CinchDepName, true, 'its name in the dependency style')
   go(w.list, ' gamma ')
-  H.eq(
-    line_of(w.pane, '^ load +' .. icons.dep .. ' before its dependents$') ~= nil,
-    true,
-    'its pane: it loads before them'
-  )
+  H.eq(line_of(w.pane, '^ load +' .. icons.dep .. ' before dependents$') ~= nil, true, 'its pane: it loads before them')
   H.eq(line_of(w.pane, '^ needed by +delta%.nvim') ~= nil, true, 'and which they are')
   H.eq(table.concat(lines(w.list), '\n'):find('by later', 1, true), nil, 'no "by later"')
 

@@ -40,7 +40,7 @@ end
 ---@return { [1]: string, [2]?: string }[]
 local function load_line(p)
   if p.dep_only then
-    return { { glyph('dep') .. ' before its dependents', select(2, canvas.kind_hl('dep')) } }
+    return { { glyph('dep') .. ' before dependents', select(2, canvas.kind_hl('dep')) } }
   elseif p.when == 'trigger' then
     return join(trigger_items(p))
   end
@@ -232,11 +232,8 @@ function M.pane(name, width, ctx)
   elseif sec == 'loaded' then
     local stats = feature('stats')
     local at = stats and stats.plugins[p.name] and stats.plugins[p.name].at
-    -- now and later say it all; anything else says what loaded it.
-    local by = ({ now = '', later = '', manual = 'by hand  ' })[p.reason] or ((p.reason or '?') .. '  ')
     kv(c, 'load', load_line(p))
     kv(c, 'loaded', {
-      { by },
       { ('%s%s'):format(p.order and ('#' .. p.order) or '', at and (' at ' .. canvas.ms(at)) or ''), 'CinchMuted' },
     })
   elseif sec == 'working' then
