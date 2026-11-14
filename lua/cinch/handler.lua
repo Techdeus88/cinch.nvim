@@ -467,8 +467,8 @@ local function drain()
     later_next = later_next + 1
     if type(x) == 'function' then
       run('later', x)
-    elseif x.state == 'pending' then
-      -- A plugin loaded meanwhile, as a dependency say, is skipped.
+    elseif x.state == 'pending' and (x.when == 'later' or x.very_lazy) then
+      -- Skipped: a plugin loaded meanwhile, as a dependency say, or moved off `later` by add().
       M.fire(x, 'later')
     end
     if (uv.hrtime() - start) / 1e6 >= M.budget then
@@ -483,7 +483,8 @@ local function drain()
 end
 
 local function start_drain()
-  if not later_draining then
+  -- While a first-start batch waits, so does the queue; start() runs again after it.
+  if not later_draining and not M.held then
     later_draining = true
     vim.schedule(drain)
   end
@@ -505,11 +506,18 @@ function M.start()
   -- After the plugins, so a function can require() them.
   for _, x in ipairs(q) do
     if type(x) == 'function' then
-      run('now', x)
+      if M.held then
+        now_queue[#now_queue + 1] = x
+      else
+        run('now', x)
+      end
     end
   end
-  if not first or vim.v.vim_did_enter == 1 then
+  if vim.v.vim_did_enter == 1 then
     return start_drain()
+  elseif not first then
+    -- An add() while init.lua still runs: the autocmd below is already waiting.
+    return
   end
   -- Headless Neovim never gets UIEnter; VimEnter is the moment there.
   local headless = vim.list_contains(vim.v.argv, '--headless')

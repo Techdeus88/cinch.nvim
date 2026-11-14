@@ -77,6 +77,8 @@ H.after_startup(function()
 
   local t = state.plugins['tele.nvim']
   H.eq(t.src, 'https://github.com/owner/tele.nvim', 'owner/repo expands')
+  H.eq(spec.normalize('./tele.nvim').src, './tele.nvim', 'a relative path is a src as-is')
+  H.eq(spec.normalize({ '../tele.nvim' }).src, '../tele.nvim', 'from the folder above too')
   H.eq(t.data.cmd, 'Tele', 'top-level field moved into data')
   H.eq(t.spec['cmd'], nil, 'and removed from the top level')
   H.eq(t.data.opts, { a = 2 }, 'data wins over the top level')

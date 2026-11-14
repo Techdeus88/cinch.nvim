@@ -82,11 +82,12 @@ function M.field(name)
   M.fields[name], M.triggers[name] = true, true
 end
 
---- `owner/repo` becomes a GitHub URL; anything else is a src as-is.
+--- `owner/repo` becomes a GitHub URL; anything else is a src as-is, a relative
+--- path like `./repo` or `../repo` included.
 ---@param src string
 ---@return string
 local function expand(src)
-  if src:find('^[%w_.-]+/[%w_.-]+$') then
+  if src:find('^[%w_.-]+/[%w_.-]+$') and not src:find('^%.%.?/') then
     return 'https://github.com/' .. src
   end
   return src

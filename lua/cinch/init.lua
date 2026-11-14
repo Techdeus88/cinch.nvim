@@ -484,6 +484,11 @@ local function activate(added, confirm, respecced)
     or vim.tbl_filter(function(p)
       return not vim.list_contains(wait, p)
     end, install)
+  if #wait > 0 then
+    -- When the whole batch waits (a first start, a new machine), cinch.now() and
+    -- cinch.later() functions wait with it; when only some plugins are missing, the rest started.
+    handler.held = #now == 0
+  end
   ask_install(now, confirm, function(c)
     if #now > 0 then
       install_all(now, c)
@@ -492,9 +497,6 @@ local function activate(added, confirm, respecced)
   end)
   if #wait > 0 then
     deferred = { plugins = wait, confirm = confirm }
-    -- When the whole batch waits (a first start, a new machine), cinch.now()
-    -- functions wait with it; when only some plugins are missing, the rest started.
-    handler.held = #now == 0
     vim.api.nvim_create_autocmd('UIEnter', {
       once = true,
       callback = vim.schedule_wrap(function()

@@ -32,6 +32,11 @@ end)
 cinch.later(mark('later after the broken one'))
 -- Started without a file argument: now_if_args is later.
 cinch.now_if_args(mark('now_if_args'))
+-- An add() after setup(), then something that runs the event loop, as a second
+-- install does: the later queue still waits for startup to end.
+cinch.add({ { H.src('alpha.nvim') } }, { confirm = false })
+vim.wait(50)
+local beta_at_end_of_init = H.plugin('beta.nvim').state
 local at_end_of_init = vim.deepcopy(order)
 
 H.after_startup(function()
@@ -39,6 +44,7 @@ H.after_startup(function()
     return #order == 6
   end, 'every function to run')
   H.eq(at_end_of_init, { 'now before setup, early is loaded', 'now after setup' }, 'now: during init.lua')
+  H.eq(beta_at_end_of_init, 'pending', 'an add() during init.lua does not start the later queue early')
   H.eq(order, {
     'now before setup, early is loaded',
     'now after setup',

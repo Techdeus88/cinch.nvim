@@ -33,6 +33,17 @@ events.on('Installed', function(d)
   seen.failed = d.failed
 end)
 
+-- Called before setup(), as in the README: it waits with the batch too.
+cinch.now(function()
+  vim.g.early_now_saw = H.plugin('early').state
+end)
+cinch.later(function()
+  seen.later = H.plugin('early').state
+end)
+events.on('Later', function()
+  seen.later_event = H.plugin('beta.nvim').state
+end)
+
 cinch.setup({
   confirm = false,
   features = {},
@@ -46,6 +57,15 @@ cinch.now(function()
   vim.g.now_saw = H.plugin('early').state
 end)
 local after_setup = { early = H.plugin('early').state, alpha = H.plugin('alpha.nvim').state, now_ran = vim.g.now_saw }
+local early_now_ran = vim.g.early_now_saw
+
+--- later() and the Later event waited for the batch.
+local function later_after_batch()
+  H.wait(function()
+    return seen.later_event ~= nil
+  end, 'the later queue')
+  H.eq({ seen.later, seen.later_event }, { 'loaded', 'loaded' }, 'later() and Later come after the batch')
+end
 
 --- User CinchDone fired once, after the batch installed and its now plugins loaded.
 local function done_after_batch()
@@ -57,6 +77,8 @@ end
 
 local function ui_enter()
   H.eq(seen.done, {}, 'no CinchDone while a batch waits for the UI')
+  H.eq(early_now_ran, nil, 'now() called before setup() waits too')
+  H.eq({ seen.later, seen.later_event }, {}, 'and so do later() and Later')
   vim.api.nvim_exec_autocmds('UIEnter', {})
   H.wait(function()
     return seen.failed ~= nil and H.plugin('beta.nvim').state == 'loaded'
@@ -69,6 +91,7 @@ H.after_startup(function()
     H.eq(after_setup.early, 'loaded', 'what is on disk loads during init.lua as usual')
     H.eq(H.plugin('missing').state, 'registered', 'only the missing plugin waits')
     H.eq(after_setup.now_ran, 'loaded', 'and now() runs during init.lua as usual')
+    H.eq(early_now_ran, 'loaded', 'called before setup() or after')
     H.eq(seen.done, {}, 'CinchDone waits for the missing plugin too')
     vim.api.nvim_exec_autocmds('UIEnter', {})
     H.wait(function()
@@ -83,6 +106,7 @@ H.after_startup(function()
     ui_enter()
     H.eq(seen.installing, { 'beta.nvim', 'missing' }, 'the locked plugin is installed again')
     done_after_batch()
+    later_after_batch()
     return
   end
 
@@ -104,5 +128,7 @@ H.after_startup(function()
   H.eq(H.plugin('missing').failed_in, 'install', 'a failed install is marked')
   H.eq(vim.g.cmdy_built, true, 'a :Cmd build ran once its plugin was armed')
   H.eq(vim.g.now_saw, 'loaded', 'now() ran after the batch, once its now plugins loaded')
+  H.eq(vim.g.early_now_saw, 'loaded', 'and so did the one called before setup()')
+  later_after_batch()
   H.eq(H.plugin('cmdy').reason, 'build', 'loading the plugin first')
 end)
