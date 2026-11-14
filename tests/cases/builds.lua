@@ -175,7 +175,8 @@ H.after_startup(function()
   end, 'a build that worked to leave the row', 6000)
 
   local said = table.concat(echoed, '\n')
-  H.eq({ said:find('build', 1, true), said:find('built', 1, true) }, {}, 'no build reached the command line')
+  -- Whole words: install progress may name the `builder` plugin.
+  H.eq({ said:find('%f[%a]build%f[%A]'), said:find('%f[%a]built%f[%A]') }, {}, 'no build reached the command line')
 
   ui.close()
   events.report('a note for later')

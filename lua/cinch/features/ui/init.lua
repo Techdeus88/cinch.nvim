@@ -520,6 +520,7 @@ key_list = function()
       in_editor = M.in_editor,
       open = M.open,
       close = M.close,
+      note = M.note,
       ask = M.ask,
       answer = M.answer,
       input = M.input,
@@ -807,14 +808,15 @@ local function on_report(d)
   end
 end
 
----@param p cinch.Plugin
+--- Put a note on a plugin's row, or take it off.
+---@param name string
 ---@param note? { text: string, hl: string, sticky?: boolean }
-local function set_note(p, note)
-  M.notes[p.name] = note
+function M.note(name, note)
+  M.notes[name] = note
   if note and not note.sticky then
     vim.defer_fn(function()
-      if M.notes[p.name] == note then
-        M.notes[p.name] = nil
+      if M.notes[name] == note then
+        M.notes[name] = nil
         redraw()
       end
     end, notice_ms[false])
@@ -836,7 +838,7 @@ function M.setup(opts)
     elseif M.is_open() then
       note = { text = 'built in ' .. require('cinch.ops').duration(d.ms), hl = 'CinchLoaded' }
     end
-    set_note(d.plugin, note)
+    M.note(d.plugin.name, note)
   end, { priority = 10 })
   events.on('Activity', function(d)
     if d.to == 'building' then

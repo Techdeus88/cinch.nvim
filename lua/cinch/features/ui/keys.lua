@@ -2,7 +2,6 @@
 -- list, so the two never disagree. ui/init.lua hands in what the keys act on, and
 -- loads this file on the window's first open.
 
-local events = require('cinch.events')
 local state = require('cinch.state')
 
 local api = vim.api
@@ -70,7 +69,7 @@ M.hints = {
   },
   log = { { '/', 'filter' }, { 'G', 'newest' }, { '<Tab>', 'next view' }, { '?', 'keys' }, { 'q', 'close' } },
   help = { { '?', 'goes back' }, { 'q', 'close' } },
-  install = { { "installing · keys you press now run when it's done" }, { 'q', 'hides this' } },
+  install = { { 'q', 'hides this' } },
 }
 
 ---@return table?
@@ -317,10 +316,13 @@ function M.make(w)
         local pending = vim.tbl_filter(function(name)
           return u ~= nil and u.results[name] ~= nil
         end, names)
+        for _, name in ipairs(names) do
+          if not vim.list_contains(pending, name) then
+            w.note(name, { text = 'all good to go', hl = 'CinchLoaded' })
+          end
+        end
         if u and #pending > 0 then
           u.apply(pending)
-        else
-          events.report(('no pending update for %s; c checks'):format(table.concat(names, ', ')))
         end
       end),
       'apply its pending update, or theirs',
