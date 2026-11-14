@@ -18,7 +18,9 @@ local M = {}
 ---@class cinch.ui.Opts
 ---@field size? number share of the editor, default 0.75
 ---@field tall? number share of the editor's height after `-`, default 0.95
+---@field start_tall? boolean open at the tall height, as after `-`; default false
 ---@field split? number the list's share of the width beside the pane, default 0.7; 0.5 after `=`
+---@field start_even? boolean open with the list and the pane 50/50, as after `=`; default false
 ---@field side_by_side? integer window width from which the pane sits beside the list; default 130, room for a whole row
 ---@field border? string|string[] default: 'winborder', or rounded when that is empty
 ---@field open_on_install? boolean open the window when plugins install, default true
@@ -822,6 +824,7 @@ end
 ---@param opts? cinch.ui.Opts
 function M.setup(opts)
   M.opts = vim.tbl_extend('force', M.opts, opts or {})
+  ui.tall, ui.even = M.opts.start_tall == true, M.opts.start_even == true
   -- Before the message feature's, so it only logs what shows here.
   events.on('Report', on_report, { priority = 10 })
   -- A build says how it went on its row: a failure until the next build.

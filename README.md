@@ -161,7 +161,9 @@ require('cinch').setup({
   ui = {
     size = 0.75,                 -- share of the editor
     tall = 0.95,                 -- share of the editor's height after `-`
+    start_tall = false,          -- open at the tall height; `-` still switches
     split = 0.7,                 -- the list's share of the width beside the pane; 0.5 after `=`
+    start_even = false,          -- open with the list and the pane 50/50; `=` still switches
     side_by_side = 130,          -- window width from which the pane sits beside the list, not under it
     border = nil,                -- default: your 'winborder', or rounded
     open_on_install = true,      -- open the window when plugins install
@@ -403,3 +405,7 @@ VIMRUNTIME=$(nvim --clean --headless +'lua io.write(vim.env.VIMRUNTIME)' +qa) lu
 ```
 
 The cases live in `tests/cases/`. The runner builds local git repos to install from, so the suite needs no network, and gives every case its own data, state and config folders. A case passes only when it exits after all its checks ran. A first line of `-- phases: N` runs a case N times over the same folders, to test what carries from one session to the next. A header line of `-- args: notes.md` opens that file, as if you passed it on the command line.
+
+## License
+
+[MIT](LICENSE)

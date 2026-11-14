@@ -395,8 +395,11 @@ The defaults: >lua
       ui = {
         size = 0.75,           -- share of the editor
         tall = 0.95,           -- share of the editor's height after `-`
+        start_tall = false,    -- open at the tall height; `-` still switches
         split = 0.7,           -- the list's share of the width beside
                                -- the pane; 0.5 after `=`
+        start_even = false,    -- open with the list and the pane 50/50;
+                               -- `=` still switches
         side_by_side = 130,    -- window width from which the pane sits beside
                                -- the list, not under it
         border = nil,          -- default: your 'winborder', or rounded
