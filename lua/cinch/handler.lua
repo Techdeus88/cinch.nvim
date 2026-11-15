@@ -61,9 +61,10 @@ local function ordered(set)
 end
 
 --- Load several plugins, then run `replay` once, after the last one. A plugin that
---- stays pending was vetoed (LoadPre) or waits for nothing else: its trigger is still
---- armed, so replaying it would land on the same stub again. The replay runs only when
---- some plugin got past pending, which is when the trigger has something real to run.
+--- stays pending was vetoed (LoadPre): its trigger is still armed, so replaying it
+--- would land on the same stub again. One that failed has no stub left, so a replayed
+--- key would run as the keys themselves. The replay runs only when some plugin loaded,
+--- which is when the trigger has something real to run.
 ---@param plugins cinch.Plugin[]
 ---@param reason string
 ---@param replay fun()
@@ -75,7 +76,7 @@ local function fire_all(plugins, reason, replay)
   for _, p in ipairs(plugins) do
     M.fire(p, reason, function()
       left = left - 1
-      moved = moved or p.state ~= 'pending'
+      moved = moved or p.state == 'loaded'
       if left == 0 and moved then
         replay()
       end
@@ -124,6 +125,28 @@ local function autocmd_ids(event)
   return seen
 end
 
+--- Whether an autocmd's pattern matches what the event fired for. A pattern with no
+--- slash matches the file's tail, as Neovim does: `Cargo.toml` for /a/b/Cargo.toml.
+---@param pattern string
+---@param match string
+---@return boolean
+local function pattern_matches(pattern, match)
+  local re = vim.fn.glob2regpat(pattern)
+  return vim.fn.match(match, re) >= 0 or not pattern:find('/') and vim.fn.match(vim.fs.basename(match), re) >= 0
+end
+
+--- Run `fn` in a buffer, or where the cursor is when the buffer is gone: something
+--- else on the event deleted it, a dashboard on VimEnter say.
+---@param buf integer
+---@param fn fun()
+local function in_buf(buf, fn)
+  if api.nvim_buf_is_valid(buf) then
+    api.nvim_buf_call(buf, fn)
+  else
+    fn()
+  end
+end
+
 --- Run only the autocmds that appeared since `seen`, so no other handler of the
 --- event runs twice. From sarcina's replay.lua.
 ---@param event string
@@ -131,16 +154,19 @@ end
 ---@param seen cinch.Seen
 local function replay_event(event, args, seen)
   local ran = {}
+  if not api.nvim_buf_is_valid(args.buf) then
+    args = vim.tbl_extend('force', args, { buf = api.nvim_get_current_buf() })
+  end
   for _, au in ipairs(api.nvim_get_autocmds({ event = event })) do
     local applies = au.buflocal and (au.buf or au['buffer']) == args.buf
-      or not au.buflocal and vim.fn.match(args.match or '', vim.fn.glob2regpat(au.pattern)) >= 0
+      or not au.buflocal and pattern_matches(au.pattern, args.match or '')
     if applies and not seen.keys[autocmd_key(au)] then
       if au.group and not au.buflocal and not seen.groups[au.group] then
         -- A group the plugin just made: Neovim runs it, each autocmd in the script
         -- that defined it, so a Vimscript one can still call its s: functions.
         if not ran[au.group] then
           ran[au.group] = true
-          try('replaying ' .. event, api.nvim_buf_call, args.buf, function()
+          try('replaying ' .. event, in_buf, args.buf, function()
             api.nvim_exec_autocmds(event, {
               group = au.group,
               pattern = args.match ~= '' and args.match or nil,
@@ -160,7 +186,7 @@ local function replay_event(event, args, seen)
           pcall(api.nvim_del_autocmd, au.id)
         end
       elseif au.command and au.command ~= '' then
-        try('replaying ' .. event, api.nvim_buf_call, args.buf, function()
+        try('replaying ' .. event, in_buf, args.buf, function()
           vim.cmd(au.command)
         end)
         if au.id and au.once then
@@ -222,6 +248,8 @@ M.handlers.event = {
         a.id = api.nvim_create_autocmd(event, {
           pattern = pattern ~= '' and pattern or nil,
           desc = 'cinch: load on ' .. key,
+          -- So what a config does fires its own autocmds: a colorscheme, a filetype.
+          nested = true,
           callback = function(args)
             on_event(key, args)
           end,
@@ -345,6 +373,22 @@ local map_options = { 'desc', 'silent', 'noremap', 'remap', 'nowait', 'expr', 'u
 
 ---@type table<string, table<string, cinch.Plugin>> "mode lhs" -> plugins
 local stubs = {}
+---@type table<string, { fn: function, prev?: table }> "mode lhs" -> the stub mapped there, and the mapping it replaced
+local stub_maps = {}
+
+--- Whether a stub is still mapped: you or a plugin may have mapped the key since.
+---@param mode string
+---@param fn function the stub's callback
+---@return boolean
+local function is_key_stub(mode, fn)
+  local ok, maps = pcall(api.nvim_get_keymap, mode)
+  if not ok then
+    return true
+  end
+  return vim.iter(maps):any(function(m)
+    return m.callback == fn
+  end)
+end
 
 -- Modes where a register and a count can come before a key.
 local counted = { n = true, x = true, v = true, o = true }
@@ -389,9 +433,15 @@ M.handlers.keys = {
         local id = mode .. ' ' .. k.lhs
         stubs[id] = stubs[id] or {}
         stubs[id][p.name] = p
-        vim.keymap.set(mode, k.lhs, function()
-          on_key(mode, k.lhs)
-        end, { desc = k.opts.desc or ('cinch: load ' .. p.name) })
+        if not stub_maps[id] then
+          local prev = vim.fn.maparg(k.lhs, mode, false, true)
+          local fn = function()
+            on_key(mode, k.lhs)
+          end
+          -- A mapping of yours the stub replaces comes back when the stub goes.
+          stub_maps[id] = { fn = fn, prev = next(prev) and prev.buffer == 0 and prev or nil }
+          vim.keymap.set(mode, k.lhs, fn, { desc = k.opts.desc or ('cinch: load ' .. p.name) })
+        end
       end
     end
   end,
@@ -403,7 +453,15 @@ M.handlers.keys = {
           stubs[id][p.name] = nil
           if not next(stubs[id]) then
             stubs[id] = nil
-            pcall(vim.keymap.del, mode, k.lhs)
+            local stub = stub_maps[id]
+            stub_maps[id] = nil
+            -- Only our stub: you or another plugin may have mapped the key meanwhile.
+            if stub and is_key_stub(mode, stub.fn) then
+              pcall(vim.keymap.del, mode, k.lhs)
+              if stub.prev then
+                pcall(vim.fn.mapset, mode, false, stub.prev)
+              end
+            end
           end
         end
       end
@@ -490,6 +548,20 @@ local function start_drain()
   end
 end
 
+--- Whether a UI will attach, so UIEnter will fire. Headless Neovim never gets one.
+--- An embedded one, which a GUI or the terminal UI starts, has its UI attached before
+--- init.lua runs; with none by then, it is driven without one.
+---@param argv? string[] default: v:argv
+---@param uis? integer how many UIs are attached; default: now
+---@return boolean
+function M.ui_coming(argv, uis)
+  argv = argv or vim.v.argv
+  if vim.list_contains(argv, '--headless') then
+    return false
+  end
+  return (uis or #api.nvim_list_uis()) > 0 or not vim.list_contains(argv, '--embed')
+end
+
 --- Load the `now` plugins, run the `now` functions waiting for them, then wait for
 --- the UI to work through the `later` queue. init.lua calls this once all plugins
 --- are armed; plugins and functions added after it start right away.
@@ -519,9 +591,8 @@ function M.start()
     -- An add() while init.lua still runs: the autocmd below is already waiting.
     return
   end
-  -- Headless Neovim never gets UIEnter; VimEnter is the moment there.
-  local headless = vim.list_contains(vim.v.argv, '--headless')
-  api.nvim_create_autocmd(headless and 'VimEnter' or 'UIEnter', { once = true, callback = start_drain })
+  -- With no UI coming there is no UIEnter; VimEnter is the moment there.
+  api.nvim_create_autocmd(M.ui_coming() and 'UIEnter' or 'VimEnter', { once = true, callback = start_drain })
 end
 
 --- Run `fn` now: at once once startup has run, else right after the `now` plugins.

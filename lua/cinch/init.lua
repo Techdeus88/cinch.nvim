@@ -50,7 +50,7 @@ function M.time(name, fn)
 end
 
 ---@class cinch.Opts
----@field spec? (string|cinch.Spec|cinch.Spec[])[] module paths, directories or specs; default { 'plugins' }
+---@field spec? string|(string|cinch.Spec|cinch.Spec[])[] module paths, directories or specs; default { 'plugins' }
 ---@field confirm? boolean ask before installing, vim.pack's prompt; default true
 ---@field budget? integer ms of `later` loading per event-loop tick; default 5
 ---@field defer? boolean when plugins are missing, install once the UI is up, not during init.lua; default true
@@ -385,10 +385,10 @@ local function start(install, respecced)
   pack.run_waiting()
 end
 
---- Whether a UI will attach. Headless Neovim never gets one. Replaceable for tests.
+--- Whether a UI will attach. Replaceable for tests.
 ---@return boolean
 function M.ui_coming()
-  return not vim.list_contains(vim.v.argv, '--headless')
+  return handler.ui_coming()
 end
 
 ---@type { plugins: cinch.Plugin[], confirm?: boolean, done?: boolean }? a batch waiting for UIEnter

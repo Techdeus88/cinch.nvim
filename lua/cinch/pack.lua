@@ -286,7 +286,8 @@ local function shell_build(p, cmd, start)
       and vim.list_extend({ vim.o.shell }, vim.split(vim.o.shellcmdflag, ' ', { trimempty = true }))
     or { 'sh', '-c' }
   argv[#argv + 1] = cmd
-  vim.system(argv, {
+  -- vim.system raises when it cannot start: no sh, or the plugin's folder is gone.
+  local ok, why = pcall(vim.system, argv, {
     cwd = p.path,
     text = true,
     stdout = reader(p, out),
@@ -299,6 +300,9 @@ local function shell_build(p, cmd, start)
       finish(p, start, err, output)
     end)
   end)
+  if not ok then
+    finish(p, start, vim.split(tostring(why), '\n')[1])
+  end
 end
 
 --- A Lua function. It sees the plugin on the runtimepath, so its modules and

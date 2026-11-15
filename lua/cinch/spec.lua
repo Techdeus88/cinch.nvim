@@ -548,11 +548,15 @@ local function files(root)
 end
 
 --- Read every spec under `roots`. A table root is a spec or a list of them, taken as-is.
----@param roots (string|table)[]
+--- One root can be given bare: `spec = 'plugins'`.
+---@param roots string|(string|table)[]
 ---@param origin cinch.Origin where inline tables come from
 ---@return cinch.Entry[]
 function M.collect(roots, origin)
   local out = {}
+  if type(roots) == 'string' then
+    roots = { roots }
+  end
   for _, root in ipairs(roots) do
     if type(root) == 'table' then
       push(out, root, origin)

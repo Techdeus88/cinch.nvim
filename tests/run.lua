@@ -101,6 +101,25 @@ vim.g.floaty_win = vim.api.nvim_open_win(vim.api.nvim_create_buf(false, true), t
     ['lua/modly/sub.lua'] = "return { name = 'sub' }",
     ['plugin/modly.lua'] = 'vim.g.modly_plugin = (vim.g.modly_plugin or 0) + 1',
   },
+  -- Autocmds on the event that loads it: one alone, one in a group of its own.
+  ['entery'] = {
+    ['plugin/entery.lua'] = [[
+vim.api.nvim_create_autocmd('User', { pattern = 'EnteryGo', callback = function(ev)
+  vim.g.entery_buf_valid = vim.api.nvim_buf_is_valid(ev.buf)
+end })
+vim.api.nvim_create_autocmd('User', {
+  group = vim.api.nvim_create_augroup('entery', {}),
+  pattern = 'EnteryGo',
+  callback = function() vim.g.entery_group = true end,
+})]],
+  },
+  -- An autocmd for one file name, on the event that loads it.
+  ['cargo'] = {
+    ['plugin/cargo.lua'] = [[
+vim.api.nvim_create_autocmd('BufReadPost', { pattern = 'Cargo.toml', callback = function()
+  vim.g.cargo_read = (vim.g.cargo_read or 0) + 1
+end })]],
+  },
   -- Two plugins that provide one module.
   ['dup-first'] = { ['lua/dupmod.lua'] = "return { from = 'first' }" },
   ['dup-second'] = { ['lua/dupmod.lua'] = "return { from = 'second' }" },
