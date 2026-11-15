@@ -80,6 +80,53 @@ local defaults = {
 ---@type cinch.Opts? set by setup()
 M.opts = nil
 
+-- The type each option must have. `spec` and `self` take more than one.
+---@type table<string, string[]>
+local option_types = {
+  spec = { 'table', 'string' },
+  confirm = { 'boolean' },
+  budget = { 'number' },
+  defer = { 'boolean' },
+  build_timeout = { 'number' },
+  disable_runtime = { 'table' },
+  module = { 'boolean' },
+  cmd_prefix = { 'string' },
+  self = { 'boolean', 'table' },
+  features = { 'table' },
+}
+
+--- Put the default in place of every option of the wrong type, so a typo in
+--- setup() is a message from cinch, not a Lua error somewhere inside it.
+---@param opts cinch.Opts
+---@return string[] what was wrong, one line each
+local function validate(opts)
+  local wrong = {}
+  ---@param name string
+  ---@param types string[]
+  ---@param default any
+  local function check(name, types, default)
+    local got = type(opts[name])
+    if opts[name] ~= nil and not vim.list_contains(types, got) then
+      local using = vim.inspect(default):gsub('%s+', ' ')
+      local msg = 'setup(): `%s` should be a %s, got %s; using %s'
+      wrong[#wrong + 1] = msg:format(name, table.concat(types, ' or a '), got, using)
+      opts[name] = default
+    end
+  end
+  local names = vim.tbl_keys(option_types)
+  table.sort(names)
+  for _, name in ipairs(names) do
+    check(name, option_types[name], vim.deepcopy(defaults[name]))
+  end
+  -- A feature's options, under its name.
+  for _, name in ipairs(opts.features) do
+    if type(name) == 'string' then
+      check(name, { 'table' }, {})
+    end
+  end
+  return wrong
+end
+
 --- Neovim's own plugins that disable_runtime kept from loading, by name.
 ---@type string[]
 M.runtime_off = {}
@@ -260,7 +307,7 @@ end
 local function ask_install(install, confirm, cont)
   local missing = {}
   for _, p in ipairs(confirm and install or {}) do
-    if not vim.uv.fs_stat(vim.fs.joinpath(pack.dir, p.name)) then
+    if pack.missing(p) then
       missing[#missing + 1] = p.name
     end
   end
@@ -286,7 +333,7 @@ local function install_all(install, confirm)
   local t = hrtime()
   local missing = {}
   for _, p in ipairs(install) do
-    if not vim.uv.fs_stat(vim.fs.joinpath(pack.dir, p.name)) then
+    if pack.missing(p) then
       missing[#missing + 1] = p.name
     end
   end
@@ -411,7 +458,7 @@ local function to_defer(install)
     return {}
   end
   local missing = vim.tbl_filter(function(p)
-    return not vim.uv.fs_stat(vim.fs.joinpath(pack.dir, p.name))
+    return pack.missing(p)
   end, install)
   -- The lockfile matters only before vim.pack's first call of the session.
   if #missing > 0 and not pack.idle() and #pack.locked_missing() > 0 then
@@ -540,7 +587,8 @@ function M.setup(opts)
   if M.opts then
     return events.report('setup() already ran; use add() for more plugins', levels.WARN)
   end
-  M.opts = vim.tbl_extend('force', defaults, opts or {})
+  M.opts = vim.tbl_extend('force', defaults, type(opts) == 'table' and opts or {})
+  local wrong = validate(M.opts)
   local named, why = usercmd.check(M.opts.cmd_prefix)
   if not named then
     events.report(('cmd_prefix `%s`: %s; using `%s`'):format(M.opts.cmd_prefix, why, usercmd.default), levels.WARN)
@@ -551,6 +599,10 @@ function M.setup(opts)
   disable_runtime(M.opts.disable_runtime)
   pack.timeout = M.opts.build_timeout * 1000
   load_features(M.opts)
+  -- Now the features are there to show them.
+  for _, msg in ipairs(wrong) do
+    events.report(msg, levels.WARN)
+  end
   local t = hrtime()
   local added, respecced = spec.register(spec.collect(M.opts.spec, caller()))
   adopt_self(added)
@@ -611,7 +663,7 @@ end
 ---@return cinch.Plugin[] missing what it tried to install
 function M.install(names, opts)
   local missing = vim.tbl_filter(function(p)
-    return not p.self and p.state ~= 'disabled' and not vim.uv.fs_stat(vim.fs.joinpath(pack.dir, p.name))
+    return not p.self and p.state ~= 'disabled' and pack.missing(p)
   end, names and resolve(names) or state.list)
   if #missing == 0 then
     events.report(names and 'already installed' or 'nothing to install: every plugin is on disk')
@@ -685,7 +737,7 @@ function M.restore(names, opts)
   for _, p in ipairs(names and resolve(names) or state.list) do
     -- Read again: the checkout moved behind cinch's back.
     p.rev = nil
-    if p.path and locked[p.name] and pack.rev(p) ~= locked[p.name] then
+    if p.path and not p.dir and locked[p.name] and pack.rev(p) ~= locked[p.name] then
       moved[#moved + 1] = p.name
     end
   end

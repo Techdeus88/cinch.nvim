@@ -15,7 +15,7 @@ local M = {}
 ---@class cinch.Handler
 ---@field parse? fun(value: any): any[] spec value -> list of values; default wraps one value in a list
 ---@field arm fun(p: cinch.Plugin, values: any[]) set up what loads the plugin
----@field disarm? fun(p: cinch.Plugin, values: any[]) remove it; runs right before the plugin loads
+---@field disarm? fun(p: cinch.Plugin, values: any[], loading?: boolean) remove it; `loading`: it is about to load
 ---@field loaded? fun(p: cinch.Plugin, values: any[]) after a successful load
 
 ---@type table<string, cinch.Handler>
@@ -342,16 +342,21 @@ M.handlers.cmd = {
       })
     end
   end,
-  disarm = function(p, names)
+  disarm = function(p, names, loading)
     for _, name in ipairs(names) do
       local c = cmds[name]
       if c then
         c[p.name] = nil
+        -- Only our stub: another plugin may have defined the real command meanwhile.
+        local def = api.nvim_get_commands({})[name]
+        local ours = def and is_stub(def, name)
+        if loading and def and not ours then
+          local msg = '`%s`: its command `:%s` was defined by something else before it loaded'
+          events.report(msg:format(p.name, name), vim.log.levels.WARN, p.name)
+        end
         if not next(c) then
           cmds[name] = nil
-          -- Only our stub: another plugin may have defined the real command meanwhile.
-          local def = api.nvim_get_commands({})[name]
-          if def and is_stub(def, name) then
+          if ours then
             api.nvim_del_user_command(name)
           end
         end
@@ -445,18 +450,23 @@ M.handlers.keys = {
       end
     end
   end,
-  disarm = function(p, keys)
+  disarm = function(p, keys, loading)
     for _, k in ipairs(keys) do
       for _, mode in ipairs(k.modes) do
         local id = mode .. ' ' .. k.lhs
         if stubs[id] then
           stubs[id][p.name] = nil
+          local stub = stub_maps[id]
+          -- Only our stub: you or another plugin may have mapped the key meanwhile.
+          local ours = stub and is_key_stub(mode, stub.fn)
+          if loading and stub and not ours then
+            local msg = '`%s`: its key `%s` was mapped by something else before it loaded'
+            events.report(msg:format(p.name, k.lhs), vim.log.levels.WARN, p.name)
+          end
           if not next(stubs[id]) then
             stubs[id] = nil
-            local stub = stub_maps[id]
             stub_maps[id] = nil
-            -- Only our stub: you or another plugin may have mapped the key meanwhile.
-            if stub and is_key_stub(mode, stub.fn) then
+            if stub and ours then
               pcall(vim.keymap.del, mode, k.lhs)
               if stub.prev then
                 pcall(vim.fn.mapset, mode, false, stub.prev)
@@ -656,10 +666,11 @@ end
 ---@param hook 'arm'|'disarm'|'loaded'
 ---@param name string handler
 ---@param p cinch.Plugin
-local function call(hook, name, p)
+---@param loading? boolean for disarm: the plugin is about to load
+local function call(hook, name, p, loading)
   local fn = M.handlers[name][hook]
   if fn then
-    try(('%s %s of `%s`'):format(hook, name, p.name), fn, p, p.triggers[name])
+    try(('%s %s of `%s`'):format(hook, name, p.name), fn, p, p.triggers[name], loading)
   end
 end
 
@@ -695,11 +706,13 @@ function M.arm(p)
   end
 end
 
---- Remove a plugin's stubs, right before it loads.
+--- Remove a plugin's stubs. With `loading`, right before it loads, a stub that
+--- something else replaced meanwhile is reported: that trigger never loaded the plugin.
 ---@param p cinch.Plugin
-function M.disarm(p)
+---@param loading? boolean
+function M.disarm(p, loading)
   for name in pairs(p.armed or {}) do
-    call('disarm', name, p)
+    call('disarm', name, p, loading)
   end
   p.armed = nil
 end

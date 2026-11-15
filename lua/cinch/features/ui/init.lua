@@ -372,6 +372,9 @@ local function fetch_info(tries)
     local pack = require('cinch.pack')
     if not p then
       return
+    elseif p.dir then
+      -- Not vim.pack's: it has nothing to say about it.
+      ui.ctx.info[name] = {}
     elseif not p.path or not pack.idle() then
       if tries < 20 then
         return fetch_info(tries + 1)

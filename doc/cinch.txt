@@ -229,6 +229,11 @@ FIELDS                                                     *cinch-spec-fields*
 `module`                                                  *cinch-spec-module*
     `false` keeps `require()` of this plugin's modules from loading it.
 
+`dir`                                                        *cinch-spec-dir*
+    A local folder to load the plugin from, such as `'~/repos/thing.nvim'`:
+    a checkout you work in. It needs no `src`, and takes every other field.
+    cinch never installs, updates or deletes it.
+
 A field cinch does not know gets a warning naming the spec file, and is
 ignored.
 
@@ -920,6 +925,11 @@ cinch.trigger({name}, {def})                                 *cinch.trigger()*
   wait too.
 - `keys = false`, `cmd = false` and the like turn that trigger off, as in
   lazy.nvim. With no trigger left, the plugin loads `later`.
+- A `keys` or `cmd` stub is cinch's only while it is still the mapping or
+  the command. One you or another plugin set since is left alone, and when
+  the plugin loads another way cinch warns that the trigger was taken. A
+  mapping of yours that a stub replaced comes back when the stub goes.
+- A `setup()` option of the wrong type gets a warning and its default.
 - Plugins behind the same trigger load in the order you declared them. A key
   replayed in operator-pending mode keeps its operator, count and register,
   and a command keeps the exact text you typed.

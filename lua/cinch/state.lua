@@ -34,6 +34,7 @@ local M = {}
 ---@field armed? table<string, true> handlers set up and not yet removed
 ---@field origin? { file: string, index?: integer } where the spec was declared
 ---@field path? string set once vim.pack reports the plugin on disk
+---@field dir? string a local folder it loads from, outside vim.pack: never installed, updated or deleted
 ---@field rev? string checked-out commit, from vim.pack
 ---@field deleted? true deleted from disk this session; installs again on the next start
 ---@field self? true cinch itself, kept updated as one of its plugins
