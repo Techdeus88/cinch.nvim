@@ -318,7 +318,7 @@ function M.make(w)
         end, names)
         for _, name in ipairs(names) do
           if not vim.list_contains(pending, name) then
-            w.note(name, { text = 'all good to go', hl = 'CinchLoaded' })
+            w.note(name, { text = 'all good to go', hl = 'CinchUpToDate' })
           end
         end
         if u and #pending > 0 then

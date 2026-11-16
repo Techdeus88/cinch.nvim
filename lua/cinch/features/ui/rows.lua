@@ -175,7 +175,8 @@ end
 
 --- The row's message: only when there is something to say.
 ---@param p cinch.Plugin
----@return string? text, string? group
+---@return string|{ [1]: string, [2]: string }[]|nil text, or chunks with their groups
+---@return string? group
 local function message(p)
   local sec = M.section_of(p)
   local ui = package.loaded['cinch.features.ui']
@@ -192,7 +193,7 @@ local function message(p)
   elseif p.activity then
     return p.activity .. '…', 'CinchActive'
   elseif note then
-    return note.text, note.hl
+    return note.chunks or note.text, note.hl
   elseif sec == 'disabled' then
     return M.off_reason(p), 'CinchMuted'
   elseif p.deleted then
@@ -236,7 +237,7 @@ end
 ---@field slowest number the bar's full length
 ---@field needed_by string[]
 ---@field up? integer pending commits
----@field msg? string
+---@field msg? string|{ [1]: string, [2]: string }[] text, or chunks with their groups
 ---@field msg_hl? string
 ---@field marked? boolean selected for an action: the row gets a shade
 ---@field indent? boolean under a section title: two cells in, so the section stands out
@@ -267,7 +268,7 @@ local function add_row(c, p, r)
     items[#items + 1] = { { '↑' .. r.up, 'CinchUpdate' } }
   end
   if r.msg then
-    items[#items + 1] = { { r.msg, r.msg_hl } }
+    items[#items + 1] = type(r.msg) == 'table' and r.msg or { { r.msg, r.msg_hl } }
   end
   c:add(canvas.clip(join(items), c.width - 1), { plugin = p.name, line_hl = r.marked and 'CinchMarked' or nil })
 end

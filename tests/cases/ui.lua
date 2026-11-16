@@ -329,6 +329,15 @@ H.after_startup(function()
   H.press('u')
   H.eq(line_of(w.list, ' floaty .*all good to go') ~= nil, true, 'u with no update says so on the row')
   H.eq(table.concat(H.header(), '\n'):find('all good to go', 1, true), nil, 'not in the header')
+  H.eq(groups(assert(line_of(w.list, ' floaty '))).CinchUpToDate, true, 'in a color of its own')
+  local function fg(group)
+    return api.nvim_get_hl(0, { name = group, link = false }).fg
+  end
+  local canvas = require('cinch.features.ui.canvas')
+  for _, kind in ipairs({ 'now', 'later', 'event', 'ft', 'cmd', 'keys', 'dep', 'trigger', 'off' }) do
+    local _, text = canvas.kind_hl(kind)
+    H.eq(fg('CinchUpToDate') ~= fg(text), true, 'not the color of ' .. kind)
+  end
   H.press('-')
   H.eq(size(), { math.floor(vim.o.columns * 0.75), math.floor(lines_h * 0.95) }, '- makes it 95% tall')
   H.press('-')

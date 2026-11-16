@@ -812,9 +812,10 @@ local function on_report(d)
   end
 end
 
---- Put a note on a plugin's row, or take it off.
+--- Put a note on a plugin's row, or take it off. `chunks`, text with its groups, stands
+--- in for `text` when it has more than one color.
 ---@param name string
----@param note? { text: string, hl: string, sticky?: boolean }
+---@param note? { text: string, hl: string, chunks?: { [1]: string, [2]: string }[], sticky?: boolean }
 function M.note(name, note)
   M.notes[name] = note
   if note and not note.sticky then
@@ -847,6 +848,31 @@ function M.setup(opts)
   events.on('Activity', function(d)
     if d.to == 'building' then
       M.notes[d.plugin.name] = nil
+    end
+  end)
+  -- An update says on its row which commit it moved from and to.
+  local before = {} ---@type table<string, string> commit by plugin, as an update starts
+  events.on('PackPre', function(d)
+    if d.kind == 'update' and d.plugin then
+      before[d.name] = require('cinch.pack').rev(d.plugin)
+    end
+  end)
+  events.on('Pack', function(d)
+    local from = before[d.name]
+    before[d.name] = nil
+    local to = d.kind == 'update' and d.plugin and require('cinch.pack').rev(d.plugin)
+    if from and to and from ~= to then
+      local old, new = from:sub(1, 7), to:sub(1, 7)
+      M.note(d.name, {
+        text = ('updated %s to %s'):format(old, new),
+        hl = 'CinchName',
+        chunks = {
+          { 'updated ', 'CinchName' },
+          { old, 'CinchCommit' },
+          { ' to ', 'CinchName' },
+          { new, 'CinchCommit' },
+        },
+      })
     end
   end)
   if vim.v.vim_did_enter == 0 then

@@ -31,6 +31,8 @@ M.highlights = {
   CinchTriggerValue = 'Normal',
   CinchLink = 'Underlined',
   CinchCommit = 'Constant',
+  -- `all good to go`: its own color, apart from every way a plugin loads.
+  CinchUpToDate = 'Identifier',
   CinchBackdrop = 'CinchBackdropDefault',
   CinchMarked = 'Visual',
 }
@@ -168,6 +170,10 @@ function M.kind_hl(kind)
   return name, name .. 'Text'
 end
 
+-- Where CinchUpToDate takes its color from: the first hue no kind took. A colorscheme
+-- with few hues may leave none; then it is the text color, which no kind has.
+local up_to_date_sources = { { 'Identifier' }, { 'Directory' }, { 'Title' }, { 'Question' }, { 'Function' } }
+
 -- The chips' colors, by role.
 local chip_sources = { CinchNow = 'ok', CinchLater = 'info', CinchTrigger = 'warn' }
 
@@ -303,6 +309,8 @@ function M.define_colors(rounded)
     set(0, chip .. 'Cap', { fg = bg })
     set(0, text_hl, { fg = fg })
   end
+  local up_to_date, raw = tone(up_to_date_sources, taken)
+  own('CinchUpToDate', { fg = (up_to_date and not taken[raw]) and up_to_date or text, italic = true })
   for group, role in pairs(chip_sources) do
     local fg = tone(roles[role]) or text
     local bg = blend(fg, base, 0.2)

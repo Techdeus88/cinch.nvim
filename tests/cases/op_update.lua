@@ -55,8 +55,18 @@ H.after_startup(function()
   -- u on a plugin that is not loaded: no restart.
   H.commit(beta_dir, 'feat: three')
   check()
+  local beta = H.plugin('beta.nvim')
+  local from = require('cinch.pack').rev(beta):sub(1, 7)
   u.apply({ 'beta.nvim' })
   H.eq(H.noted('Updated 1 of 1 plugin in [%d.]+m?s$'), true, 'no restart for a plugin not loaded')
+  vim.wait(50)
+  local to = H.sh({ 'git', 'rev-parse', '--short=7', 'HEAD' }, beta.path)
+  H.eq(
+    rows.message(beta),
+    { { 'updated ', 'CinchName' }, { from, 'CinchCommit' }, { ' to ', 'CinchName' }, { to, 'CinchCommit' } },
+    'its row says which commit it moved from and to, the commits in their own color'
+  )
+  H.eq(table.concat(lines(), '\n'):find(('beta%%.nvim .*updated %s to %s'):format(from, to)) ~= nil, true, 'on the row')
 
   -- A plugin vim.pack does not know fails, and is counted.
   u.apply({ 'beta.nvim', 'nope' })
