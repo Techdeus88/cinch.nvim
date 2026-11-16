@@ -47,7 +47,7 @@ M.names = {
   Deleted = true, -- { names, deleted, failed, ms }      and ended
   Progress = true, -- { title, done?, total?, name?, status, percent?, build? }
   --                                                    vim.pack's progress, a check's or a build's
-  Report = true, -- { msg, level, plugin?, source? }    cinch has something to tell the user; plugin: the name
+  Report = true, -- { msg, level, plugin?, source?, shown? }    cinch has something to tell the user; plugin: the name
   --                                                    it is about. A subscriber that shows it sets handled = true
   Ask = true, -- { verb, names, done }                  a yes or no about plugins; set handled = true and
   --                                                    call done(yes) to ask it your own way

@@ -297,6 +297,18 @@ local function is_stub(def, name)
   return (def.desc or def.definition) == cmd_desc .. name
 end
 
+--- The replayed command's own error, a missing argument say: not cinch's, so it shows
+--- where Neovim shows one you typed, on the command line, as Neovim words it. It is
+--- logged too, with `shown` set so no subscriber shows it again.
+---@param err string
+local function command_error(err)
+  local msg = err:match('Vim%b():(.*)$') or err:match('Vim:(.*)$') or err
+  api.nvim_echo({ { msg } }, true, { err = true })
+  if events.has('Report') then
+    events.emit('Report', { msg = msg, level = vim.log.levels.ERROR, source = 'command', shown = true })
+  end
+end
+
 ---@param name string
 ---@param args vim.api.keyset.create_user_command.command_args
 local function on_cmd(name, args)
@@ -312,7 +324,10 @@ local function on_cmd(name, args)
       args.bang and '!' or '',
       args.args ~= '' and (' ' .. args.args) or ''
     )
-    try(':' .. name, vim.cmd --[[@as function]], line)
+    local ok, err = pcall(vim.cmd --[[@as function]], line)
+    if not ok then
+      command_error(tostring(err))
+    end
   end)
 end
 

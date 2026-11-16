@@ -372,7 +372,7 @@ function M.setup(opts)
 
   events.on('Report', function(d)
     record(d.level, d.msg, d.source or 'cinch', d.plugin)
-    if not d.handled then
+    if not d.handled and not d.shown then
       show(d.level, d.msg)
     end
   end)

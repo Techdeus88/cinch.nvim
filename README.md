@@ -323,7 +323,7 @@ end)
 | `Updating`, `Updated` | `names`, and after it `updated`, `failed`, `total`, `ms` and `restart`: updates applied without the review tab start and end |
 | `Deleting`, `Deleted` | `names`, and after it `deleted`, `failed` and `ms` |
 | `Progress` | `title`, `done`, `total`, `name`, `status`, `percent`, `build`: `vim.pack`'s progress, an update check's, and a build's. A subscriber that shows it sets `handled` |
-| `Report` | `msg`, `level`, `plugin`, `source`: something for you to read, and the plugin it is about. A subscriber that shows it sets `handled` |
+| `Report` | `msg`, `level`, `plugin`, `source`, `shown`: something for you to read, and the plugin it is about. A subscriber that shows it sets `handled`; `shown` means it is on the command line already, to log only |
 | `Ask` | `verb`, `names`, `done`: a yes or no about plugins. Set `handled = true` and call `done(yes)` to ask it your own way |
 
 The message feature adds `Progress` (`title`, `done`, `total`, `name`: `vim.pack`'s progress, one plugin at a time) and `Message` (an entry added to the log).

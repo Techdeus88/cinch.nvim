@@ -796,8 +796,9 @@ order, lower first, and get the payload. See |cinch.on()|. >lua
     `vim.pack`'s progress, an update check's, and a build's. A subscriber
     that shows it sets `handled`
 `Report`
-    `msg`, `level`, `plugin`, `source`: something for you to read, and the
-    plugin it is about. A subscriber that shows it sets `handled`
+    `msg`, `level`, `plugin`, `source`, `shown`: something for you to read,
+    and the plugin it is about. A subscriber that shows it sets `handled`;
+    `shown` means it is on the command line already, to log only
 
 The messages feature adds `Message` (`time`, `level`, `msg`, `source`,
 `plugin`: an entry added to the log). The updates feature adds `Updates`

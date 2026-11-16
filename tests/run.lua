@@ -120,6 +120,11 @@ vim.api.nvim_create_autocmd('BufReadPost', { pattern = 'Cargo.toml', callback = 
   vim.g.cargo_read = (vim.g.cargo_read or 0) + 1
 end })]],
   },
+  -- A command that needs an argument, as nvim-training's :Training does.
+  ['argy'] = {
+    ['plugin/argy.lua'] = [[
+vim.api.nvim_create_user_command('ArgyGo', function(a) vim.g.argy = a.args end, { nargs = '+' })]],
+  },
   -- Two plugins that provide one module.
   ['dup-first'] = { ['lua/dupmod.lua'] = "return { from = 'first' }" },
   ['dup-second'] = { ['lua/dupmod.lua'] = "return { from = 'second' }" },

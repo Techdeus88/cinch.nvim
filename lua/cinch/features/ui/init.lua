@@ -785,8 +785,12 @@ local open_after_start = false
 
 --- Show a Report: on its plugin's row when the Plugins view has one for it, else in
 --- the header. A warning or an error opens the window.
----@param d { msg: string, level: integer, plugin?: string }
+---@param d { msg: string, level: integer, plugin?: string, shown?: boolean }
 local function on_report(d)
+  -- Shown already, on the command line: only the Log keeps it.
+  if d.shown then
+    return
+  end
   d.handled = true
   local op = ui.ctx.op
   -- An operation's ending already says it.
