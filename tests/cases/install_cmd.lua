@@ -51,6 +51,7 @@ H.after_startup(function()
     return beta.path ~= nil
   end, 'i to install it')
   H.eq(beta.state, 'pending', 'still waiting for its trigger')
-  vim.cmd('BetaGo')
+  -- beta defines no BetaGo, so the replay fails, as the command itself would.
+  pcall(vim.cmd --[[@as function]], 'BetaGo')
   H.eq(beta.state, 'loaded', 'which still loads it')
 end)

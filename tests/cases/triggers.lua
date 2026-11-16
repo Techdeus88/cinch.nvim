@@ -72,8 +72,9 @@ H.after_startup(function()
   H.eq(vim.b.vimmy, 1, 'a Vimscript FileType autocmd replays once, able to call its s: functions')
   H.eq(H.noted('replaying FileType'), false, 'with no error')
 
-  vim.cmd('Ghost')
-  H.eq(H.noted('Not an editor command: Ghost$'), true, 'a command the plugin never defines fails once')
+  local ok = pcall(vim.cmd --[[@as function]], 'Ghost')
+  H.eq(ok, false, 'a command the plugin never defines fails, as any unknown command does')
+  H.eq(H.noted('^E492: Not an editor command: Ghost$'), true, 'once, in its own words')
   H.eq(vim.api.nvim_get_commands({}).Ghost, nil, 'and the stub is gone')
 
   H.eq(vim.g.flag_armed, 'beta.nvim', 'a custom trigger is armed')

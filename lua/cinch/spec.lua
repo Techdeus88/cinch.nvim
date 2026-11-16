@@ -29,7 +29,6 @@ local M = {}
 ---@field config? true|fun(p: cinch.Plugin, opts: table) replaces the default setup(opts) call
 ---@field after? fun(p: cinch.Plugin) after the plugin loaded and its config ran
 ---@field module? boolean false: require() of its modules does not load it
----@field dir? string a local folder to load the plugin from; cinch never installs, updates or deletes it
 
 ---A vim.pack.Spec, with `[1]` in place of `src` and cinch fields at the top level if you like.
 ---@class cinch.Spec: vim.pack.Spec, cinch.Data
@@ -62,7 +61,6 @@ M.fields = {
   config = true,
   after = true,
   module = true,
-  dir = true,
 }
 ---@type table<string, true>
 M.triggers = { event = true, ft = true, cmd = true, keys = true }
@@ -190,13 +188,6 @@ local function hoist(s)
   return notes
 end
 
---- A `dir` as an absolute path, with ~ and environment variables expanded.
----@param dir string
----@return string
-function M.full(dir)
-  return vim.fs.normalize(vim.fn.fnamemodify(vim.fs.normalize(dir), ':p'))
-end
-
 --- A spec table with `src` and every cinch field in `data`, or nil without a src.
 ---@param s any
 ---@return vim.pack.Spec? spec
@@ -216,11 +207,6 @@ function M.normalize(s)
   end
   if s.src == nil and type(s[1]) == 'string' then
     s.src, s[1] = expand(s[1]), nil
-  end
-  -- A local folder needs no src: its path stands in, and names it.
-  local dir = type(s.data) == 'table' and s.data.dir or s.dir
-  if s.src == nil and type(dir) == 'string' and dir ~= '' then
-    s.src = M.full(dir)
   end
   if type(s.src) == 'string' and s.src ~= '' then
     return s, hoist(s)
@@ -302,10 +288,6 @@ local function fill(p, spec, origin, dep_only, notes)
   p.spec, p.data, p.origin = spec, shallow(spec.data), origin
   p.src, p.version = spec.src, spec.version
   p.dep_only = dep_only or nil
-  p.dir = type(p.data.dir) == 'string' and p.data.dir ~= '' and M.full(p.data.dir) or nil
-  if p.dir and vim.uv.fs_stat(p.dir) then
-    p.path = p.dir
-  end
   local very_lazy
   p.load, p.when, very_lazy = resolve_load(p.data, dep_only, notes)
   p.very_lazy = very_lazy or nil

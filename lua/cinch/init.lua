@@ -307,7 +307,7 @@ end
 local function ask_install(install, confirm, cont)
   local missing = {}
   for _, p in ipairs(confirm and install or {}) do
-    if pack.missing(p) then
+    if not vim.uv.fs_stat(vim.fs.joinpath(pack.dir, p.name)) then
       missing[#missing + 1] = p.name
     end
   end
@@ -333,7 +333,7 @@ local function install_all(install, confirm)
   local t = hrtime()
   local missing = {}
   for _, p in ipairs(install) do
-    if pack.missing(p) then
+    if not vim.uv.fs_stat(vim.fs.joinpath(pack.dir, p.name)) then
       missing[#missing + 1] = p.name
     end
   end
@@ -458,7 +458,7 @@ local function to_defer(install)
     return {}
   end
   local missing = vim.tbl_filter(function(p)
-    return pack.missing(p)
+    return not vim.uv.fs_stat(vim.fs.joinpath(pack.dir, p.name))
   end, install)
   -- The lockfile matters only before vim.pack's first call of the session.
   if #missing > 0 and not pack.idle() and #pack.locked_missing() > 0 then
@@ -663,7 +663,7 @@ end
 ---@return cinch.Plugin[] missing what it tried to install
 function M.install(names, opts)
   local missing = vim.tbl_filter(function(p)
-    return not p.self and p.state ~= 'disabled' and pack.missing(p)
+    return not p.self and p.state ~= 'disabled' and not vim.uv.fs_stat(vim.fs.joinpath(pack.dir, p.name))
   end, names and resolve(names) or state.list)
   if #missing == 0 then
     events.report(names and 'already installed' or 'nothing to install: every plugin is on disk')
@@ -737,7 +737,7 @@ function M.restore(names, opts)
   for _, p in ipairs(names and resolve(names) or state.list) do
     -- Read again: the checkout moved behind cinch's back.
     p.rev = nil
-    if p.path and not p.dir and locked[p.name] and pack.rev(p) ~= locked[p.name] then
+    if p.path and locked[p.name] and pack.rev(p) ~= locked[p.name] then
       moved[#moved + 1] = p.name
     end
   end

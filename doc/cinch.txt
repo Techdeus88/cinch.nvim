@@ -229,11 +229,6 @@ FIELDS                                                     *cinch-spec-fields*
 `module`                                                  *cinch-spec-module*
     `false` keeps `require()` of this plugin's modules from loading it.
 
-`dir`                                                        *cinch-spec-dir*
-    A local folder to load the plugin from, such as `'~/repos/thing.nvim'`:
-    a checkout you work in. It needs no `src`, and takes every other field.
-    cinch never installs, updates or deletes it.
-
 A field cinch does not know gets a warning naming the spec file, and is
 ignored.
 

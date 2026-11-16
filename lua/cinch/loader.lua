@@ -160,29 +160,6 @@ local function on_rtp(path)
   return vim.list_contains(vim.opt.rtp:get() --[[@as string[] ]], path)
 end
 
---- What :packadd does, for a plugin in a folder of its own (`dir`), which :packadd
---- cannot find: put it and its after/ on the runtimepath and, unless `bang`, source
---- its plugin/ and ftdetect/ files.
----@param p cinch.Plugin
----@param bang boolean
-local function add_dir(p, bang)
-  if not p.path then
-    error(('`%s` is not a folder'):format(p.dir), 0)
-  end
-  vim.opt.rtp:prepend(p.path)
-  if uv.fs_stat(p.path .. '/after') then
-    vim.opt.rtp:append(p.path .. '/after')
-  end
-  if bang then
-    return
-  end
-  local files = vim.fn.glob(p.path .. '/plugin/**/*.{vim,lua}', false, true)
-  vim.list_extend(files, vim.fn.glob(p.path .. '/ftdetect/*.{vim,lua}', false, true))
-  for _, f in ipairs(files) do
-    vim.cmd.source({ f, magic = { file = false } })
-  end
-end
-
 ---@param p cinch.Plugin
 local function packadd(p)
   -- Already on the runtimepath, put there by your init.lua: cinch itself, say, or a
@@ -194,17 +171,10 @@ local function packadd(p)
   -- While init.lua runs, Neovim's load-plugins step sources plugin/ and
   -- after/plugin/ later, in normal startup order; :packadd! only adds the path.
   if vim.v.vim_did_init == 0 then
-    if p.dir then
-      return add_dir(p, true)
-    end
     vim.cmd.packadd({ name, bang = true, magic = { file = false } })
     return
   end
-  if p.dir then
-    add_dir(p, false)
-  else
-    vim.cmd.packadd({ name, magic = { file = false } })
-  end
+  vim.cmd.packadd({ name, magic = { file = false } })
   if vim.v.vim_did_enter == 0 then
     if #late == 0 then
       api.nvim_create_autocmd('VimEnter', { once = true, callback = source_late })

@@ -149,7 +149,12 @@ function M.import_lazy_lock(plugins)
   for _, p in ipairs(plugins) do
     local l = lazy[p.name]
     local commit = type(l) == 'table' and l.commit
-    if type(commit) == 'string' and commit:find('^%x+$') and lock.plugins[p.name] == nil and M.missing(p) then
+    if
+      type(commit) == 'string'
+      and commit:find('^%x+$')
+      and lock.plugins[p.name] == nil
+      and not uv.fs_stat(vim.fs.joinpath(M.dir, p.name))
+    then
       lock.plugins[p.name] = { src = p.src, rev = commit }
       names[#names + 1] = p.name
     end
@@ -160,14 +165,6 @@ function M.import_lazy_lock(plugins)
     vim.fn.writefile(vim.split(json, '\n'), file)
   end
   return names
-end
-
---- Whether a plugin is vim.pack's to install and is not on disk. One with a `dir`
---- never is: it loads from that folder, or fails when the folder is not there.
----@param p cinch.Plugin
----@return boolean
-function M.missing(p)
-  return not p.dir and not uv.fs_stat(vim.fs.joinpath(M.dir, p.name))
 end
 
 --- Whether vim.pack can be called now.
@@ -436,13 +433,10 @@ end
 function M.add(plugins, confirm)
   -- Only vim.pack's own fields: it deep-copies every spec, and `data` holds functions.
   local specs, names = {}, {}
-  for _, p in ipairs(plugins) do
-    -- A plugin with a `dir` is not vim.pack's: it loads from that folder.
-    if not p.dir then
-      -- With its cinch fields in `data`, so vim.pack.get() and PackChanged carry them too.
-      specs[#specs + 1] = { src = p.src, name = p.name, version = p.version, data = M.portable(p.data) }
-      names[#names + 1] = p.name
-    end
+  for i, p in ipairs(plugins) do
+    -- With its cinch fields in `data`, so vim.pack.get() and PackChanged carry them too.
+    specs[i] = { src = p.src, name = p.name, version = p.version, data = M.portable(p.data) }
+    names[i] = p.name
   end
   adding = true
   -- A no cinch already got: vim.pack's prompt gets it too, and takes its own way out.
@@ -471,7 +465,7 @@ function M.add(plugins, confirm)
     state.activity(p, nil)
     -- vim.pack skips the load callback for a plugin it already added this session.
     if not p.path then
-      local path = p.dir or vim.fs.joinpath(M.dir, p.name)
+      local path = vim.fs.joinpath(M.dir, p.name)
       p.path = uv.fs_stat(path) and path or nil
     end
     if not p.path then
@@ -553,16 +547,6 @@ local function update_errors(from)
   return names
 end
 
---- `names` without the plugins that have a `dir`: those are yours to update or delete.
----@param names string[]
----@return string[]
-local function managed(names)
-  return vim.tbl_filter(function(name)
-    local p = state.plugins[name]
-    return not (p and p.dir)
-  end, names)
-end
-
 --- vim.pack.update through cinch, so the bus sees it. One that applies without the
 --- review tab is framed by Updating and Updated, and says how it ended; a review tab
 --- and a restore from the lockfile are not.
@@ -571,12 +555,6 @@ end
 ---@return boolean ok, any err
 function M.update(names, opts)
   opts = opts or {}
-  if names then
-    names = managed(names)
-    if #names == 0 then
-      return true
-    end
-  end
   if not opts.force or opts.target == 'lockfile' then
     return call('update', names, vim.pack.update, names, opts)
   end
@@ -586,7 +564,7 @@ function M.update(names, opts)
         return p.name
       end,
       vim.tbl_filter(function(p)
-        return p.path ~= nil and not p.dir
+        return p.path ~= nil
       end, state.list)
     )
   local start = uv.hrtime()
@@ -625,10 +603,6 @@ end
 ---@param opts? vim.pack.keyset.del
 ---@return boolean ok, any err
 function M.del(names, opts)
-  names = managed(names)
-  if #names == 0 then
-    return true
-  end
   local start = uv.hrtime()
   events.emit('Deleting', { names = names })
   local deleted, ok, res = reaching('delete', function()

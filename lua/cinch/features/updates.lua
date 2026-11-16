@@ -240,8 +240,7 @@ function M.check(names, opts)
     return opts.notify and events.report('an update check is already running')
   end
   local plugins = vim.tbl_filter(function(p)
-    -- One with a `dir` is your checkout: never fetched or moved.
-    return p.path ~= nil and not p.dir and (not names or vim.list_contains(names, p.name))
+    return p.path ~= nil and (not names or vim.list_contains(names, p.name))
   end, state.list)
   M.checking, M.failed, started = true, {}, uv.hrtime()
   events.emit('Checking', {
