@@ -51,7 +51,7 @@ end
 
 ---@class cinch.Opts
 ---@field spec? string|(string|cinch.Spec|cinch.Spec[])[] module paths, directories or specs; default { 'plugins' }
----@field confirm? boolean ask before installing, vim.pack's prompt; default true
+---@field confirm? boolean ask before installing, updating or deleting; default true
 ---@field budget? integer ms of `later` loading per event-loop tick; default 5
 ---@field defer? boolean when plugins are missing, install once the UI is up, not during init.lua; default true
 ---@field build_timeout? integer seconds an async function build may take before it fails; default 300
@@ -279,6 +279,12 @@ local function enabled(p)
     end
   end
   return true
+end
+
+--- Whether cinch asks before it installs, updates or deletes: the `confirm` option.
+---@return boolean
+function M.confirms()
+  return (M.opts or defaults).confirm ~= false
 end
 
 --- Ask yes or no about plugins. A feature that listens to `Ask` and sets `handled`
@@ -688,9 +694,9 @@ function M.install(names, opts)
   return missing
 end
 
---- Bring the disk in line with your specs: install what is missing, offer to delete
---- what no spec names, then check for updates. It never applies updates, and never
---- deletes a plugin your specs list.
+--- Bring the disk in line with your specs: install what is missing, delete what no
+--- spec names, once you confirm when `confirm` is on, then check for updates. It never
+--- applies updates, and never deletes a plugin your specs list.
 function M.sync()
   M.install()
   local function check()
@@ -701,7 +707,7 @@ function M.sync()
   end
   -- The check waits for your answer.
   if #pack.orphans() > 0 and #spec.broken == 0 then
-    M.clean({ confirm = true, done = check })
+    M.clean({ confirm = M.confirms(), done = check })
   else
     check()
   end
@@ -812,7 +818,11 @@ function M.clean(opts)
     return {}
   end
   if not opts.confirm then
-    return M.del(names) and names or {}
+    local deleted = M.del(names) and names or {}
+    if opts.done then
+      opts.done()
+    end
+    return deleted
   end
   local deleted = {}
   M.ask({

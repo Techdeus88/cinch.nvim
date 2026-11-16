@@ -22,6 +22,7 @@ local M = {}
 ---@field close fun()
 ---@field ask fun(req: { verb: string, names: string[], done: fun(yes: boolean) }): boolean
 ---@field answer fun(yes: boolean)
+---@field note fun(name: string, note?: { text: string, hl: string })
 ---@field input fun(req: { prompt: string, text?: string, change?: fun(text: string), done: fun(text?: string) })
 ---@field in_editor fun(fn: fun()) run fn from the editor window cinch was opened from
 
@@ -148,6 +149,49 @@ function M.make(w)
     end, names)
   end
 
+  --- Those of `names` that `needs` says have work to do. The rest say on their rows
+  --- that they are `already <word>`.
+  ---@param names string[]
+  ---@param needs fun(name: string): boolean
+  ---@param word string
+  ---@return string[]
+  local function todo(names, needs, word)
+    return vim.tbl_filter(function(name)
+      if needs(name) then
+        return true
+      end
+      w.note(name, { text = 'already ' .. word, hl = 'CinchUpToDate' })
+      return false
+    end, names)
+  end
+
+  --- Run `fn` on `names` from your editor window: once you say yes on their rows when
+  --- `confirm` is on, else now.
+  ---@param verb string
+  ---@param names string[]
+  ---@param fn fun(names: string[])
+  local function confirmed(verb, names, fn)
+    local function run()
+      w.in_editor(function()
+        fn(names)
+      end)
+    end
+    if #names == 0 then
+      return
+    elseif not require('cinch').confirms() then
+      return run()
+    end
+    w.ask({
+      verb = verb,
+      names = names,
+      done = function(yes)
+        if yes then
+          run()
+        end
+      end,
+    })
+  end
+
   --- Select the row under the cursor, or let go of it, then move to the next row.
   local function toggle()
     local line = api.nvim_win_get_cursor(ui.list)[1]
@@ -208,23 +252,25 @@ function M.make(w)
           return o.name == name
         end)
     end, targets())
-    if #names == 0 then
-      return
-    end
     local p = state.plugins[names[1]]
     if #names == 1 and p and p.self then
       return require('cinch').del(names)
     end
-    local force = #in_specs(names) > 0
-    w.ask({
-      verb = 'Delete',
-      names = names,
-      done = function(yes)
-        if yes then
-          require('cinch').del(names, { force = force })
-        end
-      end,
-    })
+    names = todo(names, function(name)
+      return not (state.plugins[name] and state.plugins[name].deleted)
+    end, 'deleted')
+    confirmed('Delete', names, function(these)
+      require('cinch').del(these, { force = #in_specs(these) > 0 })
+    end)
+  end
+
+  --- Apply the pending updates of `names`, once you confirm.
+  ---@param names string[]
+  local function update(names)
+    local u = updates()
+    if u then
+      confirmed('Update', names, u.apply)
+    end
   end
 
   --- Profile: siblings in the order they began, or slowest first.
@@ -290,7 +336,9 @@ function M.make(w)
           return
         end
         act(function(names)
-          require('cinch').load(in_specs(names))
+          require('cinch').load(todo(in_specs(names), function(name)
+            return state.plugins[name].state ~= 'loaded'
+          end, 'loaded'))
         end)()
       end,
       'load the plugin now, or the ones selected; in Triggers, what waits on the trigger',
@@ -298,7 +346,12 @@ function M.make(w)
     {
       { 'i' },
       act(function(names)
-        require('cinch').install(in_specs(names))
+        local missing = todo(in_specs(names), function(name)
+          return not vim.uv.fs_stat(vim.fs.joinpath(require('cinch.pack').dir, name))
+        end, 'installed')
+        if #missing > 0 then
+          require('cinch').install(missing)
+        end
       end),
       'install the plugin, or the ones selected, when not on disk: a failed install, or one you deleted',
     },
@@ -313,29 +366,27 @@ function M.make(w)
       { 'u' },
       act(function(names)
         local u = updates()
-        local pending = vim.tbl_filter(function(name)
+        update(todo(names, function(name)
           return u ~= nil and u.results[name] ~= nil
-        end, names)
-        for _, name in ipairs(names) do
-          if not vim.list_contains(pending, name) then
-            w.note(name, { text = 'all good to go', hl = 'CinchUpToDate' })
-          end
-        end
-        if u and #pending > 0 then
-          u.apply(pending)
-        end
+        end, 'up to date'))
       end),
-      'apply its pending update, or theirs',
+      'apply its pending update, or theirs, once you confirm',
     },
     {
       { 'U' },
       function()
         local u = updates()
-        if u then
-          w.in_editor(u.apply)
+        if not u then
+          return
         end
+        local pending = vim.tbl_keys(u.results)
+        if #pending == 0 then
+          return u.apply()
+        end
+        table.sort(pending)
+        update(pending)
       end,
-      'apply every pending update',
+      'apply every pending update, once you confirm',
     },
     {
       { 'c' },

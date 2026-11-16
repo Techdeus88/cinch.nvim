@@ -1,11 +1,13 @@
 -- :Cinch restore: puts plugins back on the revisions the lockfile records, after their
--- checkouts moved on their own. With ! it does not ask first.
+-- checkouts moved on their own. With !, or with confirm off, it does not ask first.
 local H = dofile(vim.env.CINCH_ROOT .. '/tests/helpers.lua')
 local alpha_src = H.own('alpha.nvim')
 
 require('cinch').setup({ confirm = false, spec = { { { alpha_src } } } })
 
 H.after_startup(function()
+  -- Installed without asking; the rows ask from here on.
+  require('cinch').opts.confirm = true
   local pack = require('cinch.pack')
   local alpha = H.plugin('alpha.nvim')
   local locked = pack.rev(alpha)
@@ -35,4 +37,10 @@ H.after_startup(function()
   vim.cmd('Cinch restore! alpha.nvim')
   alpha.rev = nil
   H.eq(pack.rev(alpha), locked, 'restore! puts it back without asking')
+
+  require('cinch').opts.confirm = false
+  H.commit(alpha.path, 'drift once more')
+  vim.cmd('Cinch restore')
+  alpha.rev = nil
+  H.eq({ asks(), pack.rev(alpha) }, { false, locked }, 'so does restore with confirm off')
 end)

@@ -4,11 +4,12 @@
 local H = dofile(vim.env.CINCH_ROOT .. '/tests/helpers.lua')
 local cinch = require('cinch')
 
----@return boolean whether the window asks about gamma on its row
-local function asks()
+---@param question? string default: deleting gamma
+---@return boolean whether the window asks it on the plugin's row
+local function asks(question)
   local w = require('cinch.features.ui').windows()
   local lines = w.list and vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(w.list), 0, -1, false) or {}
-  return table.concat(lines, '\n'):find('Delete gamma Yes (y) or No (n)', 1, true) ~= nil
+  return table.concat(lines, '\n'):find((question or 'Delete gamma') .. ' Yes (y) or No (n)', 1, true) ~= nil
 end
 
 local alpha_src, alpha_dir = H.own('alpha.nvim')
@@ -27,6 +28,8 @@ H.after_startup(function()
     H.eq(on_disk('gamma'), true, 'installed')
     return
   end
+  -- Installed without asking; the rows ask from here on.
+  cinch.opts.confirm = true
   local u = require('cinch.features.updates')
   local order = {}
   for _, name in ipairs({ 'Installing', 'Deleting', 'Checking' }) do
@@ -44,10 +47,15 @@ H.after_startup(function()
   cinch.del({ 'beta.nvim' }, { force = true })
   H.commit(alpha_dir, 'feat: newer')
   local before = require('cinch.pack').rev(H.plugin('alpha.nvim'))
+  -- Opening the window checks once on its own; the sync's own check comes after.
+  vim.cmd('Cinch')
+  idle()
   order = {}
   vim.cmd('Cinch sync')
+  H.eq({ asks('Install beta.nvim'), asks() }, { true, false }, 'it asks before installing, one question at a time')
+  H.press('y')
   H.eq(on_disk('beta.nvim'), true, 'what is missing installs')
-  H.eq(asks(), true, 'it asks before deleting, on the row')
+  H.eq(asks(), true, 'then it asks before deleting, on the row')
   H.eq(order, { 'Installing' }, 'and the check waits for the answer')
   H.press('n')
   idle()
@@ -59,9 +67,17 @@ H.after_startup(function()
   order = {}
   vim.cmd('Cinch')
   H.press('s')
-  H.press('y')
+  H.eq(asks(), true, 's asks too')
+  H.press('n')
   idle()
-  H.eq(on_disk('gamma'), false, 's deletes it once you say yes')
+  H.eq(on_disk('gamma'), true, 'and no keeps it')
+
+  -- With confirm off, s deletes without asking.
+  cinch.opts.confirm = false
+  order = {}
+  H.press('s')
+  idle()
+  H.eq({ asks(), on_disk('gamma') }, { false, false }, 'with confirm off, s deletes without asking')
   H.eq(order, { 'Deleting', 'Checking' }, 'nothing to install, then delete, then check')
   H.eq(on_disk('alpha.nvim') and on_disk('beta.nvim'), true, 'what your specs list stays')
 end)

@@ -291,7 +291,8 @@ function M.apply(names)
 end
 
 --- Check, then ask on the row of each plugin that has something new; a yes applies
---- them. Without a window to ask in, vim.pack's review tab does.
+--- them. Without a window to ask in, vim.pack's review tab does. With `confirm` off,
+--- they apply without asking.
 ---@param names? string[] default: every plugin
 function M.review(names)
   if M.checking then
@@ -307,7 +308,11 @@ function M.review(names)
         return
       end
       table.sort(pending)
-      require('cinch').ask({
+      local cinch = require('cinch')
+      if not cinch.confirms() then
+        return M.apply(pending)
+      end
+      cinch.ask({
         verb = 'Update',
         names = pending,
         done = function(yes)

@@ -420,11 +420,18 @@ local function newest()
   api.nvim_win_set_cursor(ui.list, { api.nvim_buf_line_count(api.nvim_win_get_buf(ui.list)), 0 })
 end
 
+---@type { verb: string, names: string[], done: fun(yes: boolean) }[] waiting for the one on show
+local queued = {}
+
 --- Ask yes or no about plugins on their own rows; y and n answer, and closing is a no.
+--- While a row asks, the next question waits its turn.
 ---@param req { verb: string, names: string[], done: fun(yes: boolean) }
 ---@return boolean asked false when none of them has a row to ask on
 function M.ask(req)
-  M.answer(false)
+  if ui.ctx.ask then
+    queued[#queued + 1] = req
+    return true
+  end
   local names = {}
   for _, name in ipairs(req.names) do
     names[name] = true
@@ -469,6 +476,12 @@ function M.answer(yes)
   -- Not from inside the key: an install opens and focuses windows of its own.
   vim.schedule(function()
     ask.done(yes)
+    -- The next question; one with no row left to ask on is a no.
+    local req = table.remove(queued, 1)
+    while req and not M.ask(req) do
+      req.done(false)
+      req = table.remove(queued, 1)
+    end
   end)
 end
 
@@ -694,13 +707,14 @@ function M.open(view)
 end
 
 function M.close()
-  local ask = ui.ctx.ask
-  ui.ctx.ask = nil
-  if ask then
-    vim.schedule(function()
+  -- A no to the question on show and to every one waiting.
+  local asks = vim.list_extend({ ui.ctx.ask }, queued)
+  ui.ctx.ask, queued = nil, {}
+  vim.schedule(function()
+    for _, ask in ipairs(asks) do
       ask.done(false)
-    end)
-  end
+    end
+  end)
   for _, k in ipairs({ 'list', 'pane', 'header', 'footer', 'backdrop' }) do
     local win = ui[k] --[[@as integer?]]
     if valid(win) then
@@ -818,6 +832,7 @@ end
 ---@param note? { text: string, hl: string, chunks?: { [1]: string, [2]: string }[], sticky?: boolean }
 function M.note(name, note)
   M.notes[name] = note
+  redraw()
   if note and not note.sticky then
     vim.defer_fn(function()
       if M.notes[name] == note then

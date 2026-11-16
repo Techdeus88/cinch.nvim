@@ -56,6 +56,8 @@ H.after_startup(function()
     H.eq(on_disk('gamma') and on_disk('delta.nvim'), true, 'installed')
     return
   end
+  -- Installed without asking; the rows ask from here on.
+  require('cinch').opts.confirm = true
   local pack = require('cinch.pack')
   local orphans = vim.tbl_map(function(o)
     return o.name
@@ -125,6 +127,12 @@ H.after_startup(function()
   H.eq(beta.deleted, true, 'which is marked deleted')
   local row = list_lines()[vim.fn.match(list_lines(), ' beta\\.nvim ') + 1]
   H.eq(row:find(' deleted$') ~= nil, true, 'and its row says so')
+  H.press('d')
+  H.eq(
+    { shows('Yes (y)'), table.concat(list_lines(), '\n'):find(' beta%.nvim [^\n]*already deleted') ~= nil },
+    { false, true },
+    'd again asks nothing and says so on the row'
+  )
   local pane = api.nvim_buf_get_lines(api.nvim_win_get_buf(require('cinch.features.ui').windows().pane), 0, -1, false)
   H.eq(
     table.concat(pane, '\n'):find('installs again on the next start', 1, true) ~= nil,
@@ -148,5 +156,11 @@ H.after_startup(function()
   vim.cmd('Cinch clean')
   H.eq(H.noted('nothing to clean'), true, 'then there is nothing to clean')
   H.eq(on_disk('alpha.nvim'), true, 'what your specs list is left alone')
+
+  -- With confirm off, d deletes at once.
+  require('cinch').opts.confirm = false
+  go(' alpha%.nvim ')
+  H.press('d')
+  H.eq({ shows('Yes (y)'), on_disk('alpha.nvim') }, { false, false }, 'with confirm off, d deletes without asking')
   H.eq(prompts, 0, "Neovim's own prompt never showed")
 end)

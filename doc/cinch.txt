@@ -365,7 +365,7 @@ The defaults: >lua
     require('cinch').setup({
       -- module paths, folders, or specs; default lua/plugins/
       spec = { 'plugins' },
-      -- ask before installing, with vim.pack's prompt
+      -- ask before installing, updating or deleting, on the plugin's row
       confirm = true,
       -- ms of `later` loading per event-loop tick
       budget = 5,
@@ -493,7 +493,7 @@ The Lua API, `User Cinch*` events and highlight groups keep their names.
 :Cinch restore [names]                                        *:Cinch-restore*
 :Cinch restore! [names]
     Put plugins back on the revisions the lockfile records, after a checkout
-    moved on its own. With [!] it does not ask.
+    moved on its own. With [!], or with `confirm = false`, it does not ask.
 
 :Cinch del {names}                                                *:Cinch-del*
 :Cinch del! {names}
@@ -504,11 +504,11 @@ The Lua API, `User Cinch*` events and highlight groups keep their names.
 :Cinch clean!
     Delete every plugin on disk that no spec names, once you confirm. Not
     while a spec file has failed to load, since its plugins would look like
-    strays. With [!] it skips both.
+    strays. With [!] it skips both. With `confirm = false` it does not ask.
 
 :Cinch sync                                                      *:Cinch-sync*
-    Install what is missing, offer to delete what no spec names, then check
-    for updates. It never applies an update, and never deletes a plugin your
+    Install what is missing, offer to delete what no spec names (without
+    asking when `confirm = false`), then check for updates. It never applies an update, and never deletes a plugin your
     specs list.
 
 :Cinch stats                                                    *:Cinch-stats*
@@ -657,8 +657,8 @@ KEYS                                                              *cinch-keys*
   `l`                 Load the plugin under the cursor.
   `i`                 Install it, or the ones selected, when not on disk.
   `b`                 Run its build.
-  `u`                 Apply its pending update.
-  `U`                 Apply every pending update.
+  `u`                 Apply its pending update, once you confirm.
+  `U`                 Apply every pending update, once you confirm.
   `c`                 Check for updates.
   `s`                 Sync, as |:Cinch-sync| does.
   `d`                 Delete the plugin under the cursor from disk, once you

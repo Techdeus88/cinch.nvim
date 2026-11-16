@@ -327,9 +327,15 @@ H.after_startup(function()
 
   go(w.list, ' floaty ')
   H.press('u')
-  H.eq(line_of(w.list, ' floaty .*all good to go') ~= nil, true, 'u with no update says so on the row')
-  H.eq(table.concat(H.header(), '\n'):find('all good to go', 1, true), nil, 'not in the header')
+  H.eq(line_of(w.list, ' floaty .*already up to date') ~= nil, true, 'u with no update says so on the row')
+  H.eq(table.concat(H.header(), '\n'):find('already', 1, true), nil, 'not in the header')
   H.eq(groups(assert(line_of(w.list, ' floaty '))).CinchUpToDate, true, 'in a color of its own')
+  go(w.list, ' alpha%.nvim ')
+  H.press('l')
+  H.eq(line_of(w.list, ' alpha%.nvim .*already loaded') ~= nil, true, 'l on a loaded plugin says so on the row')
+  H.press('i')
+  H.eq(line_of(w.list, ' alpha%.nvim .*already installed') ~= nil, true, 'i on one on disk says so too')
+  H.eq(table.concat(H.header(), '\n'):find('already', 1, true), nil, 'neither in the header')
   local function fg(group)
     return api.nvim_get_hl(0, { name = group, link = false }).fg
   end

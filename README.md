@@ -144,7 +144,7 @@ A plugin with no trigger and no `lazy` loads `later`, where lazy.nvim loads it d
 ```lua
 require('cinch').setup({
   spec = { 'plugins' },          -- module paths, folders, or specs; default lua/plugins/
-  confirm = true,                -- ask before installing: on the rows in the window, or with vim.pack's prompt during init.lua
+  confirm = true,                -- ask before installing, updating or deleting: on the rows in the window, or with vim.pack's prompt during init.lua
   budget = 5,                    -- ms of `later` loading per event-loop tick
   defer = true,                  -- install missing plugins once the UI is up
   build_timeout = 300,           -- seconds an async function build may take before it fails
@@ -243,8 +243,8 @@ The **Plugins** view is two panes. The list on the left starts with **Updates (n
 | `l` | Load the plugin under the cursor |
 | `i` | Install it, or the ones selected, when not on disk |
 | `b` | Run its build |
-| `u` | Apply its pending update |
-| `U` | Apply every pending update |
+| `u` | Apply its pending update. Its row asks first |
+| `U` | Apply every pending update. Their rows ask first |
 | `c` | Check for updates |
 | `d` | Delete the plugin under the cursor from disk. Its row asks first |
 | `y`, `n` | Answer a row that asks. `q` and `<Esc>` are a no, and other keys wait |
@@ -266,7 +266,7 @@ Opening the window starts an update check when the last one is more than 5 minut
 
 ### Questions
 
-cinch asks every yes or no itself, on the row of the plugin it is about: `Delete real-icons.nvim Yes (y) or No (n)`. `y` goes ahead and `n`, `q` or `<Esc>` does not; until you answer, other keys do nothing. Deleting, cleaning, installing with `confirm = true`, updating and restoring all ask this way, and a command that asks opens the window to do it. A deleted plugin your specs still list keeps its row, which says `deleted`.
+cinch asks every yes or no itself, on the row of the plugin it is about: `Delete real-icons.nvim Yes (y) or No (n)`. `y` goes ahead and `n`, `q` or `<Esc>` does not; until you answer, other keys do nothing. With `confirm = true`, the default, installing, updating, deleting, cleaning and restoring all ask this way, and a command that asks opens the window to do it. With `confirm = false` none of them asks: the key or command goes ahead. A key with nothing to do says so on the row instead: `already installed`, `already loaded`, `already up to date` or `already deleted`. A deleted plugin your specs still list keeps its row, which says `deleted`.
 
 Neovim's own prompt is left for two cases: the `ui` feature is off, or an install happens during `init.lua` before there is a window (headless, or `defer = false`).
 

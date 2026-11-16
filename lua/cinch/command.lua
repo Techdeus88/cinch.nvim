@@ -64,10 +64,10 @@ M.commands = {
     complete = names,
   },
   -- Back to the revisions the lockfile records, after a checkout moved on its own.
-  -- With !, without asking.
+  -- With !, or with `confirm` off, without asking.
   restore = {
     run = function(args, bang)
-      cinch.restore(#args > 0 and args or nil, { confirm = not bang })
+      cinch.restore(#args > 0 and args or nil, { confirm = not bang and cinch.confirms() })
     end,
     complete = names,
   },
@@ -101,10 +101,11 @@ M.commands = {
       cinch.sync()
     end,
   },
-  -- With !, without asking, and even when a spec file failed to load.
+  -- With !, without asking, and even when a spec file failed to load. With `confirm`
+  -- off, without asking.
   clean = {
     run = function(_, bang)
-      cinch.clean({ confirm = not bang, force = bang })
+      cinch.clean({ confirm = not bang and cinch.confirms(), force = bang })
     end,
   },
 }
