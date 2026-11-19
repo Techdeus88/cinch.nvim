@@ -233,6 +233,25 @@ local function has_trigger(data)
   return false
 end
 
+--- Whether `keys` is the only trigger, and each of its keys defines a mapping: a plugin
+--- that loads on its own still gets those, so nothing in it is ignored.
+---@param data cinch.Data
+---@return boolean
+local function only_mappings(data)
+  for k in pairs(M.triggers) do
+    local v = data[k]
+    if k ~= 'keys' and v ~= nil and v ~= false and not (type(v) == 'table' and #v == 0) then
+      return false
+    end
+  end
+  for _, key in ipairs(type(data.keys) == 'table' and data.keys or { data.keys }) do
+    if type(key) ~= 'table' or key[2] == nil then
+      return false
+    end
+  end
+  return true
+end
+
 --- Work out `load` from the spec, and `when`, what it means this session.
 ---@param data cinch.Data
 ---@param dep_only boolean
@@ -267,7 +286,7 @@ local function resolve_load(data, dep_only, notes)
     else
       load = 'later'
     end
-  elseif load ~= 'trigger' and triggered then
+  elseif load ~= 'trigger' and triggered and not only_mappings(data) then
     notes[#notes + 1] = ('sets load = `%s`, so its triggers are ignored'):format(load)
   end
   local when = load

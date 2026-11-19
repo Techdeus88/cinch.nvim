@@ -295,7 +295,11 @@ local function shell_build(p, cmd, start)
   }, function(r)
     local stderr = vim.trim(table.concat(errs))
     local output = vim.trim(table.concat(out) .. table.concat(errs))
-    local err = r.code ~= 0 and (stderr ~= '' and stderr or ('exit ' .. r.code)) or nil
+    -- A build killed by a signal (the OOM killer, a crash) exits with code 0 and a signal.
+    local err
+    if r.code ~= 0 or (r.signal or 0) ~= 0 then
+      err = stderr ~= '' and stderr or r.code ~= 0 and ('exit ' .. r.code) or ('killed by signal ' .. r.signal)
+    end
     vim.schedule(function()
       finish(p, start, err, output)
     end)
@@ -325,22 +329,11 @@ local function function_build(p, fn, start)
   -- after M.timeout, so what waits on it is not stuck forever.
   local async = debug.getinfo(fn, 'u').nparams >= 2
   local ended = false
-  local function done(ok, msg)
-    if ended then
+  -- Takes the plugin off the runtimepath again, once the build is over.
+  local function restore()
+    if on_rtp or p.state == 'loaded' then
       return
     end
-    ended = true
-    vim.schedule(function()
-      finish(p, start, ok == false and (msg or 'failed') or nil)
-    end)
-  end
-  if async then
-    vim.defer_fn(function()
-      done(false, ('did not call done() within %ds'):format(M.timeout / 1000))
-    end, M.timeout)
-  end
-  local ok, err = pcall(fn, p, async and done or nil)
-  if not on_rtp and p.state ~= 'loaded' then
     vim.opt.rtp:remove(p.path)
     -- vim.loader searches its cached runtimepath first and re-reads it only after
     -- a miss; without one it would keep finding this plugin's modules. This leans on
@@ -355,9 +348,36 @@ local function function_build(p, fn, start)
       end
     end
   end
-  if not ok then
+  local function done(ok, msg)
+    if ended then
+      return
+    end
     ended = true
-    finish(p, start, tostring(err))
+    vim.schedule(function()
+      -- An async build runs on after its function returns, so the runtimepath stays until now.
+      if async then
+        restore()
+      end
+      finish(p, start, ok == false and (msg or 'failed') or nil)
+    end)
+  end
+  if async then
+    vim.defer_fn(function()
+      done(false, ('did not call done() within %ds'):format(M.timeout / 1000))
+    end, M.timeout)
+  end
+  local ok, err = pcall(fn, p, async and done or nil)
+  if not async or not ok then
+    restore()
+  end
+  if not ok then
+    if ended then
+      -- done() already ended the build; finishing twice would fire Build twice.
+      events.report(('build of `%s` raised after done(): %s'):format(p.name, err), vim.log.levels.WARN, p.name)
+    else
+      ended = true
+      finish(p, start, tostring(err))
+    end
   elseif not async then
     ended = true
     finish(p, start)
@@ -439,6 +459,8 @@ function M.add(plugins, confirm)
     names[i] = p.name
   end
   adding = true
+  -- call() refuses while another vim.pack call runs; then vim.pack has not read the lockfile.
+  local ran = busy == 0
   -- A no cinch already got: vim.pack's prompt gets it too, and takes its own way out.
   local prompt = vim.fn.confirm
   if confirm == 'no' then
@@ -458,7 +480,8 @@ function M.add(plugins, confirm)
     end,
   })
   vim.fn.confirm = prompt
-  adding, synced = false, true
+  adding = false
+  synced = synced or ran
 
   local failed = {}
   for _, p in ipairs(plugins) do

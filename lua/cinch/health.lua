@@ -78,7 +78,9 @@ end
 local function timing()
   local stats = package.loaded['cinch.features.stats']
   if stats then
-    if stats.source == 'os' then
+    if stats.source == 'init' then
+      h.info('startup is timed from vim.g.start (stats.zero = "init"): exec and Neovim\'s own setup are not counted')
+    elseif stats.source == 'os' then
       h.ok('startup is timed from when the process began')
     else
       h.warn('startup is timed from CPU time: the OS gave no start time, so it reads a few ms late')

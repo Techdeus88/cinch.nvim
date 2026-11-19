@@ -386,9 +386,12 @@ The defaults: >lua
       -- each feature's options, under its name
       messages = { level = vim.log.levels.INFO, progress = true,
                    history = 1000 },
+      -- zero: 'init' counts startup from `vim.g.start` (set
+      -- `vim.g.start = vim.uv.hrtime()` on the first line of init.lua)
+      -- instead of the OS process start
       -- profile: time phases, loads, their steps and sourced files for the
       -- Profile view; 'functions' also times every Lua function
-      stats = { persist = true, history = 50, profile = true },
+      stats = { zero = 'process', persist = true, history = 50, profile = true },
       -- fresh: seconds before opening the window checks again
       -- every: a background check every `every` seconds (false: none)
       updates = { fresh = 300, every = 86400 },

@@ -71,7 +71,7 @@ cinch fields can sit at the top level, as above, or inside `data`, the way `vim.
 | `event` | `'BufReadPost'`, or `'User MyEvent'` for an event with a pattern. A string or a list |
 | `ft` | A filetype or a list of them |
 | `cmd` | A command or a list of them |
-| `keys` | `'<leader>f'`, or `{ '<leader>f', rhs, mode = 'n', desc = '...' }` for a mapping the spec defines, or a list of either |
+| `keys` | `'<leader>f'`, or `{ '<leader>f', rhs, mode = 'n', desc = '...' }` for a mapping the spec defines, or a list of either. A plugin that loads another way, with `load = 'now'` say, still gets the mappings the spec defines |
 | `deps` | Plugins that load before this one. `'owner/repo'` or a table is a spec. A bare name like `'plenary.nvim'` refers to a spec declared elsewhere. `dependencies` works too |
 | `enabled`, `cond` | `false`, or a function returning `false`, turns the plugin off: it is not installed and never loads. A function that raises leaves the plugin on, with a warning |
 | `init` | `function(plugin)`, run at every startup before the plugin loads |
@@ -156,7 +156,7 @@ require('cinch').setup({
 
   -- each feature's options, under its name
   messages = { level = vim.log.levels.INFO, progress = true, history = 1000 },
-  stats = { persist = true, history = 50, profile = true }, -- profile: time phases, loads, their steps and sourced files for the Profile view; 'functions' also times every Lua function
+  stats = { zero = 'process', persist = true, history = 50, profile = true }, -- zero: 'init' counts startup from `vim.g.start` (set `vim.g.start = vim.uv.hrtime()` on the first line of init.lua) instead of the OS process start; profile: time phases, loads, their steps and sourced files for the Profile view; 'functions' also times every Lua function
   updates = { fresh = 300, every = 86400 }, -- seconds before opening the window checks again; a background check every `every` seconds (false: none)
   ui = {
     size = 0.75,                 -- share of the editor

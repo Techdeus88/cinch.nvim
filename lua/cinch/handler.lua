@@ -738,6 +738,12 @@ function M.loaded(p)
   for name in pairs(p.triggers or {}) do
     call('loaded', name, p)
   end
+  -- A plugin that loads on its own has no triggers, but the mappings its spec defines are still its own.
+  local keys = p.data.keys
+  if p.when ~= 'trigger' and keys then
+    local k = M.handlers.keys
+    try(('loaded keys of `%s`'):format(p.name), k.loaded, p, k.parse(keys))
+  end
 end
 
 return M

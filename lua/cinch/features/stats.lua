@@ -12,6 +12,9 @@ local uv = vim.uv
 local M = {}
 
 ---@class cinch.stats.Opts
+---@field zero? 'process'|'init' what startup times count from. 'process' (default): when the OS started the
+--- process. 'init': vim.g.start, the vim.uv.hrtime() the user's init.lua set on its first line, which leaves out
+--- exec and Neovim's own setup; without it, 'process' is used
 ---@field persist? boolean keep one summary per session in stdpath('state')/cinch/stats.json. Default true
 ---@field history? integer sessions kept. Default 50
 ---@field profile? boolean|'functions' time every phase, plugin load, step and sourced file for the Profile
@@ -19,7 +22,7 @@ local M = {}
 --- which makes those slower. Default true
 
 ---@type cinch.stats.Opts
-M.opts = { persist = true, history = 50, profile = true }
+M.opts = { zero = 'process', persist = true, history = 50, profile = true }
 
 M.file = vim.fs.joinpath(vim.fn.stdpath('state') --[[@as string]], 'cinch', 'stats.json')
 
@@ -108,7 +111,7 @@ local function linux()
   return (uptime - ticks / hz) * 1e3
 end
 
----@type 'os'|'cpu' where the start time came from
+---@type 'os'|'cpu'|'init' where the start time came from
 M.source = 'cpu'
 
 local start ---@type integer hrtime when Neovim started
@@ -888,6 +891,11 @@ M.command = {
 ---@param opts? cinch.stats.Opts
 function M.setup(opts)
   M.opts = vim.tbl_extend('force', M.opts, opts or {})
+  -- Opt-in. Only a number read before now() is used, so a bad vim.g.start keeps the process start.
+  local zero = M.opts.zero == 'init' and tonumber(vim.g.start)
+  if zero and zero > 0 and zero <= uv.hrtime() then
+    start, M.source = zero, 'init'
+  end
   -- Features load first in setup(), so this is when cinch began.
   M.marks.setup = M.now()
 
