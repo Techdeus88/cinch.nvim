@@ -480,7 +480,8 @@ The Lua API, `User Cinch*` events and highlight groups keep their names.
 
 :Cinch install [names]                                        *:Cinch-install*
     Install plugins your specs list that aren't on disk: a failed install,
-    or one deleted this session. They then load as their specs say.
+    or one deleted this session. They then load as their specs say; one that
+    already loaded this session stays loaded, and is back on disk.
 
 :Cinch build {names}                                            *:Cinch-build*
     Run their builds again.

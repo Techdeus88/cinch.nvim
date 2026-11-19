@@ -356,7 +356,7 @@ end
 ---@return { [1]: string, [2]: string }[]
 function M.pill(value, max, cells)
   local n = max > 0 and math.floor(value / max * cells + 0.5) or 0
-  n = math.max(value > 0 and 1 or 0, math.min(cells, n))
+  n = math.min(cells, math.max(value > 0 and 1 or 0, n))
   return { { ('━'):rep(n), 'CinchPillFill' }, { ('━'):rep(cells - n), 'CinchPillTrack' } }
 end
 

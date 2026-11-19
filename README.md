@@ -214,7 +214,7 @@ These use the default name. `cmd_prefix` in `setup()` renames the command, so `c
 | `:Cinch` | Open the window |
 | `:Cinch open [plugins\|triggers\|stats\|log]` | Open it on a view |
 | `:Cinch load {names}` | Load plugins now |
-| `:Cinch install [names]` | Install plugins your specs list that aren't on disk: a failed install, or one deleted this session. They then load as their specs say |
+| `:Cinch install [names]` | Install plugins your specs list that aren't on disk: a failed install, or one deleted this session. They then load as their specs say; one already loaded this session stays loaded |
 | `:Cinch build {names}` | Run their builds again |
 | `:Cinch check [names]` | Check for updates in the background |
 | `:Cinch update [names]` | Check, then ask on the row of each plugin that has something new. `:Cinch update!` applies without asking. Both open the window and show the progress and how it ended. With the `updates` feature off, it is `vim.pack`'s review tab |

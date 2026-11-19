@@ -103,7 +103,10 @@ local function finish(plugins, results, opts, failed)
     end, plugins),
     failed = vim.tbl_keys(M.failed),
     ms = (uv.hrtime() - started) / 1e6,
-    updates = vim.tbl_count(M.results),
+    -- Of the plugins this check covered, not every pending result.
+    updates = #vim.tbl_filter(function(p)
+      return M.results[p.name] ~= nil
+    end, plugins),
   }
   table.sort(done.failed)
   events.emit('Checked', done)

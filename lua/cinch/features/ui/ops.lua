@@ -33,9 +33,10 @@ function M.line(op, room)
   if cut then
     left = canvas.fit(left, fits - 1) .. ' '
   end
-  local graph = math.min(graph_max, room - canvas.cells(left) - canvas.cells(percent))
+  local graph = math.max(0, math.min(graph_max, room - canvas.cells(left) - canvas.cells(percent)))
   local line = { { left, 'CinchTitle' }, { percent, 'CinchMuted' } }
-  return vim.list_extend(line, canvas.pill(op.done, op.total, graph)), cut
+  -- Clipped last: in a window too narrow for the percent, the percent gives way too.
+  return canvas.clip(vim.list_extend(line, canvas.pill(op.done, op.total, graph)), room), cut
 end
 
 ---@class cinch.ui.OpHost what an operation needs from the window

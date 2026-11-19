@@ -395,6 +395,8 @@ local waiting = {}
 ---@param cmd string
 local function cmd_build(p, cmd)
   if vim.v.vim_did_enter == 0 or p.state == 'registered' then
+    -- Building while it waits, so a load that needs its build waits for it too.
+    state.activity(p, 'building')
     waiting[#waiting + 1] = p
     if #waiting == 1 and vim.v.vim_did_enter == 0 then
       api.nvim_create_autocmd('VimEnter', { once = true, callback = vim.schedule_wrap(M.run_waiting) })
@@ -402,6 +404,8 @@ local function cmd_build(p, cmd)
     return
   end
   local start = uv.hrtime()
+  -- Not waiting any more: loading it must not wait for this build, which waits for the load.
+  state.activity(p, nil)
   -- Required here, not at the top: loader.lua requires this file.
   if not require('cinch.loader').load(p, 'build') then
     return finish(p, start, 'the plugin did not load: ' .. p.state)

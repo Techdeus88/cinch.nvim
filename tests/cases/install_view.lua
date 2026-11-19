@@ -95,6 +95,11 @@ H.after_startup(function()
     'a long name gives way to the percent and graph: ' .. narrow
   )
 
+  for _, room in ipairs({ 10, 5, 3, 0 }) do
+    local tiny = op_line(op, room)
+    H.eq(vim.fn.strdisplaywidth(tiny) <= room, true, ('%d cells: "%s" overflows'):format(room, tiny))
+  end
+
   local install = { kind = 'install', total = 2, done = 0, status = { a = 'cloning' } }
   local host = {
     ui = { ctx = { op = install } },

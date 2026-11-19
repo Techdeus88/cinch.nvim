@@ -430,7 +430,9 @@ local function merge_into(p, spec, e, dep_of, deps, batch)
   if dep_of and next(spec.data) == nil and spec.version == nil then
     return
   end
-  if p.state ~= 'registered' and p.state ~= 'pending' and p.state ~= 'disabled' then
+  -- A failed install never started loading: the new spec gets another try, like a disabled one.
+  local retry = p.state == 'failed' and p.failed_in == 'install'
+  if p.state ~= 'registered' and p.state ~= 'pending' and p.state ~= 'disabled' and not retry then
     local msg = '%s: `%s` already started loading; this spec applies on restart'
     events.report(msg:format(e.origin.file, p.name), vim.log.levels.WARN)
     return
@@ -448,7 +450,8 @@ local function merge_into(p, spec, e, dep_of, deps, batch)
   add_once(batch.touched, p)
   if p.state == 'pending' then
     add_once(batch.respecced, p)
-  elseif p.state == 'disabled' then
+  elseif p.state == 'disabled' or retry then
+    p.err = nil
     state.set(p, 'registered')
     add_once(batch.added, p)
   end
