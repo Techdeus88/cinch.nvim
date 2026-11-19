@@ -60,6 +60,53 @@ M.public = { Load = true, LoadError = true, Later = true, Done = true }
 ---@type table<string, cinch.Sub[]>
 local subs = {}
 
+--- Functions that catch an error and raise it again: cinch.time()'s wrappers.
+---@type table<function, true>
+M.rethrows = setmetatable({}, { __mode = 'k' })
+
+-- The traceback of the last error a wrapper caught, taken where it was raised:
+-- raising it again loses the stack below the wrapper.
+---@type { err: any, trace: any }?
+local kept
+
+--- Whether the error an xpcall handler handles was raised again by a wrapper. Called
+--- straight from the handler: level 2 is the handler, 3 `error` or the function that
+--- failed, 4 the one that called `error`.
+---@return boolean
+local function rethrown()
+  for level = 3, 4 do
+    local info = debug.getinfo(level, 'f')
+    if info and M.rethrows[info.func] then
+      return true
+    end
+  end
+  return false
+end
+
+--- A wrapper's xpcall handler: keeps the traceback where the error began, unless a
+--- deeper wrapper already raised it again, then hands the error on unchanged.
+---@param err any
+---@return any
+function M.keep_trace(err)
+  if not (kept and kept.err == err and rethrown()) then
+    kept = { err = err, trace = debug.traceback(err, 2) }
+  end
+  return err
+end
+
+--- An xpcall handler: debug.traceback, from where the error began even when a
+--- cinch.time() wrapper raised it again.
+---@param err any
+---@return any
+function M.traceback(err)
+  if kept and kept.err == err and rethrown() then
+    local trace = kept.trace
+    kept = nil
+    return trace
+  end
+  return debug.traceback(err, 2)
+end
+
 --- Declare an event a feature emits.
 ---@param name string
 function M.define(name)
@@ -108,7 +155,7 @@ local function dispatch(list, name, data)
       if sub.once then
         sub.off()
       end
-      local ok, err = xpcall(sub.fn, debug.traceback, data, name)
+      local ok, err = xpcall(sub.fn, M.traceback, data, name)
       if not ok then
         local msg = ('%s handler failed:\n%s'):format(name, err)
         -- A failing Report handler must not report through itself.

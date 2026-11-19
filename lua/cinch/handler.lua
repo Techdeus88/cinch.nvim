@@ -534,7 +534,7 @@ local function run(when, fn)
   local info = debug.getinfo(src, 'S')
   local where = ('%s:%d'):format(vim.fs.basename(info.short_src), info.linedefined)
   local t = uv.hrtime()
-  local ok, err = xpcall(fn, debug.traceback)
+  local ok, err = xpcall(fn, events.traceback)
   if not ok then
     events.report(('%s function at %s failed: %s'):format(when, where, err), vim.log.levels.ERROR)
   end
@@ -573,15 +573,32 @@ local function start_drain()
   end
 end
 
---- Whether a UI will attach, so UIEnter will fire. Headless Neovim never gets one.
---- An embedded one, which a GUI or the terminal UI starts, has its UI attached before
---- init.lua runs; with none by then, it is driven without one.
+--- Whether Neovim runs in silent Ex mode, `-es` or `-e -s`, which never has a UI.
+--- `-s` means silent only after `-e` or `-E`; before them it names a script file.
+---@param argv string[]
+---@return boolean
+local function silent_ex(argv)
+  local ex = false
+  for _, a in ipairs(argv) do
+    if a == '--' then
+      return false
+    elseif a == '-es' or a == '-Es' or (ex and a == '-s') then
+      return true
+    end
+    ex = ex or a == '-e' or a == '-E'
+  end
+  return false
+end
+
+--- Whether a UI will attach, so UIEnter will fire. Headless Neovim never gets one,
+--- nor does silent Ex mode. An embedded one, which a GUI or the terminal UI starts,
+--- has its UI attached before init.lua runs; with none by then, it is driven without one.
 ---@param argv? string[] default: v:argv
 ---@param uis? integer how many UIs are attached; default: now
 ---@return boolean
 function M.ui_coming(argv, uis)
   argv = argv or vim.v.argv
-  if vim.list_contains(argv, '--headless') then
+  if vim.list_contains(argv, '--headless') or silent_ex(argv) then
     return false
   end
   return (uis or #api.nvim_list_uis()) > 0 or not vim.list_contains(argv, '--embed')

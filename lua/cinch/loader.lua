@@ -35,7 +35,7 @@ function M.hook(p, name, ...)
     return true, nil
   end
   local t = uv.hrtime()
-  local ok, res = xpcall(fn, debug.traceback, p, ...)
+  local ok, res = xpcall(fn, events.traceback, p, ...)
   M.step(p, name, t, ok)
   if not ok then
     res = ('%s: %s'):format(name, res)
@@ -238,9 +238,8 @@ local function fail(p, reason, err)
   p.err = err
   state.set(p, 'failed', reason)
   events.report(('`%s` failed to load: %s'):format(p.name, err), vim.log.levels.ERROR)
-  if events.has('LoadError') then
-    events.emit('LoadError', { plugin = p, reason = reason, err = err })
-  end
+  -- Always emitted: it is also the `User CinchLoadError` autocmd.
+  events.emit('LoadError', { plugin = p, reason = reason, err = err })
 end
 
 --- Load a pending plugin and its dependencies. `done` runs once, when it has

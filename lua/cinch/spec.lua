@@ -264,6 +264,7 @@ local function resolve_load(data, dep_only, notes)
   local very_lazy = false
   if data.event == 'VeryLazy' then
     data.event = nil
+    very_lazy = true
   elseif type(data.event) == 'table' then
     local n = #data.event
     data.event = vim.tbl_filter(function(e)

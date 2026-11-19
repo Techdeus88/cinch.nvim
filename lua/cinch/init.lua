@@ -22,7 +22,8 @@ M.now_if_args = handler.now_if_args
 
 --- `fn`, wrapped so each call is timed: the Profile view totals it under `name`, and
 --- the Time event carries each call. Arguments, results and errors pass through as
---- they are. With nothing listening, the wrapper only calls `fn`.
+--- they are; when cinch reports an error, its traceback starts where it was raised.
+--- With nothing listening, the wrapper only calls `fn`.
 ---@generic F: function
 ---@param name string
 ---@param fn F
@@ -35,7 +36,7 @@ function M.time(name, fn)
       return fn(...)
     end
     local t = hrtime()
-    local res = vim.F.pack_len(pcall(fn, ...))
+    local res = vim.F.pack_len(xpcall(fn, events.keep_trace, ...))
     local ok = res[1]
     events.emit('Time', { name = name, start = t, ms = (hrtime() - t) / 1e6, ok = ok, err = not ok and res[2] or nil })
     if not ok then
@@ -46,6 +47,7 @@ function M.time(name, fn)
   if type(fn) == 'function' then
     handler.wraps[timed] = fn
   end
+  events.rethrows[timed] = true
   return timed
 end
 
