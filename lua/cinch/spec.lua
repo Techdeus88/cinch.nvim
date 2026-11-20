@@ -555,6 +555,8 @@ local function push(out, value, origin)
 end
 
 --- Spec files under a root, sorted: a module path like 'plugins' or a directory.
+--- A module path is read from your config's lua/ folder only, not the runtimepath:
+--- a plugin there may ship a lua/plugins/ of its own, for lazy.nvim.
 ---@param root string
 ---@return string[]
 local function files(root)
@@ -562,9 +564,11 @@ local function files(root)
   if root:find('^[/~.]') then
     res = vim.fn.globpath(vim.fs.normalize(root), '**/*.lua', true, true)
   else
-    local path = root:gsub('%.', '/')
-    res = vim.api.nvim_get_runtime_file(('lua/%s.lua'):format(path), true)
-    vim.list_extend(res, vim.api.nvim_get_runtime_file(('lua/%s/**/*.lua'):format(path), true))
+    local base = vim.fs.joinpath(vim.fn.stdpath('config') --[[@as string]], 'lua', (root:gsub('%.', '/')))
+    res = vim.fn.globpath(base, '**/*.lua', true, true)
+    if vim.uv.fs_stat(base .. '.lua') then
+      res[#res + 1] = base .. '.lua'
+    end
   end
   table.sort(res)
   return res

@@ -333,28 +333,36 @@ end
 
 M.handlers.cmd = {
   arm = function(p, names)
+    local defs = api.nvim_get_commands({})
     for _, name in ipairs(names) do
-      cmds[name] = cmds[name] or {}
-      cmds[name][p.name] = p
-      api.nvim_create_user_command(name, function(args)
-        on_cmd(name, args)
-      end, {
-        nargs = '*',
-        bang = true,
-        range = true,
-        -- Completing the command loads the plugin, then asks the real command.
-        complete = function(_, line)
-          fire_all(ordered(cmds[name]), 'cmd ' .. name, function() end)
-          -- Still this stub (a build is running, or LoadPre cancelled the load):
-          -- asking again would land here, forever.
-          local def = api.nvim_get_commands({})[name]
-          if not def or is_stub(def, name) then
-            return {}
-          end
-          return vim.fn.getcompletion(line, 'cmdline')
-        end,
-        desc = cmd_desc .. name,
-      })
+      -- A command of yours or another plugin's stays: one with a Lua callback could
+      -- not be put back when the stub goes, as a mapping can.
+      if defs[name] and not is_stub(defs[name], name) then
+        local msg = '`%s`: `:%s` already exists, so it does not load the plugin'
+        events.report(msg:format(p.name, name), vim.log.levels.WARN, p.name)
+      else
+        cmds[name] = cmds[name] or {}
+        cmds[name][p.name] = p
+        api.nvim_create_user_command(name, function(args)
+          on_cmd(name, args)
+        end, {
+          nargs = '*',
+          bang = true,
+          range = true,
+          -- Completing the command loads the plugin, then asks the real command.
+          complete = function(_, line)
+            fire_all(ordered(cmds[name]), 'cmd ' .. name, function() end)
+            -- Still this stub (a build is running, or LoadPre cancelled the load):
+            -- asking again would land here, forever.
+            local def = api.nvim_get_commands({})[name]
+            if not def or is_stub(def, name) then
+              return {}
+            end
+            return vim.fn.getcompletion(line, 'cmdline')
+          end,
+          desc = cmd_desc .. name,
+        })
+      end
     end
   end,
   disarm = function(p, names, loading)
@@ -595,35 +603,36 @@ local function start_drain()
   end
 end
 
---- Whether Neovim runs in silent Ex mode, `-es` or `-e -s`, which never has a UI.
---- `-s` means silent only after `-e` or `-E`; before them it names a script file.
+--- Read the arguments Neovim reads: none after `--`, which only names files, nor after
+--- `-l` and its script. `-s` is silent mode only after `-e` or `-E`; before them it
+--- names a script file.
 ---@param argv string[]
----@return boolean
-local function silent_ex(argv)
-  local ex = false
+---@return boolean ui false when Neovim never gets one: headless, silent Ex mode or `-l`
+---@return boolean embed
+local function scan(argv)
+  local ex, embed = false, false
   for _, a in ipairs(argv) do
     if a == '--' then
-      return false
-    elseif a == '-es' or a == '-Es' or (ex and a == '-s') then
-      return true
+      break
+    elseif a == '--headless' or a == '-l' or a == '-es' or a == '-Es' or (ex and a == '-s') then
+      return false, embed
     end
     ex = ex or a == '-e' or a == '-E'
+    embed = embed or a == '--embed'
   end
-  return false
+  return true, embed
 end
 
 --- Whether a UI will attach, so UIEnter will fire. Headless Neovim never gets one,
---- nor does silent Ex mode. An embedded one, which a GUI or the terminal UI starts,
---- has its UI attached before init.lua runs; with none by then, it is driven without one.
+--- nor does silent Ex mode or a `-l` script. An embedded one, which a GUI or the
+--- terminal UI starts, has its UI attached before init.lua runs; with none by then,
+--- it is driven without one.
 ---@param argv? string[] default: v:argv
 ---@param uis? integer how many UIs are attached; default: now
 ---@return boolean
 function M.ui_coming(argv, uis)
-  argv = argv or vim.v.argv
-  if vim.list_contains(argv, '--headless') or silent_ex(argv) then
-    return false
-  end
-  return (uis or #api.nvim_list_uis()) > 0 or not vim.list_contains(argv, '--embed')
+  local ui, embed = scan(argv or vim.v.argv)
+  return ui and ((uis or #api.nvim_list_uis()) > 0 or not embed)
 end
 
 --- Load the `now` plugins, run the `now` functions waiting for them, then wait for

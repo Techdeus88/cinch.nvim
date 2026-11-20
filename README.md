@@ -42,7 +42,7 @@ cinch keeps itself updated. Living in `vim.pack`'s folder, where the clone above
 
 ## Specs
 
-By default cinch reads every file under `lua/plugins/`, in subfolders too, in alphabetical order. A file returns one spec or a list of them.
+By default cinch reads every file under `lua/plugins/` in your config folder, in subfolders too, in alphabetical order. A file returns one spec or a list of them. A module path like `'plugins'` is looked up in your config's `lua/` folder only, not on the runtimepath, so a plugin that ships a `lua/plugins/` of its own for lazy.nvim isn't read as your specs. For specs elsewhere, give a folder path.
 
 ```lua
 -- lua/plugins/editor.lua
@@ -119,7 +119,7 @@ When plugins are missing, cinch doesn't install them while `init.lua` runs, beca
 | Nothing missing | A normal start. Nothing waits |
 | A new spec, or one whose `src` doesn't exist | Plugins already on disk start during `init.lua` as usual. Only the missing ones wait for the UI |
 | Your lockfile lists plugins that aren't on disk, as on a new machine with your dotfiles | Everything waits. `vim.pack`'s first call would install those during `init.lua` anyway |
-| Headless Neovim, or `defer = false` | Installs during `init.lua`, as `vim.pack` does |
+| No UI coming: headless, silent Ex mode (`-es`), a `-l` script, or `defer = false` | Installs during `init.lua`, as `vim.pack` does |
 
 While the batch installs, the keys you press are held until it's done: `vim.pack.add` waits for git, and so does Neovim's input.
 
@@ -388,7 +388,7 @@ cinch.trigger(name, def)
 - A plugin that is only ever named as a dependency turns off when every plugin needing it is off, however deep: it isn't installed, `require()` won't load it, and its row keeps its `dep` chip and the plugins that need it. If a later `add()` needs it, it comes back and installs. A dependency with its own spec, or needed by a plugin that is on, stays on.
 - A plugin loads only once everything it depends on has, however deep. It waits for a build running anywhere below it, and fails with the reason when a dependency is disabled, failed, cancelled or not installed yet. On a start that installs a new dependency once the UI is up, the plugins that need it wait too.
 - `keys = false`, `cmd = false` and the like turn that trigger off, as in lazy.nvim. With no trigger left, the plugin loads `later`.
-- A `keys` or `cmd` stub is cinch's only while it is still the mapping or the command. One you or another plugin set since is left alone, and when the plugin loads another way cinch warns that the trigger was taken. A mapping of yours that a stub replaced comes back when the stub goes.
+- A `keys` or `cmd` stub is cinch's only while it is still the mapping or the command. One you or another plugin set since is left alone, and when the plugin loads another way cinch warns that the trigger was taken. A mapping of yours that a stub replaced comes back when the stub goes. A command that already exists when cinch arms a `cmd` trigger is never replaced: cinch warns that it won't load the plugin, since a command, unlike a mapping, can't be put back.
 - A `setup()` option of the wrong type gets a warning and its default, such as ``setup(): `budget` should be a number, got string; using 5``.
 - Plugins behind the same trigger load in the order you declared them. A key replayed in operator-pending mode keeps its operator, count and register, and a command keeps the exact text you typed.
 - `disable_runtime` keeps Neovim's own plugins in `$VIMRUNTIME/plugin` from loading, by file name: `netrwPlugin`, `gzip`, `tarPlugin`, `zip`, `tutor`, `rplugin` and the rest. They share no switch to turn them off, so during startup a `SourceCmd` autocmd stands in for those files. After startup it is gone, and `:runtime` works as usual. Stats lists what is off.

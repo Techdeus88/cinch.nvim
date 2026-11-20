@@ -115,8 +115,12 @@ checkout anywhere else, such as one you develop in, is left alone.
 ==============================================================================
 4. SPECS                                                         *cinch-specs*
 
-By default cinch reads every file under `lua/plugins/`, in subfolders too, in
-alphabetical order. A file returns one spec or a list of them. >lua
+By default cinch reads every file under `lua/plugins/` in your config folder,
+in subfolders too, in alphabetical order. A file returns one spec or a list of
+them. A module path like `'plugins'` is looked up in your config's `lua/`
+folder only, not on the runtimepath, so a plugin that ships a `lua/plugins/`
+of its own for lazy.nvim isn't read as your specs. For specs elsewhere, give a
+folder path. >lua
 
     -- lua/plugins/editor.lua
     return {
@@ -322,8 +326,8 @@ why plugins are missing:
 - Your lockfile lists plugins that aren't on disk, as on a new machine with
   your dotfiles: everything waits. `vim.pack`'s first call would install
   those during `init.lua` anyway.
-- Headless Neovim, or `defer = false`: installs during `init.lua`, as
-  `vim.pack` does.
+- No UI coming, headless, silent Ex mode (`-es`) or a `-l` script, or
+  `defer = false`: installs during `init.lua`, as `vim.pack` does.
 
 While the batch installs, the keys you press are held until it's done:
 `vim.pack.add()` waits for git, and so does Neovim's input.
@@ -928,7 +932,10 @@ cinch.trigger({name}, {def})                                 *cinch.trigger()*
 - A `keys` or `cmd` stub is cinch's only while it is still the mapping or
   the command. One you or another plugin set since is left alone, and when
   the plugin loads another way cinch warns that the trigger was taken. A
-  mapping of yours that a stub replaced comes back when the stub goes.
+  mapping of yours that a stub replaced comes back when the stub goes. A
+  command that already exists when cinch arms a `cmd` trigger is never
+  replaced: cinch warns that it won't load the plugin, since a command,
+  unlike a mapping, can't be put back.
 - A `setup()` option of the wrong type gets a warning and its default.
 - Plugins behind the same trigger load in the order you declared them. A key
   replayed in operator-pending mode keeps its operator, count and register,
