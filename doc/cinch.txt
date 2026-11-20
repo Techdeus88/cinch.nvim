@@ -534,28 +534,31 @@ Four bordered windows at 75% of the editor, over a dark backdrop that dims
 the editor behind it: a header, the list and the details pane beside it, and
 a footer. The cursor stays in the window: moving to an editor window, with a
 click or `<C-w>`, comes back to the list, while a prompt or picker a plugin
-opens keeps focus. The header has two lines. The first holds the plugin
-count and startup time on the left, the name in the middle and the five views
-on the right: plugins, triggers, stats, profile and log. The second holds how
-many plugins are in each state, with the light their rows show and its name,
-such as `● 18 loaded  ○ 39 waiting  ✗ 1 failed  ✕ 7 disabled  ↑ 2 updates`,
-leaving out any that are 0. An install, a check, an update or a delete shows
-in the middle of that line, like `Installing plugins (18/48) - yanky.nvim 37%`
+opens keeps focus. The header has two lines. The first holds when Neovim
+started and when its UI came up on the left, such as
+`startup 42ms · ui 58ms`, the name in the middle and the five views on the
+right: plugins, triggers, stats, profile and log. The second is for messages
+only. An install, a check, an update or a delete shows in the middle of it, like `Installing plugins (18/48) - yanky.nvim 37%`
 with a bar, then a line that says how it ended, such as
 `Checked 61 plugins in 2.1s · 3 updates`, for a moment. Every other message
 cinch has shows there too, for 4 seconds, or 10 for a warning or an error,
 and the Log keeps them all. cinch never writes to the command line: a warning
 or an error opens the window to show it, and anything else waits in the
-header for the next time you open it. When room is short for it, the names
-of the states go first, then the counts make way until it goes. The footer
+header for the next time you open it. When the first line is short of
+room, the ui time goes first, then startup, then the name. The footer
 holds the keys for the view you're in, centered, each on a pill: the key on
 a dark inset, what it does beside it. When room is short, the keys before
 `?` and `q` go first, from the end.
 
 PLUGINS                                                 *cinch-window-plugins*
 
-The Plugins view is two panes. The list on the left starts with
-"Updates (n)", which only appears when there are updates: each plugin with
+The Plugins view is two panes. The list on the left starts with its
+filters, each with its mark and how many plugins it shows:
+`All (64)  ● Loaded (18)  ○ Waiting (39)  ✕ Disabled (7)`, and
+`✗ Failed (1)` while something has failed. `1` to `5` pick one, and the list
+shows only those plugins; plugins on disk that no spec names show only under
+All. In a narrow list the filters drop their names. A rule parts them from
+the rest, as in the pane. Then comes "Updates (n)", which only appears when there are updates: each plugin with
 its name and how many commits it is behind, like `2 commits`, and `u` applies
 the one under the cursor. cinch itself gets its row here. A plugin on disk
 that no spec names is also listed, with `not in specs`, and `d` deletes it.
@@ -563,7 +566,7 @@ A plugin that is working, failed or off stays in that section, with `↑n` on
 its row.
 
 The rest of the list keeps a title only for "working", the plugins
-installing, building or loading, on top. The header counts the other states,
+installing, building or loading, on top. The filters count the other states,
 so failed, loaded, waiting and disabled follow in that order with no titles.
 Rows under a title, which are Updates, working and the first start's
 installing, sit two cells in, and a blank row parts the section from the rest
@@ -660,6 +663,9 @@ KEYS                                                              *cinch-keys*
   `j`, `k`            Move between plugins; the pane follows.
   `<CR>`              Fold or open the section, or the Profile entry, under
                     the cursor.
+  `1` - `5`           Show all plugins, or only the loaded, waiting,
+                    disabled or failed ones. `5` works while something
+                    has failed.
   `/`                 Filter plugins by name, Profile entries by name or
                     path, or the log by text. An empty filter clears it.
   `l`                 Load the plugin under the cursor.

@@ -273,6 +273,26 @@ function M.make(w)
     end
   end
 
+  --- Show the filter at `i` above the Plugins list: 1 All, 2 Loaded, 3 Waiting,
+  --- 4 Disabled, 5 Failed while that one is on show.
+  ---@param i integer
+  local function show(i)
+    return function()
+      if ui.view ~= 'plugins' then
+        return
+      end
+      local rows = require('cinch.features.ui.rows')
+      local key = rows.filters[i].key
+      local on_show = vim.iter(rows.filter_counts(ui.ctx.show)):any(function(f)
+        return f.key == key
+      end)
+      if on_show then
+        ui.ctx.show = key ~= 'all' and key or nil
+        w.render()
+      end
+    end
+  end
+
   --- Profile: siblings in the order they began, or slowest first.
   local function profile_sort()
     if ui.view == 'profile' then
@@ -321,6 +341,11 @@ function M.make(w)
       'fold or open the section under the cursor',
     },
     { { '/' }, filter, 'filter by name, or the log by text; empty clears it' },
+    { { '1' }, show(1), 'show all plugins' },
+    { { '2' }, show(2), 'show only the loaded plugins' },
+    { { '3' }, show(3), 'show only the plugins waiting to load' },
+    { { '4' }, show(4), 'show only the disabled plugins' },
+    { { '5' }, show(5), 'show only the failed plugins, while any have failed' },
     {
       { 'l' },
       function()

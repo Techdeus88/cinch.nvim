@@ -1,5 +1,5 @@
 -- The cinch window: four bordered windows over the editor, 75% of it, 95% of its height
--- with `-`. The header's two lines hold the counts, the name, the tabs and what is under way;
+-- with `-`. The header's two lines hold startup times, the name and the tabs, then messages;
 -- the footer holds the keys. Between them the
 -- Plugins view is two panes, 70/30 or 50/50 with `=`: the list, which has the cursor, and
 -- the detail pane, which follows it. Stats, Profile and Log use the whole width. At startup

@@ -4,7 +4,6 @@
 -- each window and the lines of the header and the footer; it reads no window state.
 
 local canvas = require('cinch.features.ui.canvas')
-local state = require('cinch.state')
 
 local M = {}
 
@@ -65,65 +64,41 @@ local function spread(width, left, middle, right)
   return vim.list_extend(out, right)
 end
 
---- How many of your plugins are in each state, `● 18 loaded`, with the marks their rows
---- show, or `● 18` without labels; a state with none is left out.
----@param labels boolean
----@return { [1]: string, [2]?: string }[]
-local function counts(labels)
-  local by = {}
-  for _, p in ipairs(state.yours()) do
-    local k = (p.state == 'pending' or p.state == 'registered') and 'waiting' or p.state
-    by[k] = (by[k] or 0) + 1
-  end
-  local updates = package.loaded['cinch.features.updates']
-  local marks = require('cinch.features.ui.rows').marks
-  local out = {}
-  for _, c in ipairs({
-    { by.loaded, marks.loaded, 'CinchLoaded', 'loaded' },
-    { by.waiting, marks.waiting, 'CinchWaiting', 'waiting' },
-    { by.failed, marks.failed, 'CinchFailed', 'failed' },
-    { by.disabled, marks.disabled, 'CinchMuted', 'disabled' },
-    { updates and vim.tbl_count(updates.results), '↑', 'CinchUpdate', 'updates' },
-  }) do
-    if (c[1] or 0) > 0 then
-      out[#out + 1] = { ' ' .. c[2] .. ' ', c[3] }
-      out[#out + 1] = { c[1] .. ' ' }
-      if labels then
-        out[#out + 1] = { c[4] .. ' ', 'CinchMuted' }
-      end
-    end
-  end
-  return out
-end
-
---- The header's two lines, `width` cells. The first: the plugin count and startup time
---- on the left, the name on a banner in the middle, the tabs on the right. The second:
---- the count in each state on the left, an install, check, update or delete in the middle,
---- or else cinch's latest message.
+--- The header's two lines, `width` cells. The first: when Neovim started and when its UI
+--- came up on the left, the name on a banner in the middle, the tabs on the right. The
+--- second is for messages only: an install, check, update or delete in the middle, or
+--- else cinch's latest message.
 ---@param width integer
 ---@param s cinch.ui.Shape
 ---@return { [1]: string, [2]?: string }[][]
 function M.header(width, s)
   local stats = package.loaded['cinch.features.stats']
-  local startup = stats and (stats.marks.uienter or stats.marks.vimenter)
+  local marks = stats and stats.marks or {}
   local tabs = {}
   for _, v in ipairs(s.views) do
     tabs[#tabs + 1] = { ' ' .. v .. ' ', v == s.view and not s.help and 'CinchTab' or 'CinchMuted' }
   end
-  -- Short of room, the tabs keep theirs: the startup time goes, then the name.
-  local count = (' %d plugins '):format(#state.yours())
-  local with_startup = startup and (' %d plugins · startup %s '):format(#state.yours(), canvas.ms(startup))
-  if with_startup and canvas.cells(with_startup) + cells(tabs) < width then
-    count = with_startup
+  -- Short of room, the tabs keep theirs: the ui time goes, then startup, then the name.
+  local times = {}
+  if marks.vimenter then
+    times[#times + 1] = 'startup ' .. canvas.ms(marks.vimenter)
   end
-  local left = { { count, 'CinchMuted' } }
+  if marks.uienter then
+    times[#times + 1] = 'ui ' .. canvas.ms(marks.uienter)
+  end
+  local left = {}
+  while #times > 0 do
+    left = { { ' ' .. table.concat(times, ' · ') .. ' ', 'CinchMuted' } }
+    if cells(left) + cells(tabs) < width then
+      break
+    end
+    times[#times], left = nil, {}
+  end
   local name = banner('cinch', width)
   if cells(left) + cells(name) + cells(tabs) + 2 > width then
     name = {}
   end
 
-  -- Short of room, the labels go first; then the counts make way for what is under
-  -- way, which soon goes.
   local line = s.op and require('cinch.features.ui.ops').line
   if not line and s.notice then
     local levels = vim.log.levels
@@ -134,19 +109,8 @@ function M.header(width, s)
       return canvas.clip({ { s.notice.text, hl } }, room), canvas.cells(s.notice.text) > room
     end
   end
-  local states, op
-  for _, try in ipairs({ counts(true), counts(false), {} }) do
-    local room = math.max(0, width - cells(try) - 2)
-    local cut = false
-    if line then
-      op, cut = line(s.op, room)
-    end
-    states = try
-    if not cut and cells(try) <= width then
-      break
-    end
-  end
-  return { spread(width, left, name, tabs), spread(width, states, op or {}, {}) }
+  local message = line and line(s.op, math.max(0, width - 2)) or {}
+  return { spread(width, left, name, tabs), spread(width, {}, message, {}) }
 end
 
 --- A key and what it does as one pill: the key on a dark inset, what it does on the

@@ -22,6 +22,7 @@ local M = {}
 ---@class cinch.ui.Ctx
 ---@field folded table<string, true> sections folded shut
 ---@field filter? string only plugins whose name contains it
+---@field show? string only plugins in this state, from the filters above the list; nil: all
 ---@field tick integer spinner frame
 ---@field info table<string, vim.pack.PlugData|string> vim.pack.get per plugin, or why it is missing
 ---@field spec_lines table<string, integer> line of each plugin's spec in its file
@@ -43,12 +44,53 @@ M.pane = details.pane
 local mark, message = rows.mark, rows.message
 local add_row, load_ms, pending, dependents = rows.add_row, rows.load_ms, rows.pending, rows.dependents
 
+--- Whether the filter chosen above the list shows `p`.
+---@param p cinch.Plugin
+---@param ctx cinch.ui.Ctx
+---@return boolean
+local function shows_state(p, ctx)
+  return not ctx.show or rows.state_of(p) == ctx.show
+end
+
 ---@param ctx cinch.ui.Ctx
 ---@return cinch.Plugin[]
 local function visible(ctx)
   return vim.tbl_filter(function(p)
-    return not ctx.filter or p.name:lower():find(ctx.filter:lower(), 1, true) ~= nil
+    return shows_state(p, ctx) and (not ctx.filter or p.name:lower():find(ctx.filter:lower(), 1, true) ~= nil)
   end, state.yours())
+end
+
+--- The filters, `● Loaded (18)`, the chosen one on the tab color; with labels when they
+--- fit, else `● 18`. Then a rule under them, as the pane has under its title.
+---@param c cinch.ui.Canvas
+---@param ctx cinch.ui.Ctx
+local function subheader(c, ctx)
+  local chosen = ctx.show or 'all'
+  local line
+  for _, labels in ipairs({ true, false }) do
+    line = { { ' ' } }
+    for i, f in ipairs(rows.filter_counts(ctx.show)) do
+      local text = labels and ('%s (%d) '):format(f.label, f.n) or ('%d '):format(f.n)
+      if i > 1 then
+        line[#line + 1] = { ' ' }
+      end
+      if f.key == chosen then
+        line[#line + 1] = { ' ' .. f.mark .. ' ' .. text, 'CinchTab' }
+      else
+        line[#line + 1] = { ' ' .. f.mark .. ' ', f.hl }
+        line[#line + 1] = { text, 'CinchMuted' }
+      end
+    end
+    local n = 0
+    for _, ch in ipairs(line) do
+      n = n + canvas.cells(ch[1])
+    end
+    if n <= c.width then
+      break
+    end
+  end
+  c:add(canvas.clip(line, c.width))
+  c:add({ { ' ' .. ('─'):rep(c.width - 2), 'CinchRule' } })
 end
 
 --- Draw the row as a question when one is asked about this plugin.
@@ -77,7 +119,9 @@ local function with_updates(plugins, ctx)
   local out = {}
   for _, p in ipairs(state.list) do
     local key = M.section_of(p)
-    local shown = p.self and (not ctx.filter or p.name:lower():find(ctx.filter:lower(), 1, true))
+    local shown = p.self
+        and shows_state(p, ctx)
+        and (not ctx.filter or p.name:lower():find(ctx.filter:lower(), 1, true))
       or vim.list_contains(plugins, p)
     if shown and pending(p) and (key == 'loaded' or key == 'waiting') then
       out[#out + 1] = p
@@ -189,16 +233,18 @@ function M.list(width, ctx)
   table.sort(by.loaded or {}, function(a, b)
     return (a.order or 0) < (b.order or 0)
   end)
+  subheader(c, ctx)
   if ctx.filter then
     c:add({ { ' / ' .. ctx.filter, 'CinchKey' }, { ('  %d of %d'):format(#plugins, #state.yours()), 'CinchMuted' } })
   end
+  -- On disk and in no spec: no state, so only All lists them.
   local orphans = vim.tbl_filter(function(o)
-    return not ctx.filter or o.name:lower():find(ctx.filter:lower(), 1, true) ~= nil
+    return not ctx.show and (not ctx.filter or o.name:lower():find(ctx.filter:lower(), 1, true) ~= nil)
   end, ctx.orphans or {})
   -- A titled section's rows sit two cells in, and a blank row parts it from what follows.
   local gap = updates_section(c, updating, orphans, ctx)
-  -- One list in section order. The header counts the states, so only work under way,
-  -- such as a build, keeps its title.
+  -- One list in section order. The filters above count the states, so only work under
+  -- way, such as a build, keeps its title.
   for _, s in ipairs(M.sections) do
     local list = by[s.key] or {}
     local open = not (s.titled and ctx.folded[s.key])

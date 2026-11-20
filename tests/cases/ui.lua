@@ -83,9 +83,9 @@ H.after_startup(function()
   H.eq(pane_cfg.col, list_cfg.col, 'the pane under the list, in an 80-column editor')
   local title = lines(w.header)[1]
   H.eq(
-    title:find('^ %d+ plugins') ~= nil and title:find('plugins  triggers  stats  profile  log $') ~= nil,
+    title:find('^ startup [%d.]+m?s ') ~= nil and title:find('plugins  triggers  stats  profile  log $') ~= nil,
     true,
-    'the counts on the left of the header, the tabs on the right'
+    'startup on the left of the header, the tabs on the right: ' .. title
   )
   H.eq(vim.fn.strdisplaywidth(title), head_cfg.width, 'all of it in view, in an 80-column editor')
   local layout_ = require('cinch.features.ui.layout')
@@ -96,56 +96,29 @@ H.after_startup(function()
       return c[1]
     end, chunks))
   end
-  local by = { loaded = 0, waiting = 0, disabled = 0, failed = 0 }
-  for _, p in ipairs(require('cinch.state').yours()) do
-    local k = (p.state == 'pending' or p.state == 'registered') and 'waiting' or p.state
-    by[k] = (by[k] or 0) + 1
-  end
-  local kinds = { { '●', by.loaded, 'loaded' }, { '○', by.waiting, 'waiting' } }
-  vim.list_extend(kinds, { { '✗', by.failed, 'failed' }, { '✕', by.disabled, 'disabled' } })
-  local labeled, bare = {}, {}
-  for _, c in ipairs(kinds) do
-    if c[2] > 0 then
-      labeled[#labeled + 1] = ('%s %d %s'):format(c[1], c[2], c[3])
-      bare[#bare + 1] = ('%s %d'):format(c[1], c[2])
-    end
-  end
-  H.eq(#labeled < 4, true, 'some state has none, so this checks that it is left out')
-  local wide = row2(148)
-  local absent = true
-  for _, c in ipairs(kinds) do
-    absent = absent and (c[2] > 0 or not wide:find(c[1], 1, true))
-  end
-  labeled, bare = ' ' .. table.concat(labeled, '  ') .. ' ', ' ' .. table.concat(bare, '  ') .. ' '
-  H.eq(
-    vim.startswith(wide, labeled) and absent,
-    true,
-    'the second line: the count in each state with its label, none left out: ' .. wide
-  )
+  H.eq(vim.trim(row2(148)), '', 'the second line is for messages only: no counts')
   H.eq(lines(w.header)[2]:find('Checking plugins', 1, true) ~= nil, true, 'then the check that opening started')
-
-  -- Short of room for what is under way, the labels go, then the counts.
   local check = { kind = 'check', total = 6, done = 0, status = {} }
-  local need = vim.fn.strdisplaywidth('Checking plugins (0/6) 0% ') + 6 + 2
-  local function tier(width)
-    local r = row2(width, check)
-    return {
-      vim.startswith(r, labeled),
-      vim.startswith(r, bare),
-      r:find('●', 1, true) ~= nil,
-      r:find('Checking') ~= nil,
-    }
-  end
-  local lw, bw = vim.fn.strdisplaywidth(labeled), vim.fn.strdisplaywidth(bare)
-  H.eq(tier(lw + need), { true, false, true, true }, 'room for all of it')
-  H.eq(tier(lw + need - 1), { false, true, true, true }, 'a cell short: the labels go')
-  H.eq(tier(bw + need - 1), { false, false, false, true }, 'shorter still: the counts make way')
-  local one = require('cinch.state').yours()[1]
-  local was = one.state
-  one.state = 'failed'
-  local failed_row = row2(148)
-  one.state = was
-  H.eq(failed_row:find(' ✗ 1 failed ', 1, true) ~= nil, true, 'a failed plugin is counted: ' .. failed_row)
+  local r = row2(148, check)
+  local at = r:find('Checking', 1, true)
+  H.eq(at ~= nil and at > 40, true, 'what is under way, in the middle: ' .. r)
+  H.eq(row2(40, check):find('Checking', 1, true) ~= nil, true, 'and still there in a narrow header')
+  local stats = require('cinch.features.stats')
+  local was_ui = stats.marks.uienter
+  stats.marks.uienter = (stats.marks.vimenter or 0) + 16
+  local both = table.concat(vim.tbl_map(function(c)
+    return c[1]
+  end, layout_.header(148, { views = ui.views, view = 'plugins' })[1]))
+  H.eq(both:find('^ startup [%d.]+m?s · ui [%d.]+m?s ') ~= nil, true, 'and the ui time after it: ' .. both)
+  local tight = table.concat(vim.tbl_map(function(c)
+    return c[1]
+  end, layout_.header(60, { views = ui.views, view = 'plugins' })[1]))
+  H.eq(
+    { tight:find(' ui ', 1, true) == nil, tight:find('log $') ~= nil },
+    { true, true },
+    'short of room, the ui time goes first and the tabs stay: ' .. tight
+  )
+  stats.marks.uienter = was_ui
 
   -- In a wide header the name sits in the middle, on a banner, and the keys sit on a
   -- banner in the middle of the footer.
@@ -215,6 +188,62 @@ H.after_startup(function()
     'commits behind'
   )
 
+  -- Above the list, the filters and a rule under them, as the pane has under its title.
+  local by = { loaded = 0, waiting = 0, disabled = 0 }
+  for _, p in ipairs(require('cinch.state').yours()) do
+    local k = (p.state == 'pending' or p.state == 'registered') and 'waiting' or p.state
+    by[k] = (by[k] or 0) + 1
+  end
+  local function sub()
+    return lines(w.list)[1]
+  end
+  local n_all = #require('cinch.state').yours()
+  local compact = (' %d   ● %d   ○ %d   ✕ %d $'):format(n_all, by.loaded, by.waiting, by.disabled)
+  H.eq(sub():find(compact) ~= nil, true, 'each filter with its count, without labels in a narrow list: ' .. sub())
+  local wide_sub = require('cinch.features.ui.plugins').list(148, { folded = {}, tick = 0 }).lines[1]
+  local labeled = (' All (%d)   ● Loaded (%d)   ○ Waiting (%d)   ✕ Disabled (%d) '):format(
+    n_all,
+    by.loaded,
+    by.waiting,
+    by.disabled
+  )
+  H.eq(vim.endswith(wide_sub, labeled), true, 'with labels when they fit: ' .. wide_sub)
+  H.eq(sub():find('Failed', 1, true), nil, 'Failed only while something has failed')
+  H.eq(lines(w.list)[2]:gsub('─', ''), ' ', 'then a rule')
+  ---@return boolean whether every plugin row shows `mark`, and there is one
+  local function only(mark)
+    local n = 0
+    for i, l in ipairs(lines(w.list)) do
+      local row_mark = i > 2
+        and vim.iter({ '●', '○', '✕', '✗' }):find(function(m)
+          return vim.startswith(l, ' ' .. m .. ' ')
+        end)
+      if row_mark then
+        n = n + 1
+        if row_mark ~= mark then
+          return false
+        end
+      end
+    end
+    return n > 0
+  end
+  H.press('2')
+  H.eq(only('●'), true, '2 shows only the loaded plugins')
+  H.press('3')
+  H.eq(only('○'), true, '3 only those waiting')
+  H.press('5')
+  H.eq(only('○'), true, '5 does nothing while nothing has failed')
+  H.press('1')
+  H.eq(only('●'), false, '1 shows them all again')
+  local one = require('cinch.state').yours()[1]
+  local was = one.state
+  one.state = 'failed'
+  H.press('5')
+  H.eq(sub():find(' ✗ 1 $') ~= nil, true, 'a failed plugin gets its own filter: ' .. sub())
+  H.eq(only('✗'), true, 'and 5 shows it')
+  one.state = was
+  H.press('1')
+
   -- A row: the status light, the name, its load time and bar, then how it loads,
   -- each kind on a chip of its own color.
   local icons = require('cinch.features.ui.plugins').icons
@@ -263,7 +292,7 @@ H.after_startup(function()
   local working = line_of(w.list, '▾ working 1')
   H.eq(working ~= nil and working < line_of(w.list, ' alpha%.nvim '), true, 'working comes first, under its title')
   H.eq(lines(w.list)[working + 1]:find('beta%.nvim .*building…') ~= nil, true, 'with what it is doing')
-  H.eq(line_of(w.list, '▾ loaded'), nil, 'the states the header counts have no title')
+  H.eq(line_of(w.list, '▾ loaded'), nil, 'the states the filters count have no title')
   go(w.list, '▾ working')
   H.press('<CR>')
   H.eq(line_of(w.list, '▸ working 1') ~= nil and line_of(w.list, 'building…') == nil, true, 'it folds')

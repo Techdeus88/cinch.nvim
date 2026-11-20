@@ -17,7 +17,7 @@ end
 -- Sections, in the order they are shown: what is happening now first, so it is in
 -- view while it changes, then what went wrong. section_of() puts a plugin in one,
 -- so a loaded plugin that is updating is "working". Only `titled` ones get a title in the
--- list: the header counts the rest.
+-- list: the filters above it count the rest.
 M.sections = {
   { key = 'working', title = 'working', hl = 'CinchActive', titled = true },
   { key = 'failed', title = 'failed', hl = 'CinchFailed' },
@@ -47,6 +47,42 @@ end
 
 local marks = { failed = '✗', loaded = '●', waiting = '○', disabled = '✕' }
 M.marks = marks
+
+--- Its state as the filters count it: pending and registered are both `waiting`.
+---@param p cinch.Plugin
+---@return string
+function M.state_of(p)
+  return (p.state == 'pending' or p.state == 'registered') and 'waiting' or p.state
+end
+
+--- The filters above the list, in order: the state each shows, its label, mark and
+--- color. `all` shows every plugin; `failed` only shows while something has failed.
+M.filters = {
+  { key = 'all', label = 'All', mark = '\u{f03a}', hl = 'CinchName' },
+  { key = 'loaded', label = 'Loaded', mark = marks.loaded, hl = 'CinchLoaded' },
+  { key = 'waiting', label = 'Waiting', mark = marks.waiting, hl = 'CinchWaiting' },
+  { key = 'disabled', label = 'Disabled', mark = marks.disabled, hl = 'CinchMuted' },
+  { key = 'failed', label = 'Failed', mark = marks.failed, hl = 'CinchFailed' },
+}
+
+--- The filters on show, each with how many plugins it shows.
+---@param show? string the one chosen, kept even when it shows none
+---@return { key: string, label: string, mark: string, hl: string, n: integer }[]
+function M.filter_counts(show)
+  local yours = state.yours()
+  local n = { all = #yours }
+  for _, p in ipairs(yours) do
+    local k = M.state_of(p)
+    n[k] = (n[k] or 0) + 1
+  end
+  local out = {}
+  for _, f in ipairs(M.filters) do
+    if f.key ~= 'failed' or (n.failed or 0) > 0 or show == 'failed' then
+      out[#out + 1] = vim.tbl_extend('force', f, { n = n[f.key] or 0 })
+    end
+  end
+  return out
+end
 
 --- Nerd Font icons for how a plugin loads. `ui.icons` in setup() replaces any of
 --- them; `trigger` is for a trigger of your own.
