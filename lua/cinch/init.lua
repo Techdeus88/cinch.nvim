@@ -733,6 +733,59 @@ end
 
 M.update = pack.update
 
+---@param name string
+---@return table?
+local function feature(name)
+  return package.loaded['cinch.features.' .. name]
+end
+
+--- Pending updates, as the last check found them. `count` is 0, and `plugins` empty,
+--- before a check, or with the updates feature off.
+---@return { count: integer, checking: boolean, checked_at?: integer, plugins: table<string, cinch.Update> }
+function M.updates()
+  local u = feature('updates')
+  local plugins = u and vim.deepcopy(u.results) or {}
+  return {
+    count = vim.tbl_count(plugins),
+    checking = u ~= nil and u.checking,
+    checked_at = u and u.checked_at,
+    plugins = plugins,
+  }
+end
+
+--- This session's stats: plugin counts, startup times, load times, disk work. With
+--- `history`, past sessions too, oldest first. nil with the stats feature off.
+---@param opts? { history?: boolean }
+---@return table?
+function M.stats(opts)
+  local stats = feature('stats')
+  if not stats then
+    return nil
+  end
+  local s = stats.summary()
+  if opts and opts.history then
+    s.history = stats.history()
+  end
+  return s
+end
+
+--- Every message cinch logged, oldest first: those at `level` or above, about `plugin`,
+--- from `source`, when given. Empty with the messages feature off.
+---@param filter? { level?: integer, plugin?: string, source?: string }
+---@return cinch.Message[]
+function M.messages(filter)
+  local messages = feature('messages')
+  filter = filter or {}
+  return vim.tbl_map(
+    vim.deepcopy,
+    vim.tbl_filter(function(m)
+      return (not filter.level or m.level >= filter.level)
+        and (not filter.plugin or m.plugin == filter.plugin)
+        and (not filter.source or m.source == filter.source)
+    end, messages and messages.log or {})
+  )
+end
+
 --- Put plugins back on the commits the lockfile records, after a checkout moved on
 --- its own. With `confirm`, each plugin that moved asks on its row first.
 ---@param names? string[] default: every plugin on disk

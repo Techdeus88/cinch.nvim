@@ -67,7 +67,7 @@ local ns = api.nvim_create_namespace('cinch_ui')
 
 --- A note on a plugin's row: how its last build went. A `sticky` one, a failure, stays
 --- until the next build; the rest go after a moment.
----@type table<string, { text: string, hl: string, sticky?: boolean }>
+---@type table<string, { text: string, hl: string, chunks?: { [1]: string, [2]: string }[], sticky?: boolean }>
 M.notes = {}
 
 -- How long a message stays in the header once on screen, in ms, by whether it is a
@@ -157,6 +157,7 @@ end
 ---@type cinch.ui.Key[]? made on the first open, see keys.lua
 local keys
 local key_list ---@type fun(): cinch.ui.Key[]
+local fetch_info ---@type fun(tries?: integer)
 
 ---@param win integer
 ---@param c cinch.ui.Canvas
@@ -186,10 +187,11 @@ local function paint_bar(win, make)
   paint(win, c)
 end
 
---- The line of a plugin's spec in its file: the first line naming its repo.
+--- The line of a plugin's spec in its file: the first line naming its repo. Read once:
+--- none found is kept as false, so moving the cursor does not read the file again.
 ---@param p cinch.Plugin
 local function find_spec_line(p)
-  if ui.ctx.spec_lines[p.name] or not (p.origin and p.origin.file) then
+  if ui.ctx.spec_lines[p.name] ~= nil or not (p.origin and p.origin.file) then
     return
   end
   local ok, lines = pcall(vim.fn.readfile, p.origin.file)
@@ -203,6 +205,7 @@ local function find_spec_line(p)
       return
     end
   end
+  ui.ctx.spec_lines[p.name] = false
 end
 
 local function draw_pane()
@@ -304,10 +307,20 @@ local function render()
         break
       end
     end
-    -- Nothing selected in this view yet: the first row, so the pane has something.
-    if first and not ui[field] then
-      api.nvim_win_set_cursor(ui.list, { first, 0 })
-      ui[field] = c.rows[first]
+    -- What was selected is gone, hidden by a filter say, or nothing was yet: the row
+    -- under the cursor, else the first row, so the pane shows what the cursor is on.
+    if first then
+      local l = api.nvim_win_get_cursor(ui.list)[1]
+      if not c.rows[l] then
+        l = first
+        api.nvim_win_set_cursor(ui.list, { l, 0 })
+      end
+      if ui[field] ~= c.rows[l] then
+        ui[field] = c.rows[l]
+        if field == 'selected' then
+          fetch_info()
+        end
+      end
     end
   end
   draw_pane()
@@ -354,36 +367,63 @@ end
 
 -- vim.pack details ------------------------------------------------------------------
 
---- What vim.pack knows about the selected plugin, read once it stays selected a moment.
---- While vim.pack is busy, an update check say, or the plugin is still installing,
---- it tries again a little later.
+---@type table<string, true> plugins whose branches and tags git is reading now
+local reading = {}
+
+--- The selected plugin's branches, the default first, and its tags, once it stays
+--- selected a moment. The same git commands vim.pack.get runs, but in the background:
+--- vim.pack.get waits for them, 50-80ms a plugin, and keys wait with it. A plugin still
+--- installing is tried again a little later.
 ---@param tries? integer
-local function fetch_info(tries)
+function fetch_info(tries)
   local name = ui.selected
   if not name then
     return
   end
   tries = tries or 0
   vim.defer_fn(function()
-    if name ~= ui.selected or ui.ctx.info[name] or not M.is_open() then
-      return
-    end
     local p = state.plugins[name]
-    local pack = require('cinch.pack')
-    if not p then
+    if name ~= ui.selected or ui.ctx.info[name] or reading[name] or not M.is_open() or not p then
       return
-    elseif not p.path or not pack.idle() then
-      if tries < 20 then
-        return fetch_info(tries + 1)
-      elseif not p.path then
-        return
-      end
-      ui.ctx.info[name] = 'vim.pack is busy; r reads again'
-    else
-      local ok, data = pack.get({ name }, { offline = true })
-      ui.ctx.info[name] = ok and type(data) == 'table' and data[1] or tostring(data)
+    elseif not p.path then
+      return tries < 20 and fetch_info(tries + 1) or nil
     end
-    draw_pane()
+    reading[name] = true
+    local out, left = {}, 3
+    ---@param key string
+    ---@param args string[]
+    local function git(key, args)
+      vim.system({ 'git', unpack(args) }, { cwd = p.path, text = true }, function(r)
+        vim.schedule(function()
+          if r.code == 0 then
+            out[key] = r.stdout or ''
+          elseif key ~= 'head' then
+            out.err = out.err or vim.split(vim.trim(r.stderr or ''), '\n')[1]
+          end
+          left = left - 1
+          if left > 0 then
+            return
+          end
+          reading[name] = nil
+          local default = vim.trim(out.head or ''):gsub('^origin/', '')
+          local branches = {}
+          for line in vim.gsplit(out.branches or '', '\n', { trimempty = true }) do
+            local branch = line:match('^origin/(.+)$')
+            if branch then
+              table.insert(branches, branch == default and 1 or #branches + 1, branch)
+            end
+          end
+          ui.ctx.info[name] = out.err
+            or { branches = branches, tags = vim.split(out.tags or '', '\n', { trimempty = true }) }
+          if name == ui.selected then
+            draw_pane()
+          end
+        end)
+      end)
+    end
+    git('head', { 'rev-parse', '--abbrev-ref', 'origin/HEAD' })
+    git('branches', { 'branch', '--remote', '--list', '--format=%(refname:short)', '--', 'origin/**' })
+    git('tags', { 'tag', '--list' })
   end, tries == 0 and 150 or 300)
 end
 

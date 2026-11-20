@@ -227,8 +227,15 @@ H.after_startup(function()
     end
     return n > 0
   end
+  go(w.list, ' floaty ')
   H.press('2')
   H.eq(only('●'), true, '2 shows only the loaded plugins')
+  local under = vim.api.nvim_get_current_line():match('^ ● (%S+)')
+  H.eq(
+    lines(w.pane)[1]:match('^ (%S+)'),
+    under,
+    'the plugin it hid leaves the pane: the pane shows the one under the cursor'
+  )
   H.press('3')
   H.eq(only('○'), true, '3 only those waiting')
   H.press('5')

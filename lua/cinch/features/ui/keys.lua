@@ -329,7 +329,8 @@ function M.make(w)
     w.close()
     vim.cmd.edit(vim.fn.fnameescape(p.origin.file))
     if line then
-      api.nvim_win_set_cursor(0, { line, 0 })
+      -- Found before you edited the file, it may be past its end now.
+      api.nvim_win_set_cursor(0, { math.min(line, api.nvim_buf_line_count(0)), 0 })
     end
   end
 

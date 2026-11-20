@@ -293,9 +293,36 @@ function M.apply(names)
   end
 end
 
---- Check, then ask on the row of each plugin that has something new; a yes applies
---- them. Without a window to ask in, vim.pack's review tab does. With `confirm` off,
---- they apply without asking.
+--- Ask on the row of each plugin in `pending`, which the last check found something new
+--- for; a yes applies them. Without a window to ask in, vim.pack's review tab does. With
+--- `confirm` off, they apply without asking.
+---@param pending? string[] default: every plugin with a pending update
+---@param names? string[] what vim.pack's review tab covers; default: every plugin
+function M.ask(pending, names)
+  pending = pending or vim.tbl_keys(M.results)
+  if #pending == 0 then
+    return
+  end
+  table.sort(pending)
+  local cinch = require('cinch')
+  if not cinch.confirms() then
+    return M.apply(pending)
+  end
+  cinch.ask({
+    verb = 'Update',
+    names = pending,
+    done = function(yes)
+      if yes then
+        M.apply(pending)
+      end
+    end,
+    fallback = function()
+      pack.update(names, { offline = true })
+    end,
+  })
+end
+
+--- Check, then ask on the row of each plugin that has something new, as ask() does.
 ---@param names? string[] default: every plugin
 function M.review(names)
   if M.checking then
@@ -304,29 +331,12 @@ function M.review(names)
   M.check(names, {
     notify = true,
     on_done = function(results)
-      local pending = vim.tbl_filter(function(name)
-        return results[name] ~= nil
-      end, names or vim.tbl_keys(results))
-      if #pending == 0 then
-        return
-      end
-      table.sort(pending)
-      local cinch = require('cinch')
-      if not cinch.confirms() then
-        return M.apply(pending)
-      end
-      cinch.ask({
-        verb = 'Update',
-        names = pending,
-        done = function(yes)
-          if yes then
-            M.apply(pending)
-          end
-        end,
-        fallback = function()
-          pack.update(names, { offline = true })
-        end,
-      })
+      M.ask(
+        vim.tbl_filter(function(name)
+          return results[name] ~= nil
+        end, names or vim.tbl_keys(results)),
+        names
+      )
     end,
   })
 end

@@ -24,8 +24,8 @@ local M = {}
 ---@field filter? string only plugins whose name contains it
 ---@field show? string only plugins in this state, from the filters above the list; nil: all
 ---@field tick integer spinner frame
----@field info table<string, vim.pack.PlugData|string> vim.pack.get per plugin, or why it is missing
----@field spec_lines table<string, integer> line of each plugin's spec in its file
+---@field info table<string, { branches: string[], tags: string[] }|string> branches and tags per plugin, or git's error
+---@field spec_lines table<string, integer|false> line of each plugin's spec in its file; false: not found
 ---@field op? cinch.ui.Op set while an install, check, update or delete runs
 ---@field orphans? cinch.Orphan[] on disk, in no spec
 ---@field marked? table<string, true> plugins selected for an action

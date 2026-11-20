@@ -55,7 +55,7 @@ M.names = {
 
 -- Mirrored as `User Cinch<Name>` for config code that prefers autocmds.
 -- Disk events stay off this list: PackChanged already carries more.
-M.public = { Load = true, LoadError = true, Later = true, Done = true }
+M.public = { Load = true, LoadError = true, Later = true, Done = true, Updates = true, Message = true }
 
 ---@type table<string, cinch.Sub[]>
 local subs = {}
@@ -182,7 +182,17 @@ function M.emit(name, data)
     vim.api.nvim_exec_autocmds('User', {
       pattern = 'Cinch' .. name,
       modeline = false,
-      data = { name = p and p.name, reason = data.reason, err = data.err and tostring(data.err) },
+      data = {
+        name = p and (type(p) == 'table' and p.name or p),
+        reason = data.reason,
+        err = data.err and tostring(data.err),
+        -- Updates: how many are pending.
+        count = data.results and vim.tbl_count(data.results),
+        -- Message: what was logged.
+        msg = data.msg,
+        level = data.level,
+        source = data.source,
+      },
     })
   end
   return data

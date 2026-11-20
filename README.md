@@ -328,7 +328,7 @@ end)
 
 The message feature adds `Progress` (`title`, `done`, `total`, `name`: `vim.pack`'s progress, one plugin at a time) and `Message` (an entry added to the log).
 
-`Load`, `LoadError` and `Later` also fire as `User CinchLoad`, `User CinchLoadError` and `User CinchLater` autocmds.
+`Load`, `LoadError` and `Later` also fire as `User CinchLoad`, `User CinchLoadError` and `User CinchLater` autocmds. `Updates` fires as `User CinchUpdates`, with `count` in its data, and `Message` as `User CinchMessage`, with `msg`, `level`, `source` and `name`, the plugin it is about.
 
 ### Custom triggers
 
@@ -375,7 +375,24 @@ cinch.now_if_args(fn)
 cinch.time(name, fn)      -- fn, wrapped so each call is timed for the Profile view
 cinch.on(event, fn, { priority = 50, once = false })
 cinch.trigger(name, def)
+cinch.updates()           -- { count, checking, checked_at, plugins }: what the last check found
+cinch.stats({ history = true }) -- this session's counts and times; past sessions with history
+cinch.messages({ level, plugin, source }) -- everything cinch logged, oldest first
 ```
+
+### Components
+
+`require('cinch.components')` has pieces for your statusline, winbar or dashboard.
+
+```lua
+local c = require('cinch.components')
+c.updates_text()  -- '↑ 3 updates' when updates are ready, else ''
+c.updates()       -- the same, colored and clickable, for 'statusline' or 'winbar'
+c.open_updates()  -- the window on Plugins, each row with an update asking `Update <name> Yes (y) or No (n)`
+c.startup_text()  -- 'startup 42ms · ui 58ms'
+```
+
+In a plain statusline: `vim.o.statusline = "%f %= %{%v:lua.require'cinch.components'.updates()%}"`. Clicking it calls `open_updates()`; with `confirm = false` the updates apply at once. A finished check redraws the statuslines and winbars. In lualine: `{ c.updates_text, on_click = c.open_updates, color = 'CinchUpdate' }`. In a dashboard, show `updates_text()` or `startup_text()` and give `open_updates` as the action.
 
 ## Things to know
 

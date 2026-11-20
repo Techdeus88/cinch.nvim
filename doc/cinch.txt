@@ -900,6 +900,37 @@ cinch.on({event}, {fn}, {opts})                                   *cinch.on()*
 cinch.trigger({name}, {def})                                 *cinch.trigger()*
     Define a trigger. See |cinch-triggers|.
 
+cinch.updates()                                             *cinch.updates()*
+    What the last update check found: `count`, `checking`, `checked_at`, and
+    `plugins`, each pending update by name. A copy.
+
+cinch.stats({opts})                                           *cinch.stats()*
+    This session's plugin counts, startup times, load times and disk work.
+    With `{ history = true }`, past sessions too, oldest first. nil with the
+    stats feature off.
+
+cinch.messages({filter})                                   *cinch.messages()*
+    Every message cinch logged, oldest first, each with `time`, `level`,
+    `msg`, `source` and `plugin`. {filter} takes `level` (that or above),
+    `plugin` and `source`. New ones fire `User CinchMessage`.
+
+COMPONENTS                                                  *cinch-components*
+
+`require('cinch.components')` has pieces for a statusline, winbar or
+dashboard:
+
+    updates_text()      `↑ 3 updates` when updates are ready, else ''.
+    updates()           The same, colored and clickable, for 'statusline'
+                        or 'winbar': >vim
+                          set statusline=%f%=%{%v:lua.require'cinch.components'.updates()%}
+<
+    open_updates()      Open the window on Plugins, where each row with an
+                        update asks. With `confirm = false` they apply.
+    startup_text()      `startup 42ms · ui 58ms`.
+
+A finished check redraws the statuslines and winbars, and fires
+`User CinchUpdates` with `count` in its data.
+
 ==============================================================================
 12. THINGS TO KNOW                                               *cinch-notes*
 

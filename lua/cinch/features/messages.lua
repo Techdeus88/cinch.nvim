@@ -67,9 +67,8 @@ local function record(level, msg, source, plugin)
   if #M.log > M.opts.history then
     table.remove(M.log, 1)
   end
-  if events.has('Message') then
-    events.emit('Message', M.log[#M.log])
-  end
+  -- Always: it is also the `User CinchMessage` autocmd.
+  events.emit('Message', M.log[#M.log])
 end
 
 -- While Neovim starts, the screen is not drawn yet and every message waits for it;
