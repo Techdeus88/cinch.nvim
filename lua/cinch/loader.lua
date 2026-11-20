@@ -160,11 +160,26 @@ local function on_rtp(path)
   return vim.list_contains(vim.opt.rtp:get() --[[@as string[] ]], path)
 end
 
+--- Whether any of the plugin/ or after/plugin/ files under `path` ran.
+---@param path string
+---@return boolean
+local function sourced(path)
+  local dir = real(path)
+  for _, info in ipairs(vim.fn.getscriptinfo()) do
+    local name = real(info.name)
+    if vim.startswith(name, dir .. '/plugin/') or vim.startswith(name, dir .. '/after/plugin/') then
+      return true
+    end
+  end
+  return false
+end
+
 ---@param p cinch.Plugin
 local function packadd(p)
   -- Already on the runtimepath, put there by your init.lua: cinch itself, say, or a
   -- plugin you packadd yourself. Its plugin/ files ran then; again would run them twice.
-  if p.path and on_rtp(p.path) then
+  -- A running build only borrowed the path, so they ran only if startup came meanwhile.
+  if p.path and on_rtp(p.path) and (not pack.borrowed[p.path] or sourced(p.path)) then
     return
   end
   local name = vim.fn.escape(p.name, ' ')

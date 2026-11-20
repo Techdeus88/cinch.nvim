@@ -410,6 +410,24 @@ local function is_key_stub(mode, fn)
   end)
 end
 
+--- vim.keymap.set, reporting a failure instead of raising it: one bad key never stops
+--- the plugin's other keys from being mapped.
+---@param p cinch.Plugin
+---@param mode string|string[]
+---@param lhs string
+---@param rhs string|function
+---@param opts vim.keymap.set.Opts
+---@return boolean ok
+local function set_map(p, mode, lhs, rhs, opts)
+  local ok, err = pcall(vim.keymap.set, mode, lhs, rhs, opts)
+  if not ok then
+    local modes = type(mode) == 'table' and table.concat(mode) or mode
+    local msg = ('`%s`: cannot map `%s` (%s): %s'):format(p.name, lhs, modes, err)
+    events.report(msg, vim.log.levels.ERROR, p.name)
+  end
+  return ok
+end
+
 -- Modes where a register and a count can come before a key.
 local counted = { n = true, x = true, v = true, o = true }
 
@@ -458,9 +476,13 @@ M.handlers.keys = {
           local fn = function()
             on_key(mode, k.lhs)
           end
-          -- A mapping of yours the stub replaces comes back when the stub goes.
-          stub_maps[id] = { fn = fn, prev = next(prev) and prev.buffer == 0 and prev or nil }
-          vim.keymap.set(mode, k.lhs, fn, { desc = k.opts.desc or ('cinch: load ' .. p.name) })
+          if set_map(p, mode, k.lhs, fn, { desc = k.opts.desc or ('cinch: load ' .. p.name) }) then
+            -- A mapping of yours the stub replaces comes back when the stub goes.
+            stub_maps[id] = { fn = fn, prev = next(prev) and prev.buffer == 0 and prev or nil }
+          else
+            -- No stub there, so nothing for disarm to undo or report.
+            stubs[id] = nil
+          end
         end
       end
     end
@@ -493,10 +515,10 @@ M.handlers.keys = {
     end
   end,
   -- Keys with an rhs are mappings the spec defines, once the plugin is there.
-  loaded = function(_, keys)
+  loaded = function(p, keys)
     for _, k in ipairs(keys) do
       if k.rhs ~= nil then
-        vim.keymap.set(k.modes, k.lhs, k.rhs, k.opts)
+        set_map(p, k.modes, k.lhs, k.rhs, k.opts)
       end
     end
   end,

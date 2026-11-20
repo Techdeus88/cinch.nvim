@@ -309,42 +309,92 @@ local function shell_build(p, cmd, start)
   end
 end
 
---- A Lua function. It sees the plugin on the runtimepath, so its modules and
---- autoload functions resolve, but the plugin is not loaded: no plugin/ files,
---- no config, and a plugin that waits for a trigger keeps waiting.
+--- Paths function builds put on the runtimepath, and how many running builds use each.
+--- The loader packadds a plugin here properly: it is not on the runtimepath for good.
+---@type table<string, integer>
+M.borrowed = {}
+
+--- Put the plugin and its dependencies, however deep, on the runtimepath for a build:
+--- blink.cmp's build requires blink.lib, say. Those already there for good are left be.
+---@param p cinch.Plugin
+---@return cinch.Plugin[] borrowed
+local function borrow(p)
+  local rtp = vim.opt.rtp:get() --[[@as string[] ]]
+  local res, seen = {}, {}
+  local function walk(q)
+    if seen[q] or not q.path then
+      return
+    end
+    seen[q] = true
+    local n = M.borrowed[q.path]
+    if n or not vim.list_contains(rtp, q.path) then
+      if not n then
+        vim.opt.rtp:prepend(q.path)
+      end
+      M.borrowed[q.path] = (n or 0) + 1
+      res[#res + 1] = q
+    end
+    for _, name in ipairs(q.deps or {}) do
+      local d = state.plugins[name]
+      if d then
+        walk(d)
+      end
+    end
+  end
+  walk(p)
+  return res
+end
+
+--- A Lua function. It sees the plugin and its dependencies on the runtimepath, so
+--- their modules and autoload functions resolve, but the plugin is not loaded: no
+--- plugin/ files, no config, and a plugin that waits for a trigger keeps waiting.
 ---@param p cinch.Plugin
 ---@param fn function
 ---@param start integer
 local function function_build(p, fn, start)
   state.activity(p, 'building')
-  local on_rtp = vim.list_contains(vim.opt.rtp:get() --[[@as string[] ]], p.path)
   local before = {}
-  if not on_rtp then
-    for mod in pairs(package.loaded) do
-      before[mod] = true
-    end
-    vim.opt.rtp:prepend(p.path)
+  for mod in pairs(package.loaded) do
+    before[mod] = true
   end
+  local borrowed = borrow(p)
   -- `function(p, done)` is async: the build ends when it calls done, or fails
   -- after M.timeout, so what waits on it is not stuck forever.
   local async = debug.getinfo(fn, 'u').nparams >= 2
   local ended = false
-  -- Takes the plugin off the runtimepath again, once the build is over.
+  -- Takes what it borrowed off the runtimepath again, once the build is over, but
+  -- not a plugin that loaded meanwhile or that another running build still uses.
   local function restore()
-    if on_rtp or p.state == 'loaded' then
+    -- Once: a build that raises after done() gets here twice.
+    local list = borrowed
+    borrowed = {}
+    local gone = {}
+    for _, q in ipairs(list) do
+      local n = M.borrowed[q.path] - 1
+      M.borrowed[q.path] = n > 0 and n or nil
+      if n == 0 and q.state ~= 'loaded' then
+        vim.opt.rtp:remove(q.path)
+        gone[#gone + 1] = vim.fs.joinpath(q.path, 'lua')
+      end
+    end
+    if #gone == 0 then
       return
     end
-    vim.opt.rtp:remove(p.path)
     -- vim.loader searches its cached runtimepath first and re-reads it only after
-    -- a miss; without one it would keep finding this plugin's modules. This leans on
+    -- a miss; without one it would keep finding these plugins' modules. This leans on
     -- how vim.loader caches today; the builds test pins it with vim.loader enabled.
     vim.loader.find(' cinch: refresh the runtimepath cache ')
     -- Forget the modules the build loaded, so a later require() loads the plugin properly.
-    local lua = vim.fs.joinpath(p.path, 'lua')
     for mod in pairs(package.loaded) do
-      local file = vim.fs.joinpath(lua, (mod:gsub('%.', '/')))
-      if not before[mod] and (uv.fs_stat(file .. '.lua') or uv.fs_stat(file .. '/init.lua')) then
-        package.loaded[mod] = nil
+      if not before[mod] then
+        local rel = mod:gsub('%.', '/')
+        for _, lua in ipairs(gone) do
+          local file = vim.fs.joinpath(lua, rel)
+          if uv.fs_stat(file .. '.lua') or uv.fs_stat(file .. '/init.lua') then
+            package.loaded[mod] = nil
+            break
+          end
+        end
       end
     end
   end
