@@ -75,7 +75,7 @@ cinch fields can sit at the top level, as above, or inside `data`, the way `vim.
 | `deps` | Plugins that load before this one. `'owner/repo'` or a table is a spec. A bare name like `'plenary.nvim'` refers to a spec declared elsewhere. `dependencies` works too |
 | `enabled`, `cond` | `false`, or a function returning `false`, turns the plugin off: it is not installed and never loads. A function that raises leaves the plugin on, with a warning |
 | `init` | `function(plugin)`, run at every startup before the plugin loads |
-| `build` | Runs after an install or an update. A shell command runs in the background from the plugin's folder, with `sh -c` on Unix whatever your `'shell'` is. `':Cmd'` runs an Ex command once the plugin has loaded. `function(plugin)` runs with the plugin on the runtimepath but not loaded, and `function(plugin, done)` finishes when it calls `done(ok, msg)`, or fails after `build_timeout` |
+| `build` | Runs after an install or an update. A shell command runs in the background from the plugin's folder, with `sh -c` on Unix whatever your `'shell'` is. `':Cmd'` runs an Ex command once the plugin has loaded. `function(plugin)` runs with the plugin on the runtimepath but not loaded, and keys wait while it runs: one that holds Neovim over a second says so. `function(plugin, done)` runs in the background and finishes when it calls `done(ok, msg)`, or fails after `build_timeout` |
 | `opts` | A table, or `function(plugin, opts)` that returns one or fills in the table it is given |
 | `main` | The module whose `setup()` gets `opts`. cinch guesses it from the plugin's name, or takes the only module in its `lua/` folder |
 | `config` | `function(plugin, opts)`, run after the plugin loads, in place of `require(main).setup(opts)`. `config = true` calls `setup()` with no opts |
@@ -398,7 +398,7 @@ In a plain statusline: `vim.o.statusline = "%f %= %{%v:lua.require'cinch.compone
 
 - Lua modules cannot be unloaded. Updating a plugin that has already loaded takes effect when you restart, and cinch says so.
 - A `':Cmd'` build needs the plugin's own command, so cinch loads the plugin first. During startup that waits for `VimEnter`.
-- A build that fails, or is cut off by quitting, runs again at the next startup.
+- A build cut off by quitting runs again at the next startup, once Neovim is up. A build that fails waits for `b`, `:Cinch build` or the plugin's next update, and its row says why it failed.
 - `pcall(require, 'foo')` loads the plugin that has `foo`, so it no longer tells you whether a plugin has loaded. Use `require('cinch').get(name).state` for that, or `module = false`.
 - `require()` has to return at once, so it cannot wait for a build the way a key or a command can. During a build it fails with `still building`, and a later `require()` loads the plugin. It also fails, with the reason in the error, when the plugin is disabled, not installed or failed, when `LoadPre` cancels the load, and when it runs in a fast event. A plugin whose `config` raises fails that first `require()`, and later ones find the module on the runtimepath.
 - When two plugins have the same module, `require()` loads the first declared and warns once.

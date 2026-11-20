@@ -65,9 +65,16 @@ local ui = {
 
 local ns = api.nvim_create_namespace('cinch_ui')
 
---- A note on a plugin's row: how its last build went. A `sticky` one, a failure, stays
---- until the next build; the rest go after a moment.
----@type table<string, { text: string, hl: string, chunks?: { [1]: string, [2]: string }[], sticky?: boolean }>
+---@class cinch.ui.Note
+---@field text string
+---@field hl string
+---@field chunks? { [1]: string, [2]: string }[] text with more than one color, in place of `text`
+---@field sticky? boolean stays until the next build: a failure
+---@field warn? boolean stays as long as a warning in the header
+
+--- A note on a plugin's row: how its last build went, or a message about the plugin.
+--- A `sticky` one stays until the next build; the rest go after a moment.
+---@type table<string, cinch.ui.Note>
 M.notes = {}
 
 -- How long a message stays in the header once on screen, in ms, by whether it is a
@@ -851,6 +858,11 @@ local function on_report(d)
   local on_row = d.plugin and state.plugins[d.plugin] and ui.view == 'plugins' and not ui.help
   if not on_row then
     ui.ctx.notice = { text = first_line(d.msg), level = d.level }
+  elseif not (M.notes[d.plugin] and M.notes[d.plugin].sticky) then
+    -- A failure that stays on the row keeps it.
+    local levels = vim.log.levels
+    local hl = d.level >= levels.ERROR and 'CinchFailed' or d.level >= levels.WARN and 'CinchWarn' or 'CinchMuted'
+    M.note(d.plugin, { text = first_line(d.msg), hl = hl, warn = d.level >= levels.WARN })
   end
   if d.level < vim.log.levels.WARN or M.is_open() then
     return redraw()
@@ -869,7 +881,7 @@ end
 --- Put a note on a plugin's row, or take it off. `chunks`, text with its groups, stands
 --- in for `text` when it has more than one color.
 ---@param name string
----@param note? { text: string, hl: string, chunks?: { [1]: string, [2]: string }[], sticky?: boolean }
+---@param note? cinch.ui.Note
 function M.note(name, note)
   M.notes[name] = note
   redraw()
@@ -879,7 +891,7 @@ function M.note(name, note)
         M.notes[name] = nil
         redraw()
       end
-    end, notice_ms[false])
+    end, notice_ms[note.warn == true])
   end
 end
 

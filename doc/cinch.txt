@@ -210,9 +210,10 @@ FIELDS                                                     *cinch-spec-fields*
       `sh -c` on Unix whatever your 'shell' is.
     - `':Cmd'` runs an Ex command once the plugin has loaded.
     - `function(plugin)` runs with the plugin on the runtimepath but not
-      loaded.
-    - `function(plugin, done)` finishes when it calls `done(ok, msg)`, or
-      fails after `build_timeout`.
+      loaded. Keys wait while it runs; one that holds Neovim over a second
+      says so.
+    - `function(plugin, done)` runs in the background and finishes when it
+      calls `done(ok, msg)`, or fails after `build_timeout`.
 
 `opts`                                                      *cinch-spec-opts*
     A table, or `function(plugin, opts)` that returns one or fills in the
@@ -938,8 +939,9 @@ A finished check redraws the statuslines and winbars, and fires
   takes effect when you restart, and cinch says so.
 - A `':Cmd'` build needs the plugin's own command, so cinch loads the plugin
   first. During startup that waits for |VimEnter|.
-- A build that fails, or is cut off by quitting, runs again at the next
-  startup.
+- A build cut off by quitting runs again at the next startup, once Neovim
+  is up. A build that fails waits for `b`, |:Cinch-build| or the plugin's
+  next update, and its row says why it failed.
 - `pcall(require, 'foo')` loads the plugin that has `foo`, so it no longer
   tells you whether a plugin has loaded. Use
   `require('cinch').get(name).state` for that, or `module = false`.

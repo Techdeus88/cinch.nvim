@@ -1,6 +1,7 @@
 -- phases: 2
 -- pack.lua builds: shell, function, async function and :Cmd builds; a load waits for a
--- running build without blocking; a failed build runs again on the next start.
+-- running build without blocking; a build cut off by quitting runs again on the next start,
+-- once Neovim is up, and a failed one does not; a build that holds Neovim says so.
 local H = dofile(vim.env.CINCH_ROOT .. '/tests/helpers.lua')
 local events = require('cinch.events')
 -- Shell builds run with sh on Unix, whatever 'shell' is.
@@ -64,19 +65,35 @@ require('cinch').setup({
         build = [[printf '\033[32mstep one\033[0m\n' && sleep 0.5 && printf '50%%\r100%%\n' && touch made]],
       },
       { H.src('gamma'), build = 'exit 3' },
+      {
+        H.src('floaty'),
+        cmd = 'FloatyGo',
+        -- No `done`, so it holds Neovim while it runs: once the test says so.
+        build = function()
+          if vim.g.hold then
+            vim.uv.sleep(1100)
+          end
+        end,
+      },
     },
   },
 })
 
+-- Still in init.lua: the build cut off last time waits for Neovim to be up.
+local alpha_waits = H.phase == 2
+  and H.plugin('alpha.nvim').activity == 'building'
+  and not H.plugin('alpha.nvim').build_log
+
 H.after_startup(function()
   local gamma = H.plugin('gamma')
   if H.phase == 2 then
+    H.eq(alpha_waits, true, 'the build cut off by quitting waits until Neovim is up')
     H.wait(function()
       return #built > 0
-    end, 'the failed build to run again')
+    end, 'it to run again')
     vim.wait(100)
-    H.eq(built, { 'gamma failed' }, 'only the build that failed last time runs again')
-    H.eq(vim.uv.fs_stat(gamma.path .. '/.git/cinch-build') ~= nil, true, 'and stays marked')
+    H.eq(built, { 'alpha.nvim' }, 'then runs; the one that failed does not')
+    H.eq(vim.uv.fs_stat(H.plugin('alpha.nvim').path .. '/.git/cinch-build'), nil, 'and it is unmarked')
     return
   end
 
@@ -86,6 +103,8 @@ H.after_startup(function()
     return #(delta.build_log or {}) > 0
   end, 'its first line of output')
   H.eq(delta.build_log, { 'step one' }, 'its output streams in as it runs, without colors')
+  require('cinch').build({ 'delta.nvim' })
+  H.eq(delta.build_log, { 'step one' }, 'building it again while it builds does nothing')
   local plugins = require('cinch.features.ui.plugins')
   local ctx = { folded = {}, tick = 0, info = {}, spec_lines = {} }
   local row = vim.iter(plugins.list(120, ctx).lines):find(function(l) ---@param l string
@@ -154,7 +173,10 @@ H.after_startup(function()
     return vim.tbl_contains(built, 'gamma failed')
   end, 'gamma build')
   H.eq(H.noted('build of `gamma` failed'), true, 'a failed build is reported')
-  H.eq(vim.uv.fs_stat(gamma.path .. '/.git/cinch-build') ~= nil, true, 'and stays marked')
+  H.eq(vim.uv.fs_stat(gamma.path .. '/.git/cinch-build'), nil, 'and is unmarked: it waits for b, not the next start')
+  H.eq(#vim.tbl_filter(function(b)
+    return vim.startswith(b, 'delta.nvim')
+  end, built), 1, 'delta built once')
 
   local ui = require('cinch.features.ui')
   H.wait(ui.is_open, 'the failed build to open the window')
@@ -164,6 +186,15 @@ H.after_startup(function()
     end) or ''
   end
   H.eq(row_of('gamma'):find('build failed: exit 3', 1, true) ~= nil, true, 'its row says the build failed')
+  vim.g.hold = true
+  require('cinch').build({ 'floaty' })
+  H.eq(
+    H.noted('^build held Neovim 1%.%ds; function%(p, done%) runs it in the background$'),
+    true,
+    'a build with no done that held Neovim says so'
+  )
+  vim.wait(50)
+  H.eq(row_of('floaty'):find('build held Neovim', 1, true) ~= nil, true, 'on its row too')
 
   require('cinch').build({ 'alpha.nvim' })
   H.wait(function()
@@ -184,4 +215,8 @@ H.after_startup(function()
   H.eq({ ui.is_open(), said == table.concat(echoed, '\n') }, { false, true }, 'information waits, silently')
   ui.open()
   H.eq(H.header()[2]:find('a note for later', 1, true) ~= nil, true, 'in the header of the next open')
+
+  -- As if Neovim quit while alpha built: the next start builds it again.
+  local f = assert(io.open(H.plugin('alpha.nvim').path .. '/.git/cinch-build', 'w'))
+  f:close()
 end)

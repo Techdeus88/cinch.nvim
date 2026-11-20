@@ -26,6 +26,8 @@ local adding = false
 local queue = {}
 ---@type table<string, fun()[]> callbacks waiting for a plugin's build to end
 local waiters = {}
+---@type table<string, true> plugins whose build is running: one at a time each
+local running = {}
 
 ---@param op 'add'|'update'|'del'|'get'
 ---@param names? string[]
@@ -194,9 +196,11 @@ end
 ---@param output? string
 local function finish(p, start, err, output)
   state.activity(p, nil)
-  if not err then
-    os.remove(marker(p))
-  else
+  running[p.name] = nil
+  -- Failed too: a failed build waits for `b`, :Cinch build or the next update. Only a
+  -- build cut off by quitting keeps its marker, and runs again at the next start.
+  os.remove(marker(p))
+  if err then
     events.report(('build of `%s` failed: %s'):format(p.name, err), vim.log.levels.ERROR, p.name)
   end
   if events.has('Build') then
@@ -416,9 +420,18 @@ local function function_build(p, fn, start)
       done(false, ('did not call done() within %ds'):format(M.timeout / 1000))
     end, M.timeout)
   end
+  local t = uv.hrtime()
   local ok, err = pcall(fn, p, async and done or nil)
+  local held = (uv.hrtime() - t) / 1e6
   if not async or not ok then
     restore()
+  end
+  --- A build with no `done` runs on the main loop, so keys wait for it: say how to fix that.
+  local function slow()
+    if not async and held > 1000 then
+      local msg = ('build held Neovim %.1fs; function(p, done) runs it in the background'):format(held / 1000)
+      events.report(msg, vim.log.levels.WARN, p.name)
+    end
   end
   if not ok then
     if ended then
@@ -426,11 +439,15 @@ local function function_build(p, fn, start)
       events.report(('build of `%s` raised after done(): %s'):format(p.name, err), vim.log.levels.WARN, p.name)
     else
       ended = true
+      -- Before the failure, which stays on its row.
+      slow()
       finish(p, start, tostring(err))
     end
   elseif not async then
     ended = true
     finish(p, start)
+    -- After the row says it built, so the row shows this next.
+    slow()
   end
 end
 
@@ -479,9 +496,11 @@ end
 ---@param p cinch.Plugin
 function M.build(p)
   local b = p.data.build
-  if not b or not p.path then
+  -- Not twice at once: `b` pressed again, or an add while it runs.
+  if not b or not p.path or running[p.name] then
     return
   end
+  running[p.name] = true
   local f = io.open(marker(p), 'w')
   if f then
     f:close()
@@ -495,6 +514,34 @@ function M.build(p)
   else
     shell_build(p, b, start)
   end
+end
+
+--- Run builds once the UI is up, so Neovim draws before a build that holds it; now
+--- when it is up already. Meanwhile they count as building, so a load waits for them.
+---@param list cinch.Plugin[]
+local function run_later(list)
+  if vim.v.vim_did_enter == 1 then
+    for _, p in ipairs(list) do
+      M.build(p)
+    end
+    return
+  elseif #list == 0 then
+    return
+  end
+  for _, p in ipairs(list) do
+    state.activity(p, 'building')
+  end
+  -- Required here: handler.lua requires this file.
+  local enter = require('cinch.handler').ui_coming() and 'UIEnter' or 'VimEnter'
+  api.nvim_create_autocmd(enter, {
+    once = true,
+    callback = vim.schedule_wrap(function()
+      for _, p in ipairs(list) do
+        state.activity(p, nil)
+        M.build(p)
+      end
+    end),
+  })
 end
 
 -- vim.pack calls -----------------------------------------------------------
@@ -537,7 +584,7 @@ function M.add(plugins, confirm)
   adding = false
   synced = synced or ran
 
-  local failed = {}
+  local failed, rerun = {}, {}
   for _, p in ipairs(plugins) do
     state.activity(p, nil)
     -- vim.pack skips the load callback for a plugin it already added this session.
@@ -547,9 +594,9 @@ function M.add(plugins, confirm)
     end
     if not p.path then
       failed[#failed + 1] = p
-    elseif p.data.build and uv.fs_stat(marker(p)) then
-      -- Its last build failed or was interrupted.
-      queue[#queue + 1] = p
+    elseif p.data.build and uv.fs_stat(marker(p)) and not running[p.name] then
+      -- Its last build was cut off by quitting: again once the UI is up.
+      rerun[#rerun + 1] = p
     end
   end
   if #failed > 0 then
@@ -565,6 +612,7 @@ function M.add(plugins, confirm)
   for _, p in ipairs(q) do
     M.build(p)
   end
+  run_later(rerun)
   return failed
 end
 
