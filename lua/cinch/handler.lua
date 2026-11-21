@@ -398,6 +398,7 @@ local map_options = { 'desc', 'silent', 'noremap', 'remap', 'nowait', 'expr', 'u
 ---@field rhs? string|function
 ---@field modes string[]
 ---@field opts vim.keymap.set.Opts
+---@field fts? string[] only in buffers of these filetypes, as lazy.nvim's `ft` on a key
 
 ---@type table<string, table<string, cinch.Plugin>> "mode lhs" -> plugins
 local stubs = {}
@@ -441,7 +442,8 @@ local counted = { n = true, x = true, v = true, o = true }
 
 ---@param mode string
 ---@param lhs string
-local function on_key(mode, lhs)
+---@param plugins? table<string, cinch.Plugin> default: every plugin behind the global stub
+local function on_key(mode, lhs, plugins)
   -- What came before the key: "a, a count, and in operator-pending mode the
   -- operator itself, which ends when this stub returns without a motion.
   local prefix = ''
@@ -451,10 +453,114 @@ local function on_key(mode, lhs)
       prefix = prefix .. vim.v.operator
     end
   end
-  fire_all(ordered(stubs[mode .. ' ' .. lhs]), 'keys ' .. lhs, function()
+  fire_all(ordered(plugins or stubs[mode .. ' ' .. lhs]), 'keys ' .. lhs, function()
     -- Fed again with remapping, so the mapping the plugin or its spec just made runs.
     api.nvim_feedkeys(prefix .. vim.keycode(lhs), 'mit', false)
   end)
+end
+
+--- The buffers open now whose filetype is one of `fts`.
+---@param fts string[]
+---@return integer[]
+local function buffers_of(fts)
+  return vim.tbl_filter(function(b)
+    return api.nvim_buf_is_loaded(b) and vim.list_contains(fts, vim.bo[b].filetype)
+  end, api.nvim_list_bufs())
+end
+
+--- Run `fn(buf)` for each buffer of the key's filetypes: those open now, and each one
+--- that gets one of them later, until the returned autocmd is deleted.
+---@param k cinch.ParsedKey
+---@param fn fun(buf: integer)
+---@return integer autocmd
+local function each_ft_buffer(k, fn)
+  local au = api.nvim_create_autocmd('FileType', {
+    pattern = k.fts,
+    callback = function(ev)
+      fn(ev.buf)
+    end,
+  })
+  for _, b in ipairs(buffers_of(k.fts or {})) do
+    fn(b)
+  end
+  return au
+end
+
+---@class cinch.FtStub a key with `ft`: its own stub in each buffer of those filetypes
+---@field au? integer the FileType autocmd that maps it in new buffers
+---@field maps table<integer, table<string, { fn: function, prev?: table }>> buffer -> mode -> stub
+
+---@type table<string, cinch.FtStub> "plugin mode... lhs" -> its stubs
+local ft_stubs = {}
+
+---@param p cinch.Plugin
+---@param k cinch.ParsedKey
+---@return string
+local function ft_id(p, k)
+  return p.name .. ' ' .. table.concat(k.modes, ',') .. ' ' .. k.lhs
+end
+
+--- Map a key with `ft` as a stub in each buffer of its filetypes: buffer-local, so in
+--- any other buffer the key stays as it was.
+---@param p cinch.Plugin
+---@param k cinch.ParsedKey
+local function arm_ft(p, k)
+  local id = ft_id(p, k)
+  if ft_stubs[id] then
+    return
+  end
+  local entry = { maps = {} } ---@type cinch.FtStub
+  ft_stubs[id] = entry
+  entry.au = each_ft_buffer(k, function(buf)
+    entry.maps[buf] = entry.maps[buf] or {}
+    for _, mode in ipairs(k.modes) do
+      if not entry.maps[buf][mode] then
+        -- A buffer-local mapping of this key, from an ftplugin say, comes back after.
+        local prev = api.nvim_buf_call(buf, function()
+          return vim.fn.maparg(k.lhs, mode, false, true)
+        end)
+        local fn = function()
+          on_key(mode, k.lhs, { [p.name] = p })
+        end
+        local opts = { buffer = buf, desc = k.opts.desc or ('cinch: load ' .. p.name) }
+        if set_map(p, mode, k.lhs, fn, opts) then
+          entry.maps[buf][mode] = { fn = fn, prev = next(prev) and prev.buffer == 1 and prev or nil }
+        end
+      end
+    end
+  end)
+end
+
+---@param p cinch.Plugin
+---@param k cinch.ParsedKey
+---@param loading? boolean
+local function disarm_ft(p, k, loading)
+  local id = ft_id(p, k)
+  local entry = ft_stubs[id]
+  if not entry then
+    return
+  end
+  ft_stubs[id] = nil
+  pcall(api.nvim_del_autocmd, entry.au)
+  for buf, modes in pairs(entry.maps) do
+    for mode, stub in pairs(modes) do
+      local ok, maps = pcall(api.nvim_buf_get_keymap, buf, mode)
+      local ours = ok and vim.iter(maps):any(function(m)
+        return m.callback == stub.fn
+      end)
+      if ours then
+        pcall(vim.keymap.del, mode, k.lhs, { buffer = buf })
+        if stub.prev then
+          pcall(api.nvim_buf_call, buf, function()
+            vim.fn.mapset(mode, false, stub.prev)
+          end)
+        end
+      elseif loading and ok then
+        local msg = '`%s`: its key `%s` was mapped by something else before it loaded'
+        events.report(msg:format(p.name, k.lhs), vim.log.levels.WARN, p.name)
+      end
+    end
+  end
 end
 
 M.handlers.keys = {
@@ -468,14 +574,18 @@ M.handlers.keys = {
         for _, o in ipairs(map_options) do
           opts[o] = k[o]
         end
-        res[#res + 1] = { lhs = k[1], rhs = k[2], modes = list(k.mode or 'n'), opts = opts }
+        local fts = k.ft and list(k.ft)
+        res[#res + 1] = { lhs = k[1], rhs = k[2], modes = list(k.mode or 'n'), opts = opts, fts = fts }
       end
     end
     return res
   end,
   arm = function(p, keys)
     for _, k in ipairs(keys) do
-      for _, mode in ipairs(k.modes) do
+      if k.fts then
+        arm_ft(p, k)
+      end
+      for _, mode in ipairs(k.fts and {} or k.modes) do
         local id = mode .. ' ' .. k.lhs
         stubs[id] = stubs[id] or {}
         stubs[id][p.name] = p
@@ -497,7 +607,10 @@ M.handlers.keys = {
   end,
   disarm = function(p, keys, loading)
     for _, k in ipairs(keys) do
-      for _, mode in ipairs(k.modes) do
+      if k.fts then
+        disarm_ft(p, k, loading)
+      end
+      for _, mode in ipairs(k.fts and {} or k.modes) do
         local id = mode .. ' ' .. k.lhs
         if stubs[id] then
           stubs[id][p.name] = nil
@@ -522,10 +635,15 @@ M.handlers.keys = {
       end
     end
   end,
-  -- Keys with an rhs are mappings the spec defines, once the plugin is there.
+  -- Keys with an rhs are mappings the spec defines, once the plugin is there. One with
+  -- `ft` is buffer-local, in each buffer of those filetypes, now and later.
   loaded = function(p, keys)
     for _, k in ipairs(keys) do
-      if k.rhs ~= nil then
+      if k.rhs ~= nil and k.fts then
+        each_ft_buffer(k, function(buf)
+          set_map(p, k.modes, k.lhs, k.rhs, vim.tbl_extend('force', k.opts, { buffer = buf }))
+        end)
+      elseif k.rhs ~= nil then
         set_map(p, k.modes, k.lhs, k.rhs, k.opts)
       end
     end

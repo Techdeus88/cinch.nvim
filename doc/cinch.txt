@@ -191,7 +191,9 @@ FIELDS                                                     *cinch-spec-fields*
 
 `keys`                                                      *cinch-spec-keys*
     `'<leader>f'`, or `{ '<leader>f', rhs, mode = 'n', desc = '...' }` for
-    a mapping the spec defines, or a list of either. A plugin that loads
+    a mapping the spec defines, or a list of either. `ft = 'lua'` or a list
+    of filetypes maps the key only in buffers of those filetypes, as in
+    lazy.nvim, both before and after the plugin loads. A plugin that loads
     another way, with `load = 'now'` say, still gets the mappings the spec
     defines.
 

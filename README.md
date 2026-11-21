@@ -71,7 +71,7 @@ cinch fields can sit at the top level, as above, or inside `data`, the way `vim.
 | `event` | `'BufReadPost'`, or `'User MyEvent'` for an event with a pattern. A string or a list |
 | `ft` | A filetype or a list of them |
 | `cmd` | A command or a list of them |
-| `keys` | `'<leader>f'`, or `{ '<leader>f', rhs, mode = 'n', desc = '...' }` for a mapping the spec defines, or a list of either. A plugin that loads another way, with `load = 'now'` say, still gets the mappings the spec defines |
+| `keys` | `'<leader>f'`, or `{ '<leader>f', rhs, mode = 'n', desc = '...' }` for a mapping the spec defines, or a list of either. `ft = 'lua'` or a list of filetypes maps the key only in buffers of those filetypes, as in lazy.nvim, both before and after the plugin loads. A plugin that loads another way, with `load = 'now'` say, still gets the mappings the spec defines |
 | `deps` | Plugins that load before this one. `'owner/repo'` or a table is a spec. A bare name like `'plenary.nvim'` refers to a spec declared elsewhere. `dependencies` works too |
 | `enabled`, `cond` | `false`, or a function returning `false`, turns the plugin off: it is not installed and never loads. A function that raises leaves the plugin on, with a warning |
 | `init` | `function(plugin)`, run at every startup before the plugin loads |
