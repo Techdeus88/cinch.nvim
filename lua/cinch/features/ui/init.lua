@@ -333,9 +333,10 @@ local function render()
         break
       end
     end
-    -- What was selected is gone, hidden by a filter say, or nothing was yet: the row
-    -- under the cursor, else the first row, so the pane shows what the cursor is on.
-    if first then
+    -- The row the cursor was on is gone, hidden by a filter say, or nothing was selected
+    -- yet: the row under the cursor, else the first row, so the pane shows what the
+    -- cursor is on. On a blank row or a title the cursor stays, so j and k pass them.
+    if first and (at.row or not ui[field]) then
       local l = api.nvim_win_get_cursor(ui.list)[1]
       if not c.rows[l] then
         l = first

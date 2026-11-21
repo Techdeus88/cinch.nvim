@@ -311,6 +311,16 @@ H.after_startup(function()
     line_of(w.list, ' alpha%.nvim '),
     'the spinner leaves the cursor where it is'
   )
+  -- Down out of the working section: the blank row under it is no plugin, and the
+  -- spinner's redraws must not pull the cursor back up.
+  go(w.list, ' beta%.nvim ')
+  H.press('j')
+  vim.wait(250)
+  local blank = working + 2
+  H.eq(api.nvim_win_get_cursor(w.list)[1], blank, 'j moves onto the blank row and stays there')
+  H.press('j')
+  vim.wait(250)
+  H.eq(api.nvim_win_get_cursor(w.list)[1], blank + 1, 'and j again goes on into the rest of the list')
   state.activity(H.plugin('beta.nvim'), nil)
   vim.wait(50)
 
