@@ -97,6 +97,24 @@ local function valid(win)
   return win ~= nil and api.nvim_win_is_valid(win)
 end
 
+-- No columns beside the text. 'minimal' starts a window this way, but a plugin that
+-- sets up later may decorate every open window: statuscol.nvim adds its 'statuscolumn',
+-- line numbers and all, on a first start while the window is up.
+local plain = { number = false, relativenumber = false, statuscolumn = '', signcolumn = 'no', foldcolumn = '0' }
+
+--- Put back what a plugin changed, and only that: setting an option fires OptionSet.
+---@param win? integer
+local function keep_plain(win)
+  if not valid(win) then
+    return
+  end
+  for k, v in pairs(plain) do
+    if vim.wo[win][k] ~= v then
+      vim.wo[win][k] = v
+    end
+  end
+end
+
 ---@return boolean
 function M.is_open()
   return valid(ui.list)
@@ -272,6 +290,7 @@ local function render()
   end
   for _, k in ipairs({ 'header', 'list', 'pane', 'footer' }) do
     api.nvim_win_set_config(ui[k], cfg[k])
+    keep_plain(ui[k])
   end
   paint_bar(ui.header, function(width)
     return layout.header(width, s)
@@ -645,6 +664,7 @@ local function float(focus, cfg)
   vim.bo[buf].bufhidden = 'wipe'
   cfg.style = 'minimal'
   local win = api.nvim_open_win(buf, focus, cfg)
+  keep_plain(win)
   vim.wo[win].wrap = false
   vim.wo[win].winhighlight = 'Normal:NormalFloat'
   return win
