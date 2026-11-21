@@ -18,6 +18,7 @@ CONTENTS                                              *cinch* *cinch-contents*
   7. Commands ............................................ |cinch-commands|
   8. The window .......................................... |cinch-window|
      Keys ................................................ |cinch-keys|
+     Questions ........................................... |cinch-questions|
   9. Features ............................................ |cinch-features|
  10. Events .............................................. |cinch-events|
      Custom triggers ..................................... |cinch-triggers|
@@ -41,9 +42,10 @@ a |vim.pack.Spec|, so anything you write for cinch also works with
   up, opens its window, and installs everything in one parallel batch while
   each plugin's row goes from cloning to installed. Your colorscheme applies
   the moment its plugin lands.
-- Builds that never block. A shell build runs in the background. A plugin
-  whose build is still running loads when the build ends, and a key or command
-  that fired meanwhile is replayed after.
+- Builds in the background. A shell build, and a function build that takes
+  `done`, runs in the background. A plugin whose build is still running loads
+  when the build ends, and a key or command that fired meanwhile is replayed
+  after.
 - Your messages. cinch shows `vim.pack`'s progress and errors as its own,
   in its window and never on the command line, without Lua stack noise, and
   logs every step it takes: each install, build, load and trigger.
@@ -55,7 +57,7 @@ a |vim.pack.Spec|, so anything you write for cinch also works with
 ==============================================================================
 2. REQUIREMENTS                                           *cinch-requirements*
 
-- Neovim 0.13 or newer, which is a nightly build until it is released.
+- Neovim 0.12 or newer.
 - `git` on your `PATH`.
 
 ==============================================================================
@@ -189,7 +191,9 @@ FIELDS                                                     *cinch-spec-fields*
 
 `keys`                                                      *cinch-spec-keys*
     `'<leader>f'`, or `{ '<leader>f', rhs, mode = 'n', desc = '...' }` for
-    a mapping the spec defines, or a list of either.
+    a mapping the spec defines, or a list of either. A plugin that loads
+    another way, with `load = 'now'` say, still gets the mappings the spec
+    defines.
 
 `deps`                                                      *cinch-spec-deps*
     Plugins that load before this one. `'owner/repo'` or a table is a spec.
@@ -416,6 +420,8 @@ The defaults: >lua
                                -- plugin is on disk
         backdrop = 60,         -- how much the editor shows through the dark
                                -- backdrop, 0-100; false for none
+        rounded = true,        -- rounded ends on chips and pills, drawn
+                               -- with Nerd Font glyphs
         icons = {},            -- your own for any of: now, later, event, ft,
                                -- cmd, keys, dep, trigger, off
       },
@@ -478,7 +484,7 @@ The Lua API, `User Cinch*` events and highlight groups keep their names.
     Open the window.
 
 :Cinch open [view]                                               *:Cinch-open*
-    Open it on a view: `plugins`, `triggers`, `stats` or `log`.
+    Open it on a view: `plugins`, `triggers`, `stats`, `profile` or `log`.
 
 :Cinch load {names}                                              *:Cinch-load*
     Load plugins now.
@@ -496,8 +502,10 @@ The Lua API, `User Cinch*` events and highlight groups keep their names.
 
 :Cinch update [names]                                          *:Cinch-update*
 :Cinch update! [names]
-    Update with `vim.pack`'s review tab. With [!] it applies without it,
-    opens the window, and shows the progress and how it ended.
+    Check, then ask on the row of each plugin that has something new, or
+    apply at once with `confirm = false`. With [!] it applies without
+    asking. Both open the window and show the progress and how it ended.
+    With the `updates` feature off, it is `vim.pack`'s review tab.
 
 :Cinch restore [names]                                        *:Cinch-restore*
 :Cinch restore! [names]
@@ -517,16 +525,17 @@ The Lua API, `User Cinch*` events and highlight groups keep their names.
 
 :Cinch sync                                                      *:Cinch-sync*
     Install what is missing, offer to delete what no spec names (without
-    asking when `confirm = false`), then check for updates. It never applies an update, and never deletes a plugin your
-    specs list.
+    asking when `confirm = false`), then check for updates. It never applies
+    an update, and never deletes a plugin your specs list.
 
 :Cinch stats                                                    *:Cinch-stats*
     Open the Stats view. Without the `ui` feature, print this session's
     stats.
 
 :checkhealth cinch                                              *cinch-health*
-    Neovim, git, the lockfile, plugin states, orphans, features, and whether
-    startup timing came from the OS.
+    Neovim, git, `sh` for shell builds, the lockfile, plugin states,
+    orphans, features, whether startup timing came from the OS, and the
+    background update check.
 
 ==============================================================================
 8. THE WINDOW                                                   *cinch-window*
@@ -539,8 +548,9 @@ opens keeps focus. The header has two lines. The first holds when Neovim
 started and when its UI came up on the left, such as
 `startup 42ms · ui 58ms`, the name in the middle and the five views on the
 right: plugins, triggers, stats, profile and log. The second is for messages
-only. An install, a check, an update or a delete shows in the middle of it, like `Installing plugins (18/48) - yanky.nvim 37%`
-with a bar, then a line that says how it ended, such as
+only. An install, a check, an update or a delete shows in the middle of it,
+like `Installing plugins (18/48) - yanky.nvim 37%` with a bar, then a line
+that says how it ended, such as
 `Checked 61 plugins in 2.1s · 3 updates`, for a moment. Every other message
 cinch has shows there too, for 4 seconds, or 10 for a warning or an error,
 and the Log keeps them all. cinch never writes to the command line: a warning
@@ -559,12 +569,12 @@ filters, each with its mark and how many plugins it shows:
 `✗ Failed (1)` while something has failed. `1` to `5` pick one, and the list
 shows only those plugins; plugins on disk that no spec names show only under
 All. In a narrow list the filters drop their names. A rule parts them from
-the rest, as in the pane. Then comes "Updates (n)", which only appears when there are updates: each plugin with
-its name and how many commits it is behind, like `2 commits`, and `u` applies
-the one under the cursor. cinch itself gets its row here. A plugin on disk
-that no spec names is also listed, with `not in specs`, and `d` deletes it.
-A plugin that is working, failed or off stays in that section, with `↑n` on
-its row.
+the rest, as in the pane. Then comes "Updates (n)", which only appears when
+there are updates: each plugin with its name and how many commits it is
+behind, like `2 commits`, and `u` applies the one under the cursor. cinch
+itself gets its row here. A plugin on disk that no spec names is also listed,
+with `not in specs`, and `d` deletes it. A plugin that is working, failed or
+off stays in that section, with `↑n` on its row.
 
 The rest of the list keeps a title only for "working", the plugins
 installing, building or loading, on top. The filters count the other states,
@@ -592,10 +602,8 @@ and when it loaded, its folder and url, the branch it follows or the version
 you pinned, the commit on disk, its readme, pending commits, its dependencies
 and what needs it, the config and opts it received, the last lines of its
 build output, live while it builds, and where its spec is. `gx` opens the
-url. Plugins still on disk that no spec names any more sit last, under "not
-in your specs", where `d` deletes them. In a window narrower than 130 columns,
-where the list could not fit a whole row beside the pane, the pane sits
-under the list instead.
+url. In a window narrower than 130 columns, where the list could not fit
+a whole row beside the pane, the pane sits under the list instead.
 
 The window's colors come from your colorscheme: the diagnostic colors where
 it gives them a hue, otherwise the hues it keeps elsewhere, such as the color
@@ -678,6 +686,8 @@ KEYS                                                              *cinch-keys*
   `s`                 Sync, as |:Cinch-sync| does.
   `d`                 Delete the plugin under the cursor from disk, once you
                     confirm.
+  `y`, `n`            Answer a row that asks. `q` and `<Esc>` are a no, and
+                    other keys wait.
   `<S-CR>`, `<Space>`   Select the plugin under the cursor, shading its row;
                     `l`, `b`, `u`, `c` and `d` then act on every selected
                     plugin, and `<Esc>` lets go of them.
@@ -699,6 +709,23 @@ KEYS                                                              *cinch-keys*
 
 Opening the window starts an update check when the last one is more than
 5 minutes old.
+
+------------------------------------------------------------------------------
+QUESTIONS                                                    *cinch-questions*
+
+cinch asks every yes or no itself, on the row of the plugin it is about:
+`Delete real-icons.nvim Yes (y) or No (n)`. `y` goes ahead and `n`, `q` or
+`<Esc>` does not; until you answer, other keys do nothing. With
+`confirm = true`, the default, installing, updating, deleting, cleaning and
+restoring all ask this way, and a command that asks opens the window to do
+it. With `confirm = false` none of them asks: the key or command goes ahead.
+A key with nothing to do says so on the row instead: `already installed`,
+`already loaded`, `already up to date` or `already deleted`. A deleted plugin
+your specs still list keeps its row, which says `deleted`.
+
+Neovim's own prompt is left for two cases: the `ui` feature is off, or an
+install happens during `init.lua` before there is a window (headless, or
+`defer = false`).
 
 ==============================================================================
 9. FEATURES                                                   *cinch-features*
@@ -809,14 +836,20 @@ order, lower first, and get the payload. See |cinch.on()|. >lua
     `msg`, `level`, `plugin`, `source`, `shown`: something for you to read,
     and the plugin it is about. A subscriber that shows it sets `handled`;
     `shown` means it is on the command line already, to log only
+`Ask`
+    `verb`, `names`, `done`: a yes or no about plugins. Set
+    `handled = true` and call `done(yes)` to ask it your own way
 
 The messages feature adds `Message` (`time`, `level`, `msg`, `source`,
 `plugin`: an entry added to the log). The updates feature adds `Updates`
 (`results`: the pending updates by plugin name, after a check and whenever
 one lands).
 
-`Load`, `LoadError` and `Later` also fire as `User CinchLoad`,
-`User CinchLoadError` and `User CinchLater` autocmds.
+`Load`, `LoadError`, `Later` and `Done` also fire as `User CinchLoad`,
+`User CinchLoadError`, `User CinchLater` and `User CinchDone` autocmds, with
+the plugin's `name`, `reason` and `err` in their data. `Updates` fires as
+`User CinchUpdates`, with `count`, and `Message` as `User CinchMessage`, with
+`msg`, `level`, `source` and `name`, the plugin it is about.
 
 ------------------------------------------------------------------------------
 CUSTOM TRIGGERS                                               *cinch-triggers*
@@ -884,6 +917,22 @@ cinch.clean({opts})                                            *cinch.clean()*
 
 cinch.sync()                                                    *cinch.sync()*
     Install what is missing, offer to clean, check for updates.
+
+cinch.restore({names}, {opts})                               *cinch.restore()*
+    Put plugins back on the commits the lockfile records, after a checkout
+    moved on its own; all of them without {names}. {opts} takes `confirm`:
+    each plugin that moved asks on its row first.
+
+cinch.ask({req})                                                 *cinch.ask()*
+    Ask yes or no about plugins, on their rows in the window. {req} takes
+    `verb` and `names`, shown as `<Verb> <name> Yes (y) or No (n)`, and
+    `done`, called with the answer. Without the window, `fallback` runs if
+    {req} has one, else Neovim's prompt asks `question`. See
+    |cinch-questions|.
+
+cinch.confirms()                                            *cinch.confirms()*
+    Whether `confirm` is on, so cinch asks before it installs, updates or
+    deletes.
 
 cinch.now({fn})                                                  *cinch.now()*
 cinch.later({fn})                                              *cinch.later()*

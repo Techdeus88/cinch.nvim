@@ -6,7 +6,7 @@ A plugin manager for Neovim, built on `vim.pack`.
 
 - **Four ways to load.** `now` loads during startup. `later` loads once the UI is up, a few plugins per tick. `now_if_args` is `now` when Neovim starts with a file and `later` when it doesn't. `trigger` loads on an event, a filetype, a command or a key.
 - **A first start you can watch.** On a new machine, cinch waits until the UI is up, opens its window, and installs everything in one parallel batch while each plugin's row goes from cloning to installed. Your colorscheme applies the moment its plugin lands.
-- **Builds that never block.** A shell build runs in the background. A plugin whose build is still running loads when the build ends, and a key or command that fired meanwhile is replayed after.
+- **Builds in the background.** A shell build, and a function build that takes `done`, runs in the background. A plugin whose build is still running loads when the build ends, and a key or command that fired meanwhile is replayed after.
 - **Your messages.** cinch shows `vim.pack`'s progress and errors as its own, in its window and never on the command line, without Lua stack noise, and logs every step it takes: each install, build, load and trigger.
 - **Stats.** Startup time measured from when the process began, each phase of cinch's startup, every plugin's load time, and a history across sessions.
 - **Update checks** fetch in the background and list each plugin's new commits. You apply them from the window.
@@ -169,6 +169,7 @@ require('cinch').setup({
     open_on_install = true,      -- open the window when plugins install
     colorscheme = nil,           -- e.g. 'tokyonight': applied as soon as its plugin is on disk
     backdrop = 60,               -- how much the editor shows through the dark backdrop, 0-100; false for none
+    rounded = true,              -- rounded ends on chips and pills, drawn with Nerd Font glyphs
     icons = {},                  -- your own for any of: now, later, event, ft, cmd, keys, dep, trigger, off
   },
 })
@@ -212,7 +213,7 @@ These use the default name. `cmd_prefix` in `setup()` renames the command, so `c
 | Command | Does |
 | --- | --- |
 | `:Cinch` | Open the window |
-| `:Cinch open [plugins\|triggers\|stats\|log]` | Open it on a view |
+| `:Cinch open [plugins\|triggers\|stats\|profile\|log]` | Open it on a view |
 | `:Cinch load {names}` | Load plugins now |
 | `:Cinch install [names]` | Install plugins your specs list that aren't on disk: a failed install, or one deleted this session. They then load as their specs say; one already loaded this session stays loaded |
 | `:Cinch build {names}` | Run their builds again |
@@ -223,13 +224,13 @@ These use the default name. `cmd_prefix` in `setup()` renames the command, so `c
 | `:Cinch clean` | Delete every plugin on disk that no spec names, once you say yes on their rows. Not while a spec file has failed to load, since its plugins would look like strays. `:Cinch clean!` skips both |
 | `:Cinch sync` | Install what is missing, offer to delete what no spec names, then check for updates. It never applies an update, and never deletes a plugin your specs list |
 | `:Cinch stats` | Open the Stats view. Without the `ui` feature, print this session's stats |
-| `:checkhealth cinch` | Neovim, git, the lockfile, plugin states, orphans, features, and whether startup timing came from the OS |
+| `:checkhealth cinch` | Neovim, git, `sh` for shell builds, the lockfile, plugin states, orphans, features, whether startup timing came from the OS, and the background update check |
 
 ## The window
 
 Four bordered windows at 75% of the editor, over a dark backdrop that dims the editor behind it: a header, the list and the details pane beside it, and a footer. The cursor stays in the window: moving to an editor window, with a click or `<C-w>`, comes back to the list, while a prompt or picker a plugin opens keeps focus. The header has two lines. The first holds when Neovim started and when its UI came up on the left, such as `startup 42ms · ui 58ms`, the name in the middle and the five views on the right: plugins, triggers, stats, profile and log. The second is for messages only. An install, a check, an update or a delete shows in the middle of it, like `Installing plugins (18/48) - yanky.nvim 37%` with a bar, then a line that says how it ended, such as `Checked 61 plugins in 2.1s · 3 updates`, for a moment. Every other message cinch has shows there too, for 4 seconds, or 10 for a warning or an error, and the Log keeps them all. cinch never writes to the command line: a warning or an error opens the window to show it, and anything else waits in the header for the next time you open it. When the first line is short of room, the ui time goes first, then startup, then the name; the views stay. The footer holds the keys for the view you're in, centered, each on a pill: the key on a dark inset, what it does beside it. When room is short, the keys before `?` and `q` go first, from the end.
 
-The **Plugins** view is two panes. The list on the left starts with its filters, each with its mark and how many plugins it shows: ` All (64)  ● Loaded (18)  ○ Waiting (39)  ✕ Disabled (7)`, and `✗ Failed (1)` while something has failed. `1` to `5` pick one, and the list shows only those plugins; plugins on disk that no spec names show only under All. In a narrow list the filters drop their names, `● 18`. A rule parts them from the rest, as in the pane. Then comes **Updates (n)**, which only appears when there are updates: each plugin with its name and how many commits it is behind, like `2 commits`, and `u` applies the one under the cursor. cinch itself gets its row here. A plugin on disk that no spec names is also listed, with `not in specs`, and `d` deletes it. A plugin that is working, failed or off stays in that section, with `↑n` on its row. The rest of the list keeps a title only for **working**, the plugins installing, building or loading, on top. The filters count the other states, so failed, loaded, waiting and disabled follow in that order with no titles. Rows under a title, which are Updates, working and the first start's installing, sit two cells in, and a blank row parts the section from the rest of the list. When its work is done a plugin goes back to its place in the list, without the indent. A plugin being checked, updated or deleted stays in its section and says so on its row; an install or a build moves it to working. A check never opens the window; an install and `:Cinch update!` do. Each row puts its parts one after the other: a status light (lit once loaded, a spinner while it works), the name, its load time and a load-time bar once it has loaded, then how it loads: a Nerd Font icon and its name for `now` and `later`, and for a trigger plugin each trigger type with its icon and values, the value that loaded it on a chip. A plugin that is only a dependency shows the plugins that need it. Pending commits and a message come last, and only when there is something to say: an error, the newest line a build is printing, how its last build went (`built in 1.2s` for a moment, or `build failed: exit 3` until it builds again), why it is off. The pane on the right follows the cursor and shows that plugin in full: how and when it loaded, its folder and url, the branch it follows or the version you pinned, the commit on disk, its readme, pending commits, its dependencies and what needs it, the config and opts it received, the last lines of its build output, live while it builds, and where its spec is. `gx` opens the url. Plugins still on disk that no spec names any more sit last, under "not in your specs", where `d` deletes them. In a window narrower than 130 columns, where the list could not fit a whole row beside the pane, the pane sits under the list instead.
+The **Plugins** view is two panes. The list on the left starts with its filters, each with its mark and how many plugins it shows: ` All (64)  ● Loaded (18)  ○ Waiting (39)  ✕ Disabled (7)`, and `✗ Failed (1)` while something has failed. `1` to `5` pick one, and the list shows only those plugins; plugins on disk that no spec names show only under All. In a narrow list the filters drop their names, `● 18`. A rule parts them from the rest, as in the pane. Then comes **Updates (n)**, which only appears when there are updates: each plugin with its name and how many commits it is behind, like `2 commits`, and `u` applies the one under the cursor. cinch itself gets its row here. A plugin on disk that no spec names is also listed, with `not in specs`, and `d` deletes it. A plugin that is working, failed or off stays in that section, with `↑n` on its row. The rest of the list keeps a title only for **working**, the plugins installing, building or loading, on top. The filters count the other states, so failed, loaded, waiting and disabled follow in that order with no titles. Rows under a title, which are Updates, working and the first start's installing, sit two cells in, and a blank row parts the section from the rest of the list. When its work is done a plugin goes back to its place in the list, without the indent. A plugin being checked, updated or deleted stays in its section and says so on its row; an install or a build moves it to working. A check never opens the window; an install and `:Cinch update!` do. Each row puts its parts one after the other: a status light (lit once loaded, a spinner while it works), the name, its load time and a load-time bar once it has loaded, then how it loads: a Nerd Font icon and its name for `now` and `later`, and for a trigger plugin each trigger type with its icon and values, the value that loaded it on a chip. A plugin that is only a dependency shows the plugins that need it. Pending commits and a message come last, and only when there is something to say: an error, the newest line a build is printing, how its last build went (`built in 1.2s` for a moment, or `build failed: exit 3` until it builds again), why it is off. The pane on the right follows the cursor and shows that plugin in full: how and when it loaded, its folder and url, the branch it follows or the version you pinned, the commit on disk, its readme, pending commits, its dependencies and what needs it, the config and opts it received, the last lines of its build output, live while it builds, and where its spec is. `gx` opens the url. In a window narrower than 130 columns, where the list could not fit a whole row beside the pane, the pane sits under the list instead.
 
 **Triggers** shows what makes each plugin load, in two panes like Plugins. The list has a row per trigger, grouped into events, filetypes, commands, keys and your own, then the schedule: `now`, `later` and dependencies. A row shows a light (waiting to fire, fired, or never fired because its plugins loaded another way), the trigger, a dot per plugin behind it, and what happened. The pane follows the cursor: when that trigger fires in plain words, the `:help` topic for it, its plugins with their load times and whatever else would load them, and for `now` what it cost your startup. `l` loads every plugin still waiting on the trigger under the cursor.
 
@@ -253,6 +254,7 @@ The **Plugins** view is two panes. The list on the left starts with its filters,
 | `<S-CR>`, `<Space>` | Select the plugin under the cursor, shading its row; `l`, `b`, `u`, `c` and `d` then act on every selected plugin, and `<Esc>` lets go of them |
 | `<C-d>`, `<C-u>` | Scroll the details pane; the mouse wheel scrolls it too |
 | `gf` | Open the plugin's spec file at its line |
+| `gx` | Open the plugin's url |
 | `r` | Read what `vim.pack` knows again |
 | `G` | Jump to the newest log entry |
 | `<C-s>` | In Profile, sort each level by time taken, or back to the order things began |
@@ -326,7 +328,7 @@ end)
 | `Report` | `msg`, `level`, `plugin`, `source`, `shown`: something for you to read, and the plugin it is about. A subscriber that shows it sets `handled`; `shown` means it is on the command line already, to log only |
 | `Ask` | `verb`, `names`, `done`: a yes or no about plugins. Set `handled = true` and call `done(yes)` to ask it your own way |
 
-The message feature adds `Progress` (`title`, `done`, `total`, `name`: `vim.pack`'s progress, one plugin at a time) and `Message` (an entry added to the log).
+The messages feature adds `Message` (`time`, `level`, `msg`, `source`, `plugin`: an entry added to the log). The updates feature adds `Updates` (`results`: the pending updates by plugin name, after a check and whenever one lands).
 
 `Load`, `LoadError` and `Later` also fire as `User CinchLoad`, `User CinchLoadError` and `User CinchLater` autocmds. `Updates` fires as `User CinchUpdates`, with `count` in its data, and `Message` as `User CinchMessage`, with `msg`, `level`, `source` and `name`, the plugin it is about.
 
@@ -369,6 +371,8 @@ cinch.del(names, opts)    -- vim.pack.del through cinch; says why when it refuse
 cinch.clean({ confirm = true }) -- delete every plugin on disk that no spec names; force ignores a broken spec file
 cinch.restore(names, { confirm = true }) -- back to the commits the lockfile records
 cinch.sync()              -- install what is missing, offer to clean, check for updates
+cinch.ask({ verb, names, done }) -- a yes or no on the plugins' rows: `<Verb> <name> Yes (y) or No (n)`
+cinch.confirms()          -- whether `confirm` is on, so cinch asks before it installs, updates or deletes
 cinch.now(fn)
 cinch.later(fn)
 cinch.now_if_args(fn)
