@@ -214,7 +214,9 @@ FIELDS                                                     *cinch-spec-fields*
     Runs after an install or an update.
     - A shell command runs in the background from the plugin's folder, with
       `sh -c` on Unix whatever your 'shell' is.
-    - `':Cmd'` runs an Ex command once the plugin has loaded.
+    - `':Cmd'` runs an Ex command with the plugin on the runtimepath and its
+      `plugin/` files sourced, which define most commands; its `config`
+      still waits for its trigger.
     - `function(plugin)` runs with the plugin on the runtimepath but not
       loaded. Keys wait while it runs; one that holds Neovim over a second
       says so.
@@ -988,8 +990,13 @@ A finished check redraws the statuslines and winbars, and fires
 
 - Lua modules cannot be unloaded. Updating a plugin that has already loaded
   takes effect when you restart, and cinch says so.
-- A `':Cmd'` build needs the plugin's own command, so cinch loads the plugin
-  first. During startup that waits for |VimEnter|.
+- A `':Cmd'` build needs the plugin's own command, so it waits for
+  |VimEnter| during startup. It puts the plugin on the runtimepath and
+  sources its `plugin/` files, the way Neovim would at startup, but doesn't
+  load it: `config` runs when its trigger fires, so `build = ':TSUpdate'`
+  leaves nvim-treesitter to load on its event. Only when the command still
+  doesn't exist, because the plugin's `config` defines it, does the build
+  load the plugin first.
 - A build cut off by quitting runs again at the next startup, once Neovim
   is up. A build that fails waits for `b`, |:Cinch-build| or the plugin's
   next update, and its row says why it failed.

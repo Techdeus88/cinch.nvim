@@ -454,10 +454,26 @@ end
 ---@type cinch.Plugin[] `:Cmd` builds waiting for their plugin to be able to load
 local waiting = {}
 
---- An Ex command. It comes from the plugin itself, so the plugin loads first,
---- which needs two things: Neovim has started, so its plugin/ files and yours have
---- run, and the plugin is armed. On a first start it installs on UIEnter, after
---- startup but before it is armed, so the build waits for M.run_waiting().
+--- Whether `cmd` runs something real: a command Neovim knows that is not cinch's stub
+--- for a `cmd` trigger, which would load the plugin and wait for this very build.
+---@param cmd string
+---@return boolean
+local function runnable(cmd)
+  local ok, parsed = pcall(api.nvim_parse_cmd, cmd, {})
+  if not ok then
+    return false
+  end
+  local def = api.nvim_get_commands({})[parsed.cmd]
+  -- Required here: handler.lua requires this file.
+  return not (def and require('cinch.handler').is_cmd_stub(def, parsed.cmd))
+end
+
+--- An Ex command. It comes from the plugin itself, which needs two things: Neovim has
+--- started, so its plugin/ files and yours have run, and the plugin is armed. On a first
+--- start it installs on UIEnter, after startup but before it is armed, so the build
+--- waits for M.run_waiting(). The plugin then goes on the runtimepath with its plugin/
+--- files, which define most commands, and is not loaded: its config waits for its
+--- trigger. Only a command its config defines makes the build load it first.
 ---@param p cinch.Plugin
 ---@param cmd string
 local function cmd_build(p, cmd)
@@ -471,11 +487,17 @@ local function cmd_build(p, cmd)
     return
   end
   local start = uv.hrtime()
-  -- Not waiting any more: loading it must not wait for this build, which waits for the load.
-  state.activity(p, nil)
   -- Required here, not at the top: loader.lua requires this file.
-  if not require('cinch.loader').load(p, 'build') then
-    return finish(p, start, 'the plugin did not load: ' .. p.state)
+  local loader = require('cinch.loader')
+  if p.state ~= 'loaded' then
+    loader.packadd(p)
+  end
+  if p.state ~= 'loaded' and not runnable(cmd) then
+    -- Not waiting any more: loading it must not wait for this build, which waits for the load.
+    state.activity(p, nil)
+    if not loader.load(p, 'build') then
+      return finish(p, start, 'the plugin did not load: ' .. p.state)
+    end
   end
   state.activity(p, 'building')
   local ok, err = pcall(vim.cmd --[[@as function]], cmd)

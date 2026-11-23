@@ -296,6 +296,7 @@ local cmd_desc = 'cinch: load on :'
 local function is_stub(def, name)
   return (def.desc or def.definition) == cmd_desc .. name
 end
+M.is_cmd_stub = is_stub
 
 --- The replayed command's own error, a missing argument say: not cinch's, so it shows
 --- where Neovim shows one you typed, on the command line, as Neovim words it. It is

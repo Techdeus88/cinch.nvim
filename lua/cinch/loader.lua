@@ -211,6 +211,8 @@ local function packadd(p)
   end
 end
 
+M.packadd = packadd
+
 --- A build that must end before `p` loads: its own, or that of any dependency not
 --- loaded yet, however deep.
 ---@param p cinch.Plugin

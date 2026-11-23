@@ -57,7 +57,38 @@ require('cinch').setup({
           end, 100)
         end,
       },
-      { H.src('cmdy'), cmd = 'CmdyGo', build = ':CmdyBuild' },
+      -- Its plugin/ file defines the command: the build needs nothing more, so the plugin
+      -- waits for its own trigger.
+      {
+        H.src('cmdy'),
+        cmd = 'CmdyGo',
+        build = ':CmdyBuild',
+        config = function()
+          vim.g.cmdy_config = true
+        end,
+      },
+      -- Its config defines the command: the build loads it first.
+      {
+        H.src('opy'),
+        cmd = 'OpyGo',
+        build = ':OpyBuild',
+        config = function()
+          vim.api.nvim_create_user_command('OpyBuild', function()
+            vim.g.opy_built = true
+          end, {})
+        end,
+      },
+      -- The command is its own trigger too: cinch's stub stands in for it until it loads.
+      {
+        H.src('argy'),
+        cmd = 'ArgySetup',
+        build = ':ArgySetup',
+        config = function()
+          vim.api.nvim_create_user_command('ArgySetup', function()
+            vim.g.argy_built = true
+          end, {})
+        end,
+      },
       {
         H.src('delta.nvim'),
         cmd = 'DeltaGo',
@@ -167,7 +198,23 @@ H.after_startup(function()
   H.wait(function()
     return vim.g.cmdy_built == true
   end, 'the :Cmd build')
-  H.eq(H.plugin('cmdy').reason, 'build', 'a :Cmd build loads its plugin first')
+  local cmdy = H.plugin('cmdy')
+  H.eq(
+    { cmdy.state, vim.g.cmdy_config },
+    { 'pending', nil },
+    'a :Cmd build its plugin/ files define leaves the plugin to its trigger, config not run'
+  )
+  -- The fixture has no :CmdyGo of its own, so the replay after the load fails.
+  pcall(vim.cmd --[[@as function]], 'CmdyGo')
+  H.eq({ cmdy.state, cmdy.reason, vim.g.cmdy_config }, { 'loaded', 'cmd CmdyGo', true }, 'which then loads it as usual')
+  H.wait(function()
+    return vim.g.opy_built == true and vim.g.argy_built == true
+  end, 'the :Cmd builds whose config defines the command')
+  H.eq(
+    { H.plugin('opy').reason, H.plugin('argy').reason },
+    { 'build', 'build' },
+    'a command only its config defines loads the plugin first, even behind a stub of that name'
+  )
 
   H.wait(function()
     return vim.tbl_contains(built, 'gamma failed')
