@@ -198,6 +198,47 @@ local function draw_marks(c, m)
   c:blank()
 end
 
+--- Every loaded plugin's load time, slowest first. The fastest fills its bar and is the
+--- yardstick: each bar is fastest/own, so the shorter the bar, the slower the plugin.
+---@param c cinch.ui.Canvas
+---@param stats table
+---@param filter? string lower case
+---@param min number hide what took less, in ms
+local function draw_loads(c, stats, filter, min)
+  local list, fastest = {}, math.huge
+  for name, r in pairs(stats.plugins) do
+    local ms = r.packadd + r.config
+    if ms >= min and (not filter or name:lower():find(filter, 1, true)) then
+      list[#list + 1] = { name = name, ms = ms }
+      if ms > 0 then
+        fastest = math.min(fastest, ms)
+      end
+    end
+  end
+  if #list == 0 then
+    return
+  end
+  table.sort(list, function(a, b)
+    return a.ms > b.ms or (a.ms == b.ms and a.name < b.name)
+  end)
+  c:add({ { ' load times', 'CinchSection' } })
+  local name_w = 4
+  for _, r in ipairs(list) do
+    name_w = math.max(name_w, cells(r.name))
+  end
+  name_w = math.min(name_w, 28)
+  local bar_w = math.max(6, math.min(30, c.width - name_w - 16))
+  for _, r in ipairs(list) do
+    local line = { { '   ' .. fit(r.name, name_w) .. ' ', 'CinchName' } }
+    -- A plugin that took no time scores as well as the fastest.
+    local score = r.ms > 0 and fastest / r.ms or 1
+    vim.list_extend(line, canvas.pill(score, 1, bar_w))
+    line[#line + 1] = { right(canvas.ms(r.ms), 9), 'CinchMuted' }
+    c:add(line)
+  end
+  c:blank()
+end
+
 --- The Profile view, `width` cells wide.
 ---@param width integer
 ---@param ctx cinch.ui.Ctx
@@ -230,6 +271,7 @@ function M.list(width, ctx)
   end
   c:blank()
   draw_marks(c, stats.marks)
+  draw_loads(c, stats, ctx.filter and ctx.filter:lower(), min)
   if #tree == 0 then
     c:add({ { '   nothing timed yet', 'CinchMuted' } })
     return c

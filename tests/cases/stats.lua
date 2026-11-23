@@ -94,6 +94,31 @@ H.after_startup(function()
     'no functions unless asked for'
   )
 
+  -- Profile: every loaded plugin's load time, slowest first, the fastest at a full bar.
+  stats.plugins.early.packadd, stats.plugins.early.config = 4, 0
+  stats.plugins['beta.nvim'].packadd, stats.plugins['beta.nvim'].config = 1, 0
+  stats.plugins['alpha.nvim'].packadd, stats.plugins['alpha.nvim'].config = 2, 0
+  local view = require('cinch.features.ui.profile').list(100, { folded = {}, tick = 0 })
+  local at = {}
+  local bars = {}
+  for i, l in ipairs(view.lines) do
+    for _, name in ipairs({ 'early', 'alpha.nvim', 'beta.nvim' }) do
+      if l:find('^   ' .. vim.pesc(name) .. ' ') then
+        at[name] = at[name] or i
+        bars[name] = bars[name] or select(2, l:gsub('━', ''))
+      end
+    end
+  end
+  H.eq(at.early < at['alpha.nvim'] and at['alpha.nvim'] < at['beta.nvim'], true, 'load times, slowest first')
+  local fill = {}
+  for _, hl in ipairs(view.hls) do
+    if hl[4] == 'CinchPillFill' then
+      fill[hl[1] + 1] = (hl[3] - hl[2]) / #'━'
+    end
+  end
+  H.eq(fill[at['beta.nvim']], bars['beta.nvim'], 'the fastest fills its bar')
+  H.eq(fill[at.early], math.floor(bars.early / 4 + 0.5), 'and scores the rest: 4x slower, a quarter bar')
+
   local history = stats.history()
   if H.phase == 1 then
     H.eq(#history, 0, 'no history in the first session')
