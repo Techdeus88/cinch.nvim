@@ -30,7 +30,9 @@ end
 ---@return string
 function M.updates_text()
   watch()
-  local n = require('cinch').updates().count
+  -- Counted in place: a statusline asks on every redraw, and updates() copies every result.
+  local u = package.loaded['cinch.features.updates']
+  local n = u and vim.tbl_count(u.results) or 0
   if n == 0 then
     return ''
   end

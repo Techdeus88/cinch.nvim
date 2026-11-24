@@ -350,9 +350,12 @@ local function install_all(install, confirm)
   end
   local failed = {}
   for _, p in ipairs(pack.add(install, confirm)) do
-    p.err = 'not installed'
-    state.set(p, 'failed', 'install')
     failed[#failed + 1] = p.name
+    -- A plugin that was running when it was deleted stays as it was: nothing moves it to failed.
+    if state.can(p, 'failed') then
+      p.err = 'not installed'
+      state.set(p, 'failed', 'install')
+    end
   end
   if #missing > 0 and events.has('Installed') then
     events.emit('Installed', { names = missing, failed = failed, ms = (hrtime() - t) / 1e6 })

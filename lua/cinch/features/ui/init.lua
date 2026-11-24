@@ -517,7 +517,7 @@ function M.ask(req)
   local line = first()
   if not line then
     -- Folded away or filtered out.
-    ui.ctx.folded, ui.ctx.filter = {}, nil
+    ui.ctx.folded, ui.ctx.filter, ui.ctx.show = {}, nil, nil
     render()
     line = first()
   end
