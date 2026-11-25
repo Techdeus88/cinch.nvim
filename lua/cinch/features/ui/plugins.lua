@@ -280,7 +280,7 @@ function M.list(width, ctx)
     end
   end
   if #plugins + #orphans + #updating == 0 then
-    c:add({ { ' no plugins match', 'CinchMuted' } })
+    c:add({ { (' No %splugins'):format(ctx.show and ctx.show .. ' ' or ''), 'CinchMuted' } })
   end
   return c
 end

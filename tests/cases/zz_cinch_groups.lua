@@ -42,7 +42,7 @@ H.write('lua/plugins/editor.lua', {
   "return { event = 'InsertEnter', order = 10, { 'owner/pairs' }, 'owner/surround' }",
 })
 H.write('lua/plugins/solo.lua', { "return { 'owner/solo', cmd = 'Solo' }" })
-H.write('lua/plugins/aaa_late.lua', { "return { order = 90, { 'owner/late1' } }" })
+H.write('lua/plugins/aaa_late.lua', { "return { order = 150, { 'owner/late1' } }" })
 H.write('lua/plugins/badorder.lua', { "return { order = 'x', { 'owner/bo' } }" })
 H.write('lua/plugins/byname/x.lua', { "return { 'owner/named' }" })
 H.write('lua/plugins/zz.lua', {
