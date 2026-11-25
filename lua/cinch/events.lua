@@ -15,6 +15,11 @@ local M = {}
 -- here warns, so a typo never fails silently. Features add theirs with `define()`.
 ---@type table<string, true>
 M.names = {
+  Collect = true, -- { value, origin, root? }           what a spec file, inline root or add() gave, before it is
+  --                                                    split into specs; set value to replace it. root: the
+  --                                                    spec root of a file, nil for inline specs and add()
+  Collected = true, -- { entries, origin }              every spec one read found, before any registers;
+  --                                                    entries may be changed, added or removed
   Register = true, -- { plugin }                        a spec became a plugin record
   State = true, -- { plugin, from, to, reason }         every state change
   Activity = true, -- { plugin, from, to }              disk work on a plugin started or ended

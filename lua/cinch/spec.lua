@@ -76,10 +76,13 @@ local aliases = { dependencies = 'deps' }
 local pins = { 'commit', 'tag', 'version', 'branch' }
 local loads = { now = true, later = true, now_if_args = true, trigger = true }
 
---- Make a custom trigger field known. handler.lua calls this for every handler it registers.
+--- Make a custom field known, a trigger unless `opts.trigger` is false. handler.lua
+--- calls this for every handler it registers; an extension, for a field of its own.
 ---@param name string
-function M.field(name)
-  M.fields[name], M.triggers[name] = true, true
+---@param opts? { trigger?: boolean }
+function M.field(name, opts)
+  M.fields[name] = true
+  M.triggers[name] = not (opts and opts.trigger == false) or nil
 end
 
 --- `owner/repo` becomes a GitHub URL; anything else is a src as-is, a relative
@@ -572,7 +575,11 @@ end
 ---@param out cinch.Entry[]
 ---@param value any a spec, a list of specs, or a src string
 ---@param origin cinch.Origin
-local function push(out, value, origin)
+---@param root? string the spec root a file came from; nil for inline specs and add()
+local function push(out, value, origin, root)
+  if events.has('Collect') then
+    value = events.emit('Collect', { value = value, origin = origin, root = root }).value
+  end
   if type(value) ~= 'table' and type(value) ~= 'string' then
     error(('%s: expected a spec or a list of specs'):format(origin.file), 0)
   end
@@ -628,7 +635,7 @@ function M.collect(roots, origin)
           ok, res = pcall(chunk)
         end
         if ok then
-          ok, res = pcall(push, out, res, { file = file })
+          ok, res = pcall(push, out, res, { file = file }, root)
         end
         if not ok then
           M.broken[#M.broken + 1] = file
@@ -636,6 +643,9 @@ function M.collect(roots, origin)
         end
       end
     end
+  end
+  if events.has('Collected') then
+    out = events.emit('Collected', { entries = out, origin = origin }).entries
   end
   return out
 end
