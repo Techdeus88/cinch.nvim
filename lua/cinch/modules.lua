@@ -43,7 +43,12 @@ local function tops_of(p)
     return guess_tops(p)
   end
   local res = {}
-  for entry, kind in vim.fs.dir(vim.fs.joinpath(dir_of(p), 'lua')) do
+  local lua = vim.fs.joinpath(dir_of(p), 'lua')
+  for entry, kind in vim.fs.dir(lua) do
+    if kind == 'link' then
+      local stat = uv.fs_stat(vim.fs.joinpath(lua, entry))
+      kind = stat and stat.type or kind
+    end
     res[#res + 1] = kind == 'file' and entry:match('^(.+)%.%w+$') or entry
   end
   return res

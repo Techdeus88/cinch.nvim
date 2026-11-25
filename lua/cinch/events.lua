@@ -177,7 +177,8 @@ function M.emit(name, data)
   data = data or {}
   dispatch(subs[name], name, data)
   dispatch(subs['*'], name, data)
-  if M.public[name] then
+  -- Not for a debug line: the log keeps those, and one per step would run this for each.
+  if M.public[name] and not (name == 'Message' and data.level == vim.log.levels.DEBUG) then
     local p = data.plugin
     vim.api.nvim_exec_autocmds('User', {
       pattern = 'Cinch' .. name,

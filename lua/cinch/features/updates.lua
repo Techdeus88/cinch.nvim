@@ -41,11 +41,12 @@ M.checking = false
 ---@param args string[]
 ---@param cwd string
 ---@param cb fun(r: vim.SystemCompleted)
-local function git(args, cwd, cb)
+---@param timeout? integer ms before git is killed, so a hung remote never holds an update up
+local function git(args, cwd, cb, timeout)
   local env = vim.fn.environ()
   env.GIT_DIR, env.GIT_WORK_TREE, env.GIT_INDEX_FILE = nil, nil, nil
   local cmd = vim.list_extend({ 'git', '-c', 'gc.auto=0' }, args)
-  vim.system(cmd, { cwd = cwd, text = true, env = env, clear_env = true }, function(r)
+  vim.system(cmd, { cwd = cwd, text = true, env = env, clear_env = true, timeout = timeout }, function(r)
     vim.schedule(function()
       cb(r)
     end)
@@ -275,7 +276,7 @@ function M.check(names, opts)
         )
       end
       fetched()
-    end)
+    end, 45000)
   end
 end
 

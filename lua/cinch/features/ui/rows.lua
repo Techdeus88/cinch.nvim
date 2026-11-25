@@ -189,6 +189,10 @@ local function load_items(p, needed_by)
     return { item }
   end
   local items = p.when == 'trigger' and trigger_items(p) or { M.kind_chip(p.when) }
+  if #items == 0 then
+    -- A trigger plugin that nothing triggers: it loads when asked.
+    items[1] = M.kind_chip('trigger')
+  end
   if #needed_by > 0 then
     local _, text = canvas.kind_hl('dep')
     items[#items + 1] = { { glyph('dep') .. ' ' .. #needed_by, text } }

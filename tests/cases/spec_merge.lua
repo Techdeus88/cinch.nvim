@@ -72,7 +72,7 @@ H.after_startup(function()
   H.eq(plugin('filed').data.cmd, 'FromA', 'a field only one spec sets stays')
   H.eq(plugin('filed').origin.file:find('b.lua', 1, true) ~= nil, true, 'origin is the last spec')
 
-  H.eq(plugin('lists').data.keys, { 'c' }, 'a later list replaces')
+  H.eq(plugin('lists').data.keys, { 'a', 'b', 'c' }, 'a later list adds to the earlier one')
   H.eq(plugin('lists').data.cmd, { 'One', 'Two' }, 'a list set once stays')
   H.eq(plugin('lists').deps, { 'dep-one', 'dep-two' }, 'deps add up')
   H.eq({ plugin('hooks').data.config, plugin('hooks').data.init }, { second, first }, 'functions: the later one')

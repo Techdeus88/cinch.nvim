@@ -30,7 +30,7 @@ H.after_startup(function()
   local delta = H.plugin('delta.nvim')
   H.eq(vim.api.nvim_get_commands({}).DeltaOld ~= nil, true, 'the old stub is there')
   H.eq(cinch.add({ { H.src('delta.nvim'), cmd = 'DeltaNew' } }, { confirm = false }), {}, 'no new record')
-  H.eq(vim.api.nvim_get_commands({}).DeltaOld, nil, 'its stub goes')
+  H.eq(vim.api.nvim_get_commands({}).DeltaOld ~= nil, true, 'its stub stays: the new list adds to the old')
   H.eq(vim.api.nvim_get_commands({}).DeltaNew ~= nil, true, 'and the new one is armed')
   H.eq(delta.state, 'pending', 'still waiting')
 

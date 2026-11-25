@@ -289,6 +289,9 @@ end
 -- Log ---------------------------------------------------------------------------
 
 local levels = vim.log.levels
+-- A message's wrapped lines by the width they were wrapped for: the log re-draws on every spinner tick.
+---@type table<table, { w: integer, lines: string[] }>
+local wrapped = setmetatable({}, { __mode = 'k' })
 local level_look = {
   [levels.ERROR] = { '✗', 'CinchFailed' },
   [levels.WARN] = { '!', 'CinchWarn' },
@@ -318,10 +321,15 @@ function M.log(width, ctx)
   local text_w = width - 22
   for _, m in ipairs(shown) do
     local look = level_look[m.level] or { '·', 'CinchMuted' }
-    local lines = {}
-    for _, line in ipairs(vim.split(m.msg, '\n', { trimempty = true })) do
-      vim.list_extend(lines, canvas.wrap(line, text_w))
+    local hit = wrapped[m]
+    if not (hit and hit.w == text_w) then
+      hit = { w = text_w, lines = {} }
+      for _, line in ipairs(vim.split(m.msg, '\n', { trimempty = true })) do
+        vim.list_extend(hit.lines, canvas.wrap(line, text_w))
+      end
+      wrapped[m] = hit
     end
+    local lines = hit.lines
     c:add({
       { ' ' .. os.date('%H:%M:%S', m.time) .. ' ', 'CinchMuted' },
       { look[1] .. ' ', look[2] },

@@ -585,7 +585,7 @@ function M.add(plugins, confirm)
   -- call() refuses while another vim.pack call runs; then vim.pack has not read the lockfile.
   local ran = busy == 0
   -- A no cinch already got: vim.pack's prompt gets it too, and takes its own way out.
-  local prompt = vim.fn.confirm
+  local prompt = rawget(vim.fn, 'confirm')
   if confirm == 'no' then
     confirm = true
     ---@diagnostic disable-next-line: duplicate-set-field
@@ -602,7 +602,8 @@ function M.add(plugins, confirm)
       end
     end,
   })
-  vim.fn.confirm = prompt
+  -- Back to how it was: absent, so vim.fn makes it again, or what a test or you set.
+  rawset(vim.fn, 'confirm', prompt)
   adding = false
   synced = synced or ran
 

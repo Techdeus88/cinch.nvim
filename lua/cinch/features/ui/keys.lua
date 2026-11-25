@@ -46,7 +46,7 @@ M.hints = {
     { 'u', 'update' },
     { 'd', 'delete' },
     { 's', 'sync' },
-    { 'S-CR', 'select' },
+    { '<Space>', 'select' },
     { '?', 'keys' },
     { 'q', 'close' },
   },
@@ -362,9 +362,17 @@ function M.make(w)
           return
         end
         act(function(names)
-          require('cinch').load(todo(in_specs(names), function(name)
-            return state.plugins[name].state ~= 'loaded'
-          end, 'loaded'))
+          local ready = {}
+          for _, name in ipairs(in_specs(names)) do
+            local p = state.plugins[name]
+            if p.state == 'pending' then
+              ready[#ready + 1] = name
+            else
+              -- `already loaded`, `already disabled`, `already failed`: nothing for l to do.
+              w.note(name, { text = 'already ' .. p.state, hl = 'CinchUpToDate' })
+            end
+          end
+          require('cinch').load(ready)
         end)()
       end,
       'load the plugin now, or the ones selected; in Triggers, what waits on the trigger',

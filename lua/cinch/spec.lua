@@ -390,6 +390,34 @@ local function merged_opts(old, new)
   return combined
 end
 
+--- Two specs' trigger values as one list: what `old` names, then what `new` adds. A
+--- value that is no string or table, `keys = false` say, is a choice, and `new` wins.
+---@param old any
+---@param new any
+---@return any
+local function merged_list(old, new)
+  local function listed(v)
+    return type(v) == 'table' and v or { v }
+  end
+  local function plain(v)
+    return type(v) == 'string' or type(v) == 'table'
+  end
+  if old == nil or not plain(new) and new ~= nil then
+    return new
+  elseif new == nil or not plain(old) then
+    return new == nil and old or new
+  end
+  local out = vim.list_slice(listed(old))
+  for _, v in ipairs(listed(new)) do
+    if not vim.iter(out):any(function(x)
+      return vim.deep_equal(x, v)
+    end) then
+      out[#out + 1] = v
+    end
+  end
+  return out
+end
+
 --- `new` over `old`, later values winning. `data` merges deep; `version` stays whole,
 --- because a merged range object would lose its metatable.
 ---@param old vim.pack.Spec
@@ -402,6 +430,9 @@ local function merged(old, new)
   end
   res.data = vim.tbl_deep_extend('force', old.data, new.data)
   res.data.opts = merged_opts(old.data.opts, new.data.opts)
+  for k in pairs(M.triggers) do
+    res.data[k] = merged_list(old.data[k], new.data[k])
+  end
   return res
 end
 
