@@ -304,6 +304,14 @@ local function add_row(c, p, r)
   -- with its parents keeps its dep chip, which names them.
   local off_chip = off and p.reason ~= 'unneeded'
   vim.list_extend(items, off_chip and { M.kind_chip('off') } or load_items(p, r.needed_by))
+  -- What extensions add, such as the group it is in.
+  local ui = feature('ui')
+  for _, fn in ipairs(ui and ui.ext.chips or {}) do
+    local ok, item = pcall(fn, p)
+    if ok and item then
+      items[#items + 1] = item
+    end
+  end
   if r.up then
     items[#items + 1] = { { '↑' .. r.up, 'CinchUpdate' } }
   end

@@ -29,6 +29,7 @@ local M = {}
 ---@field op? cinch.ui.Op set while an install, check, update or delete runs
 ---@field orphans? cinch.Orphan[] on disk, in no spec
 ---@field marked? table<string, true> plugins selected for an action
+---@field grouping? string the Plugins list is split by this grouping, not by state
 ---@field ask? { verb: string, names: table<string, true>, done: fun(yes: boolean) } a yes or no on their rows
 ---@field profile_sort? 'time' the Profile view sorts siblings by time, not order
 ---@field profile_min? number the Profile view hides what took less, in ms
@@ -52,11 +53,55 @@ local function shows_state(p, ctx)
   return not ctx.show or rows.state_of(p) == ctx.show
 end
 
+--- Split the list another way: `working` keeps its section and title, and the rest go
+--- into the grouping's sections, in declaration order within each. Changes `by`.
+---@param by table<string, cinch.Plugin[]>
+---@param grouping cinch.ui.Grouping
+---@return table[] sections
+local function regroup(by, grouping)
+  local at = {}
+  for i, p in ipairs(state.list) do
+    at[p] = i
+  end
+  local keys, into = {}, {}
+  for key, list in pairs(by) do
+    if key ~= 'working' then
+      for _, p in ipairs(list) do
+        local g = grouping.of(p)
+        if not into[g] then
+          into[g], keys[#keys + 1] = {}, g
+        end
+        table.insert(into[g], p)
+      end
+      by[key] = nil
+    end
+  end
+  local sections = { M.sections[1] }
+  for _, g in ipairs(grouping.order(keys)) do
+    local list = into[g]
+    table.sort(list, function(a, b)
+      return at[a] < at[b]
+    end)
+    by['group ' .. g] = list
+    sections[#sections + 1] = { key = 'group ' .. g, titled = true, chunks = grouping.title(g, list) }
+  end
+  return sections
+end
+
 ---@param ctx cinch.ui.Ctx
 ---@return cinch.Plugin[]
 local function visible(ctx)
+  -- `/<prefix>:<value>`, when an extension knows the prefix; else by name.
+  local prefix, value = (ctx.filter or ''):match('^(%w+):(.*)$')
+  local ui = package.loaded['cinch.features.ui']
+  local by = prefix and ui and ui.ext.filters[prefix]
   return vim.tbl_filter(function(p)
-    return shows_state(p, ctx) and (not ctx.filter or p.name:lower():find(ctx.filter:lower(), 1, true) ~= nil)
+    if not shows_state(p, ctx) then
+      return false
+    elseif by then
+      return by(p, value)
+    end
+    return not ctx.filter or p.name:lower():find(ctx.filter:lower(), 1, true) ~= nil
   end, state.yours())
 end
 
@@ -233,6 +278,12 @@ function M.list(width, ctx)
   table.sort(by.loaded or {}, function(a, b)
     return (a.order or 0) < (b.order or 0)
   end)
+  local sections = M.sections
+  local ui = package.loaded['cinch.features.ui']
+  local grouping = ctx.grouping and ui and ui.ext.groupings[ctx.grouping]
+  if grouping then
+    sections = regroup(by, grouping)
+  end
   subheader(c, ctx)
   if ctx.filter then
     c:add({ { ' / ' .. ctx.filter, 'CinchKey' }, { ('  %d of %d'):format(#plugins, #state.yours()), 'CinchMuted' } })
@@ -245,7 +296,7 @@ function M.list(width, ctx)
   local gap = updates_section(c, updating, orphans, ctx)
   -- One list in section order. The filters above count the states, so only work under
   -- way, such as a build, keeps its title.
-  for _, s in ipairs(M.sections) do
+  for _, s in ipairs(sections) do
     local list = by[s.key] or {}
     local open = not (s.titled and ctx.folded[s.key])
     local titled = s.titled and #list > 0
@@ -254,10 +305,10 @@ function M.list(width, ctx)
       gap = false
     end
     if titled then
-      c:add({
-        { (open and ' ▾ ' or ' ▸ ') .. s.title, 'CinchSection' },
-        { ' ' .. #list, 'CinchMuted' },
-      }, { section = s.key })
+      local fold = open and ' ▾ ' or ' ▸ '
+      local title = s.chunks and vim.list_extend({ { fold, 'CinchSection' } }, s.chunks)
+        or { { fold .. s.title, 'CinchSection' }, { ' ' .. #list, 'CinchMuted' } }
+      c:add(canvas.clip(title, c.width - 1), { section = s.key })
       gap = true
     end
     for _, p in ipairs(open and list or {}) do

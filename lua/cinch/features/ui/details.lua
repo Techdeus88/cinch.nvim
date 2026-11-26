@@ -253,6 +253,13 @@ function M.pane(name, width, ctx)
   if p.deleted then
     kv(c, 'disk', { { 'deleted; installs again on the next start', 'CinchWarn' } })
   end
+  -- What extensions add, such as the group it is in.
+  local ui = feature('ui')
+  for _, fn in ipairs(ui and ui.ext.pane_lines or {}) do
+    pcall(fn, p, function(key, chunks)
+      kv(c, key, chunks)
+    end)
+  end
   if sec ~= 'disabled' then
     pane_where(c, p, ctx)
     pane_updates(c, p)

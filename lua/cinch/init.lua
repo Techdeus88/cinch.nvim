@@ -2,6 +2,7 @@
 -- collect specs -> register -> vim.pack.add -> init hooks -> arm -> now, then later.
 
 local events = require('cinch.events')
+local extensions = require('cinch.extensions')
 local handler = require('cinch.handler')
 local loader = require('cinch.loader')
 local modules = require('cinch.modules')
@@ -15,6 +16,20 @@ local levels, hrtime = vim.log.levels, vim.uv.hrtime
 local M = {}
 
 M.on = events.on
+M.register_extension = extensions.register
+
+--- What each loaded extension exports, by name: `require('cinch').extensions.groups`.
+--- One setup() did not load loads on first touch, with its `extensions` options.
+---@type table<string, table>
+M.extensions = setmetatable({}, {
+  __index = function(_, name)
+    local ext = extensions.loaded[name]
+    if not ext and M.opts and type(name) == 'string' then
+      ext = extensions.load(name, M.opts.extensions[name] or {}, M.opts)
+    end
+    return ext and ext.exports
+  end,
+})
 M.trigger = handler.register
 M.now = handler.now
 M.later = handler.later
@@ -63,6 +78,7 @@ end
 ---@field self? boolean|{ version?: any, tag?: string, branch?: string, commit?: string } update cinch as one of its
 ---plugins when it lives in vim.pack's folder; a table pins it, as in a spec; default true: its default branch
 ---@field features? string[] modules under cinch.features to load; default { 'messages', 'stats', 'updates', 'ui' }
+---@field extensions? table<string, table> extensions to load before any spec is read, each with its options; default {}
 ---@field [string] table a feature's options, under its name
 
 ---@type cinch.Opts
@@ -77,6 +93,7 @@ local defaults = {
   cmd_prefix = usercmd.default,
   self = true,
   features = { 'messages', 'stats', 'updates', 'ui' },
+  extensions = {},
 }
 
 ---@type cinch.Opts? set by setup()
@@ -95,6 +112,7 @@ local option_types = {
   cmd_prefix = { 'string' },
   self = { 'boolean', 'table' },
   features = { 'table' },
+  extensions = { 'table' },
 }
 
 --- Put the default in place of every option of the wrong type, so a typo in
@@ -244,6 +262,27 @@ local function adopt_self(added)
   end
   if p then
     p.self = true
+  end
+end
+
+--- Each extension in vim.pack's folder as one of your plugins, as cinch is itself, so
+--- updates keep it current. A spec of yours that lists it is used as it is.
+---@param added cinch.Plugin[]
+local function adopt_extensions(added)
+  for name, dir in vim.spairs(extensions.dirs) do
+    if vim.fs.dirname(real(dir)) == real(pack.dir) then
+      local base = vim.fs.basename(dir)
+      local p = state.plugins[base]
+      local src = not p and origin_of(dir)
+      if src then
+        local file = vim.fs.joinpath(dir, 'lua', 'cinch', 'extensions', name .. '.lua')
+        p = spec.register({ { spec = { src = src, name = base, load = 'now' }, origin = { file = file } } })[1]
+        added[#added + 1] = p
+      end
+      if p then
+        p.extension = name
+      end
+    end
   end
 end
 
@@ -610,6 +649,8 @@ function M.setup(opts)
   disable_runtime(M.opts.disable_runtime)
   pack.timeout = M.opts.build_timeout * 1000
   load_features(M.opts)
+  -- Before any spec is read: an extension may change how specs are read.
+  extensions.load_all(M.opts.extensions, M.opts)
   -- Now the features are there to show them.
   for _, msg in ipairs(wrong) do
     events.report(msg, levels.WARN)
@@ -617,6 +658,7 @@ function M.setup(opts)
   local t = hrtime()
   local added, respecced = spec.register(spec.collect(M.opts.spec, caller()))
   adopt_self(added)
+  adopt_extensions(added)
   phase('specs', t)
   activate(added, M.opts.confirm, respecced)
   -- User CinchDone, for config code that runs once cinch has set everything up: now,

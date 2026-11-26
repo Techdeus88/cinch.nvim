@@ -197,6 +197,10 @@ local function replay_event(event, args, seen)
   end
 end
 
+-- For triggers of your own that load a plugin in the middle of an event: take
+-- seen(event) before it loads, then replay(event, args, seen) runs only what it added.
+M.seen, M.replay = autocmd_ids, replay_event
+
 --- A plugin loaded after a buffer got its filetype may bring ftdetect scripts and
 --- ftplugin, indent and syntax files. Detect again if ftdetect scripts appeared, then
 --- run the runtime's own FileType groups for every buffer of that filetype.

@@ -153,6 +153,7 @@ require('cinch').setup({
   cmd_prefix = 'Cinch',          -- the name of the user command: 'Pack' gives :Pack update
   self = true,                   -- update cinch itself as one of its plugins; a table pins it: { tag = 'v1.0.0' }
   features = { 'messages', 'stats', 'updates', 'ui' },
+  extensions = {},               -- extensions to load before any spec is read, each with its options
 
   -- each feature's options, under its name
   messages = { level = vim.log.levels.INFO, progress = true, history = 1000 },
@@ -286,6 +287,42 @@ The core installs, loads and updates plugins on its own. Everything else is a fe
 
 stats asks the OS when Neovim started, so its startup time includes loading the binary, which `--startuptime` leaves out. On macOS with Neovim 0.13-dev it read 6 to 7.5 ms higher than `--startuptime` in the same run; other systems are unmeasured. Compare it with the `Embedded` section of a `--startuptime` file, the process that runs your config. The first section is the UI client, which finishes before any plugin loads.
 
+## Extensions
+
+An extension is a plugin that adds to cinch from outside it. It ships `lua/cinch/extensions/<name>.lua`, and you turn it on with its options under `extensions`, the way Telescope takes its extensions' options:
+
+```lua
+require('cinch').setup({
+  extensions = { groups = { git = { event = 'BufReadPost' } } },
+})
+```
+
+cinch loads each one before it reads a spec, after the features, so an extension can change how specs are read. One cinch knows the repo of, such as `groups` ([cinch-groups.nvim](https://github.com/techdeus88/cinch-groups.nvim)), is installed when it is missing, and one in `vim.pack`'s folder becomes one of your plugins, updated like cinch itself. One that fails to load is reported and skipped.
+
+Writing one:
+
+```lua
+-- lua/cinch/extensions/hello.lua
+return require('cinch').register_extension({
+  setup = function(opts, cinch_opts) end, -- `extensions.hello`, and all of setup()'s options
+  exports = { hi = function() return 'hi' end }, -- require('cinch').extensions.hello
+  health = function() vim.health.ok('hello is fine') end, -- under :checkhealth cinch
+})
+```
+
+What an extension can hook into:
+
+- **Specs:** the `Collect` and `Collected` events (below), and `require('cinch.spec').field(name, { trigger = false })` for a spec field of its own that is not a trigger.
+- **Triggers:** `cinch.trigger()`. `require('cinch.handler').seen(event)` and `.replay(event, args, seen)` let a trigger that loads a plugin in the middle of an event run what that plugin added for it.
+- **The window**, through `require('cinch.features.ui')`:
+  - `add_view(name, { list, pane?, hints? }, { before? })`: a tab of its own.
+  - `add_key({ lhs, view, run, desc })`: a key in one view.
+  - `add_hint(view, fn)`: a footer hint.
+  - `add_chip(fn)`: a chip on each Plugins row.
+  - `add_pane_lines(fn)`: lines in the Plugins pane.
+  - `add_filter(prefix, fn)`: a `/<prefix>:<value>` filter.
+  - `add_grouping(name, def)`: another way to split the Plugins list into sections.
+
 ## Events
 
 Everything cinch does goes out on an event bus. Subscribers run in priority order, lower first, and get the payload.
@@ -303,6 +340,8 @@ end)
 
 | Event | Payload |
 | --- | --- |
+| `Collect` | `value`, `origin`, `root`: what a spec file, an inline spec or `add()` gave, before it is split into specs. Set `value` to replace it. `root` is the spec root of a file, nil for inline specs and `add()` |
+| `Collected` | `entries`, `origin`: every spec one read found, before any registers. Set `entries` to change, add or drop them |
 | `Register` | `plugin` |
 | `State` | `plugin`, `from`, `to`, `reason` |
 | `Activity` | `plugin`, `from`, `to`: `installing`, `updating`, `deleting`, `building`, `checking` |
@@ -356,6 +395,8 @@ require('cinch').trigger('lsp', {
 
 A trigger can also define `parse(value)`, `disarm(plugin, values)` to remove what `arm` set up, and `loaded(plugin, values)`.
 
+A trigger that loads a plugin in the middle of an event, as this one does in `LspAttach`, can let the plugin see that event too. Take `local seen = require('cinch.handler').seen('LspAttach')` before the load, then call `require('cinch.handler').replay('LspAttach', ev, seen)` once it has loaded. That runs only the autocmds the plugin added.
+
 ## Lua API
 
 ```lua
@@ -379,6 +420,8 @@ cinch.now_if_args(fn)
 cinch.time(name, fn)      -- fn, wrapped so each call is timed for the Profile view
 cinch.on(event, fn, { priority = 50, once = false })
 cinch.trigger(name, def)
+cinch.register_extension(def) -- what an extension's module returns; see Extensions
+cinch.extensions.<name>   -- an extension's exports
 cinch.updates()           -- { count, checking, checked_at, plugins }: what the last check found
 cinch.stats({ history = true }) -- this session's counts and times; past sessions with history
 cinch.messages({ level, plugin, source }) -- everything cinch logged, oldest first

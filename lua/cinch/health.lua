@@ -74,6 +74,23 @@ local function features(cinch)
   end
 end
 
+--- Each extension setup() loaded, and what its own health check says.
+local function extensions()
+  local loaded = require('cinch.extensions').loaded
+  if next(loaded) == nil then
+    return h.info('no extensions loaded')
+  end
+  for name, ext in vim.spairs(loaded) do
+    h.ok(('extension `%s` is loaded'):format(name))
+    if ext.health then
+      local ok, err = pcall(ext.health)
+      if not ok then
+        h.error(('extension `%s`: its health check failed: %s'):format(name, err))
+      end
+    end
+  end
+end
+
 --- Where the startup time comes from, and how often updates are checked.
 local function timing()
   local stats = package.loaded['cinch.features.stats']
@@ -121,6 +138,9 @@ function M.check()
 
   h.start('cinch: features')
   features(cinch)
+
+  h.start('cinch: extensions')
+  extensions()
 
   h.start('cinch: timing and updates')
   timing()

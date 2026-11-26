@@ -37,6 +37,94 @@ M.views = { 'plugins', 'triggers', 'stats', 'profile', 'log' }
 -- Views with the details pane, and the field of `ui` that holds what the cursor is on.
 local paned = { plugins = 'selected', triggers = 'trigger' }
 
+-- What extensions add to the window. Kept here, which loads at startup, so adding to
+-- it loads no drawing code; the parts read it when they draw.
+
+---@class cinch.ui.View
+---@field list fun(width: integer, ctx: cinch.ui.Ctx): cinch.ui.Canvas the list; a row's `plugin` meta is its id
+---@field pane? fun(id: string?, width: integer, ctx: cinch.ui.Ctx): cinch.ui.Canvas details of the row at the cursor
+---@field hints? cinch.ui.Hint[] its keys, for the footer
+
+---@class cinch.ui.ExtKey
+---@field lhs string[]
+---@field run fun(id: string?, ctx: cinch.ui.Ctx) given the id of the row under the cursor
+---@field desc string for the ? screen
+---@field view string the view it works in; elsewhere the key does what it did
+
+---@class cinch.ui.Grouping another way to split the Plugins list into sections
+---@field of fun(p: cinch.Plugin): string the section a plugin is in
+---@field order fun(keys: string[]): string[] the sections in the order shown
+---@field title fun(key: string, list: cinch.Plugin[]): { [1]: string, [2]?: string }[] title, after the fold mark
+
+M.ext = {
+  ---@type table<string, cinch.ui.View>
+  views = {},
+  ---@type cinch.ui.ExtKey[]
+  keys = {},
+  ---@type table<string, (fun(ctx: cinch.ui.Ctx): cinch.ui.Hint?)[]> view -> footer hints, before `?`
+  hints = {},
+  ---@type (fun(p: cinch.Plugin): cinch.ui.Item?)[] a chip after how a plugin loads, on its row
+  chips = {},
+  ---@type (fun(p: cinch.Plugin, kv: fun(key: string, chunks: { [1]: string, [2]?: string }[])))[] pane lines
+  pane_lines = {},
+  ---@type table<string, fun(p: cinch.Plugin, value: string): boolean> `/<prefix>:<value>` filters
+  filters = {},
+  ---@type table<string, cinch.ui.Grouping>
+  groupings = {},
+}
+
+--- Add a view, with its own tab, placed before `opts.before` or last.
+---@param name string
+---@param view cinch.ui.View
+---@param opts? { before?: string }
+function M.add_view(name, view, opts)
+  M.ext.views[name] = view
+  if not vim.list_contains(M.views, name) then
+    local at = opts and opts.before and vim.fn.index(M.views, opts.before) or -1
+    table.insert(M.views, at >= 0 and at + 1 or #M.views + 1, name)
+  end
+  if view.pane then
+    paned[name] = 'row_' .. name
+  end
+end
+
+--- Add a key to one view. A key the window already has keeps working in the others.
+---@param key cinch.ui.ExtKey
+function M.add_key(key)
+  table.insert(M.ext.keys, key)
+end
+
+--- Add a footer hint to a view; `fn` returns it, or nil to show none.
+---@param view string
+---@param fn fun(ctx: cinch.ui.Ctx): cinch.ui.Hint?
+function M.add_hint(view, fn)
+  M.ext.hints[view] = M.ext.hints[view] or {}
+  table.insert(M.ext.hints[view], fn)
+end
+
+---@param fn fun(p: cinch.Plugin): cinch.ui.Item?
+function M.add_chip(fn)
+  table.insert(M.ext.chips, fn)
+end
+
+---@param fn fun(p: cinch.Plugin, kv: fun(key: string, chunks: { [1]: string, [2]?: string }[]))
+function M.add_pane_lines(fn)
+  table.insert(M.ext.pane_lines, fn)
+end
+
+--- `/<prefix>:<value>` in the Plugins filter shows the plugins `fn` keeps.
+---@param prefix string
+---@param fn fun(p: cinch.Plugin, value: string): boolean
+function M.add_filter(prefix, fn)
+  M.ext.filters[prefix] = fn
+end
+
+---@param name string
+---@param grouping cinch.ui.Grouping
+function M.add_grouping(name, grouping)
+  M.ext.groupings[name] = grouping
+end
+
 local ui = {
   backdrop = nil, ---@type integer? window
   header = nil, ---@type integer? window
@@ -158,7 +246,24 @@ local function footer_text()
     }
   end
   local holding = ui.ctx.op and ui.ctx.op.kind ~= 'check' and ui.ctx.op.kind ~= 'delete'
-  return part('keys').hints[holding and 'install' or ui.help and 'help' or ui.view]
+  local which = holding and 'install' or ui.help and 'help' or ui.view
+  local base = M.ext.views[which] and M.ext.views[which].hints or part('keys').hints[which] or {}
+  local extra = {}
+  for _, fn in ipairs(M.ext.hints[which] or {}) do
+    extra[#extra + 1] = fn(ui.ctx)
+  end
+  if #extra == 0 then
+    return base
+  end
+  local out = {}
+  for _, h in ipairs(base) do
+    if h[1] == '?' then
+      vim.list_extend(out, extra)
+      extra = {}
+    end
+    out[#out + 1] = h
+  end
+  return vim.list_extend(out, extra)
 end
 
 --- The window's configs for what it shows now.
@@ -239,7 +344,9 @@ local function draw_pane()
     return
   end
   local width = api.nvim_win_get_width(ui.pane)
-  if ui.view == 'triggers' then
+  if M.ext.views[ui.view] then
+    paint(ui.pane, M.ext.views[ui.view].pane(ui[field], width, ui.ctx))
+  elseif ui.view == 'triggers' then
     paint(ui.pane, part('triggers').pane(ui.trigger, width))
   else
     local p = ui.selected and state.plugins[ui.selected]
@@ -302,6 +409,8 @@ local function render()
   local c
   if ui.help then
     c = part('keys').help(width, key_list())
+  elseif M.ext.views[ui.view] then
+    c = M.ext.views[ui.view].list(width, ui.ctx)
   elseif ui.view == 'plugins' then
     c = part('plugins').list(width, ui.ctx)
   elseif ui.view == 'triggers' then
@@ -585,6 +694,9 @@ function M.input(req)
   render()
 end
 
+-- Extension keys go into the list once, when it is first made.
+local extended = false
+
 key_list = function()
   keys = keys
     or part('keys').make({
@@ -605,6 +717,42 @@ key_list = function()
       answer = M.answer,
       input = M.input,
     })
+  if not extended then
+    extended = true
+    for _, k in ipairs(M.ext.keys) do
+      local function run()
+        if not ui.ctx.ask and not ui.help then
+          k.run(paned[k.view] and ui[paned[k.view]] or nil, ui.ctx)
+          render()
+        end
+      end
+      for _, lhs in ipairs(k.lhs) do
+        local own = vim.iter(keys):find(function(e)
+          return vim.list_contains(e[1], lhs)
+        end)
+        if own then
+          -- In its view the extension's; elsewhere what it was.
+          local before = own[2]
+          own[2] = function()
+            if ui.view == k.view then
+              return run()
+            end
+            before()
+          end
+        else
+          keys[#keys + 1] = {
+            { lhs },
+            function()
+              if ui.view == k.view then
+                run()
+              end
+            end,
+            k.desc,
+          }
+        end
+      end
+    end
+  end
   return keys
 end
 
@@ -672,7 +820,7 @@ local function float(focus, cfg)
 end
 
 --- Open the window, or switch an open one to `view`.
----@param view? 'plugins'|'triggers'|'stats'|'profile'|'log'
+---@param view? string 'plugins', 'groups' or another view in M.views
 function M.open(view)
   if view and vim.list_contains(M.views, view) then
     ui.view = view
