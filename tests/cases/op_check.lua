@@ -53,8 +53,8 @@ H.after_startup(function()
   vim.fn.rename(gamma_dir, gamma_dir .. '-gone')
   u.check(nil, { notify = true })
   H.wait(function()
-    return text():find('checking…', 1, true) ~= nil
-  end, 'rows to say they are checking')
+    return text():find('%d+%% ━') ~= nil
+  end, 'rows to show how far their check is')
   H.eq(H.header()[2]:find(' Checking plugins %(%d/3%)') ~= nil, true, 'the header: ' .. H.header()[2])
   H.eq(names(), before, 'rows stay where they were')
 
@@ -63,7 +63,7 @@ H.after_startup(function()
   local ended = 'Checked 3 plugins in [%d.]+m?s · 1 update · 1 failed'
   H.eq(H.header()[2]:find(' ' .. ended) ~= nil, true, 'how it ended: ' .. H.header()[2])
   H.eq(H.noted(ended), true, 'the same line in your messages')
-  H.eq(text():find('checking…', 1, true), nil, 'the rows are done')
+  H.eq(text():find('%d+%% ━'), nil, 'the rows are done')
   vim.wait(1300)
   H.eq(H.header()[2]:find('Checked', 1, true), nil, 'the ending goes after a moment')
   H.eq(lines()[3], ' ▾ Updates (1)', 'and the list starts, under its filters, with what it found')

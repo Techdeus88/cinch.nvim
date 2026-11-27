@@ -4,6 +4,7 @@
 -- cinch's state first and emit on the bus after, so subscribers see it settled.
 
 local events = require('cinch.events')
+local progress = require('cinch.progress')
 local state = require('cinch.state')
 
 local api, uv = vim.api, vim.uv
@@ -45,7 +46,12 @@ local function call(op, names, fn, ...)
   end
   busy = busy + 1
   local start = uv.hrtime()
+  -- Its git commands report how far they are, on each plugin's row.
+  local restore = (op == 'add' or op == 'update') and progress.watch()
   local ok, res = pcall(fn, ...)
+  if restore then
+    restore()
+  end
   busy = busy - 1
   if events.has('PackOp') then
     local err = not ok and tostring(res) or nil
@@ -879,6 +885,15 @@ api.nvim_create_autocmd('PackChangedPre', {
     end
   end,
 })
+
+-- vim.pack reports each plugin as it ends, and holds PackChanged for the whole batch:
+-- from its report on, a plugin is done installing, and leaves `installing` for its row.
+events.on('Progress', function(d)
+  local p = adding and d.name and d.title:find('^Installing') and state.plugins[d.name]
+  if p and p.activity == 'installing' then
+    state.activity(p, nil)
+  end
+end)
 
 api.nvim_create_autocmd('PackChanged', {
   group = group,

@@ -4,6 +4,7 @@
 -- Draws into a canvas and reads state; changes nothing.
 
 local canvas = require('cinch.features.ui.canvas')
+local progress = require('cinch.progress')
 local state = require('cinch.state')
 
 local M = {}
@@ -216,6 +217,17 @@ local function dependents()
   return out
 end
 
+-- The cells of the meter on a row whose plugin installs, is checked or updates.
+local meter_cells = 16
+
+--- How far a plugin's install, check or update is: `37% ━━━━━━━━━━━━━━━━`.
+---@param p cinch.Plugin
+---@return { [1]: string, [2]?: string }[]
+function M.meter(p)
+  local n = p.percent or 0
+  return vim.list_extend({ { ('%d%%'):format(n), 'CinchMuted' }, { ' ' } }, canvas.pill(n, 100, meter_cells))
+end
+
 --- The row's message: only when there is something to say. A message in progress or just
 --- ended (an activity, a note) takes the row over: it is all the row says besides the
 --- light and the name. A standing state (failed, off, deleted) sits beside the rest.
@@ -229,6 +241,8 @@ local function message(p)
   local note = ui and ui.notes[p.name]
   if sec == 'failed' then
     return vim.split(p.err or 'failed', '\n')[1], 'CinchFailed'
+  elseif progress.metered[p.activity] then
+    return M.meter(p), nil, true
   elseif sec == 'working' then
     -- A build shows what it is printing now.
     local log = p.activity == 'building' and p.build_log or {}
@@ -357,12 +371,13 @@ end
 local function add_update_row(c, p, tick, marked)
   local m, m_hl = mark(p, tick)
   local n = pending(p) or 0
-  local status = p.activity and { p.activity .. '…', 'CinchActive' }
-    or { ('%d commit%s'):format(n, n == 1 and '' or 's'), 'CinchUpdate' }
+  local status = progress.metered[p.activity] and M.meter(p)
+    or p.activity and { { p.activity .. '…', 'CinchActive' } }
+    or { { ('%d commit%s'):format(n, n == 1 and '' or 's'), 'CinchUpdate' } }
   local items = {
     { { lead[true] .. m, m_hl } },
     { { p.name, 'CinchName' } },
-    { status },
+    status,
   }
   c:add(canvas.clip(join(items), c.width - 1), { plugin = p.name, line_hl = marked and 'CinchMarked' or nil })
 end

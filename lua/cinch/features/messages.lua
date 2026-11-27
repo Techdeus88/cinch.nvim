@@ -180,12 +180,8 @@ local function on_echo(chunks, history, o)
     or {}
   -- A subscriber that shows it, like the open window, sets `handled`.
   if not ev.handled then
-    -- An install has no overall count or percent: the plugin it is on, nothing more.
-    if title and title:find('^Installing') then
-      progress('pack', name ~= '' and ('Installing ' .. name) or title, status)
-    else
-      progress('pack', text, status, o.percent)
-    end
+    -- The overall progress only, `Installing plugins (3/9)`: no plugin's name.
+    progress('pack', title and ('%s (%s/%s)'):format(title, done, total) or text, status, o.percent)
   end
   if status ~= 'running' then
     record(levels.INFO, text, 'vim.pack')

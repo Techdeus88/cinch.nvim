@@ -9,6 +9,7 @@
 local events = require('cinch.events')
 local ops = require('cinch.ops')
 local pack = require('cinch.pack')
+local progress = require('cinch.progress')
 local state = require('cinch.state')
 
 local levels = vim.log.levels
@@ -42,11 +43,20 @@ M.checking = false
 ---@param cwd string
 ---@param cb fun(r: vim.SystemCompleted)
 ---@param timeout? integer ms before git is killed, so a hung remote never holds an update up
-local function git(args, cwd, cb, timeout)
+---@param p? cinch.Plugin git runs with --progress, and its row shows how far it is
+local function git(args, cwd, cb, timeout, p)
   local env = vim.fn.environ()
   env.GIT_DIR, env.GIT_WORK_TREE, env.GIT_INDEX_FILE = nil, nil, nil
   local cmd = vim.list_extend({ 'git', '-c', 'gc.auto=0' }, args)
-  vim.system(cmd, { cwd = cwd, text = true, env = env, clear_env = true, timeout = timeout }, function(r)
+  local opts = { cwd = cwd, text = true, env = env, clear_env = true, timeout = timeout }
+  local said
+  if p then
+    opts.stderr, said = progress.reader(p)
+  end
+  vim.system(cmd, opts, function(r)
+    if said then
+      r.stderr = said()
+    end
     vim.schedule(function()
       cb(r)
     end)
@@ -261,12 +271,15 @@ function M.check(names, opts)
     if p.activity == nil then
       state.activity(p, 'checking')
     end
-    -- vim.pack's own fetch: tags too, and conflicting tags follow the remote.
+    -- vim.pack's own fetch: tags too, and conflicting tags follow the remote. With
+    -- --progress, not --quiet, which hides how far the download is.
     fetching = fetching + 1
-    git({ 'fetch', '--quiet', '--tags', '--force', '--recurse-submodules=yes', 'origin' }, p.path, function(r)
+    git({ 'fetch', '--progress', '--tags', '--force', '--recurse-submodules=yes', 'origin' }, p.path, function(r)
       fetching = fetching - 1
       if r.code ~= 0 then
         M.failed[p.name] = vim.trim(r.stderr or ('exit ' .. r.code))
+      else
+        progress.set(p, 100)
       end
       n = n + 1
       if events.has('Progress') then
@@ -276,7 +289,7 @@ function M.check(names, opts)
         )
       end
       fetched()
-    end, 45000)
+    end, 45000, p)
   end
 end
 

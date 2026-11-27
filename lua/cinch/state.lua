@@ -40,6 +40,7 @@ local M = {}
 ---@field extension? string the cinch extension it is, kept updated as one of its plugins
 ---@field state cinch.State
 ---@field activity? cinch.Activity
+---@field percent? integer how far its install, check or update is, from git; reset as its activity changes
 ---@field build_log? string[] the last build's output, newest last; streams in while a shell build runs
 ---@field reason? string what loaded or disabled it: 'event BufReadPost', 'dep of x', 'cond'
 ---@field err? string
@@ -134,7 +135,7 @@ function M.activity(p, what)
   if from == what then
     return
   end
-  p.activity = what
+  p.activity, p.percent = what, nil
   if events.has('Activity') then
     events.emit('Activity', { plugin = p, from = from, to = what })
   end

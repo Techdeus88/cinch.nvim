@@ -16,8 +16,8 @@ local M = {}
 ---@field kind cinch.OpKind
 ---@field total integer
 ---@field done integer
----@field current? string the plugin that last reported progress
----@field status table<string, 'queued'|'cloning'|'installed'|'failed'> each plugin's install status; only the queued and cloning ones are in the installing section
+---@field status table<string, 'cloning'|'installed'|'failed'> each plugin's install status: the
+---cloning ones are in the installing section
 ---@field message? string how it ended, shown for a moment
 
 ---@class cinch.ui.Ctx
@@ -214,13 +214,6 @@ local function updates_section(c, list, orphans, ctx)
   return true
 end
 
--- Each install status that has a row in the installing section: its mark (nil: the
--- spinner), its color, the message. A plugin that landed or failed has left it.
-local install_look = {
-  queued = { '·', 'CinchMuted', 'queued' },
-  cloning = { nil, 'CinchActive', 'cloning…' },
-}
-
 --- The plugins of the install under way that have not landed yet, by name.
 ---@param ctx cinch.ui.Ctx
 ---@return table<string, true>
@@ -228,15 +221,16 @@ local function installing_names(ctx)
   local out = {}
   local op = ctx.op
   for name, status in pairs(op and op.kind == 'install' and op.status or {}) do
-    if install_look[status] and state.plugins[name] then
+    if status == 'cloning' and state.plugins[name] then
       out[name] = true
     end
   end
   return out
 end
 
---- The installing section: a row for each plugin that is cloning, new to the list.
---- Drawn only while there is one; the rest of the list has no row for it until it lands.
+--- The installing section: a row for each plugin that is cloning, new to the list, with
+--- how far it is. Drawn only while there is one; the rest of the list has no row for it
+--- until it lands.
 ---@param c cinch.ui.Canvas
 ---@param ctx cinch.ui.Ctx
 ---@param list cinch.Plugin[] the installing plugins the filters show
@@ -245,23 +239,20 @@ local function install_section(c, ctx, list)
   if #list == 0 then
     return false
   end
-  local needed = dependents()
   local open = not ctx.folded.installing
   c:add({
     { (open and ' ▾ ' or ' ▸ ') .. 'installing', 'CinchSection' },
     { ' ' .. #list, 'CinchMuted' },
   }, { section = 'installing' })
+  local m = canvas.spinner[ctx.tick % #canvas.spinner + 1]
   for _, p in ipairs(open and list or {}) do
-    local look = install_look[ctx.op.status[p.name]]
-    local m, m_hl = look[1] or canvas.spinner[ctx.tick % #canvas.spinner + 1], look[2]
-    if not asks(c, ctx, p.name, m, m_hl, true) then
+    if not asks(c, ctx, p.name, m, 'CinchActive', true) then
       add_row(c, p, {
         mark = m,
-        mark_hl = m_hl,
+        mark_hl = 'CinchActive',
         slowest = 0,
-        needed_by = needed[p.name] or {},
-        msg = look[3],
-        msg_hl = look[2],
+        needed_by = {},
+        msg = rows.meter(p),
         only_msg = true,
         indent = true,
       })

@@ -1,8 +1,9 @@
 -- Install, check, update and delete in the window: rows that change in place, then a line
--- in the header that says how it ended. While they run, a check and an update show their
--- progress in the middle of the header. An install shows none: each plugin that clones gets a row in the
--- installing section, which moves to its place in the list as it lands. An install and
--- an update open the window; a check never does, and a delete only gets the ending.
+-- in the header that says how it ended. While an install, a check or an update runs, the
+-- middle of the header has its overall progress, `Installing plugins (18/48) ━━━━`, and
+-- each plugin's row how far it is. A plugin that installs has a row in the installing
+-- section, which moves to its place in the list as it lands. An install and an update
+-- open the window; a check never does, and a delete only gets the ending.
 -- ui/init.lua listens for the events and loads this file the first time one fires.
 
 local canvas = require('cinch.features.ui.canvas')
@@ -12,13 +13,11 @@ local summary = require('cinch.ops').summary
 local M = {}
 
 -- What the progress line says for each operation; a delete only shows its ending.
--- An install has none: no overall count or percent, its rows say how it goes.
-local doing = { check = 'Checking plugins', update = 'Updating plugins' }
+local doing = { install = 'Installing plugins', check = 'Checking plugins', update = 'Updating plugins' }
 local graph_min, graph_max = 6, 20
 
---- The operation in at most `room` cells: `Updating plugins (18/48) - yanky.nvim 37% ━━━━`,
---- or how it ended; and whether its words had to be cut to fit. Nothing for an install
---- that is running.
+--- The operation in at most `room` cells: `Installing plugins (18/48) ━━━━`, or how it
+--- ended; and whether its words had to be cut to fit. Which plugin is where is on the rows.
 ---@param op cinch.ui.Op
 ---@param room integer
 ---@return { [1]: string, [2]?: string }[] line, boolean cut
@@ -27,19 +26,15 @@ function M.line(op, room)
     local text = op.message or ''
     return canvas.clip({ { text, 'CinchTitle' } }, room), canvas.cells(text) > room
   end
-  local current = op.current and (' - ' .. op.current) or ''
-  local left = ('%s (%d/%d)%s '):format(doing[op.kind], op.done, op.total, current)
-  local percent = ('%d%% '):format(op.total > 0 and math.floor(op.done / op.total * 100) or 0)
-  -- A long name gives way first, so the percent and the graph stay in view.
-  local fits = room - canvas.cells(percent) - graph_min
+  local left = ('%s (%d/%d) '):format(doing[op.kind], op.done, op.total)
+  -- The words give way first, so the graph stays in view.
+  local fits = room - graph_min
   local cut = canvas.cells(left) > fits
   if cut then
     left = canvas.fit(left, fits - 1) .. ' '
   end
-  local graph = math.max(0, math.min(graph_max, room - canvas.cells(left) - canvas.cells(percent)))
-  local line = { { left, 'CinchTitle' }, { percent, 'CinchMuted' } }
-  -- Clipped last: in a window too narrow for the percent, the percent gives way too.
-  return canvas.clip(vim.list_extend(line, canvas.pill(op.done, op.total, graph)), room), cut
+  local graph = math.max(0, math.min(graph_max, room - canvas.cells(left)))
+  return canvas.clip(vim.list_extend({ { left, 'CinchTitle' } }, canvas.pill(op.done, op.total, graph)), room), cut
 end
 
 ---@class cinch.ui.OpHost what an operation needs from the window
@@ -147,7 +142,6 @@ function M.progress(w, d)
   if not (op and op.kind == kind) then
     return
   end
-  op.current = d.name or op.current
   if kind == 'install' then
     if d.name and op.status[d.name] == 'cloning' then
       op.status[d.name] = 'installed'

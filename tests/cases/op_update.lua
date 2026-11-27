@@ -30,10 +30,14 @@ H.after_startup(function()
 
   local rows = require('cinch.features.ui.rows')
   local alpha = H.plugin('alpha.nvim')
-  alpha.activity = 'updating'
+  alpha.activity, alpha.percent = 'updating', 37
   H.eq(rows.section_of(alpha), 'loaded', 'an updating plugin stays in its section')
-  H.eq(rows.message(alpha), 'updating…', 'saying what it is doing')
-  alpha.activity = nil
+  local msg, _, takes_over = rows.message(alpha)
+  local said = table.concat(vim.tbl_map(function(c)
+    return c[1]
+  end, msg))
+  H.eq({ said, takes_over }, { '37% ' .. ('━'):rep(16), true }, 'with how far it is, in place of the rest of its row')
+  alpha.activity, alpha.percent = nil, nil
 
   H.commit(alpha_dir, 'feat: one')
   H.commit(beta_dir, 'feat: two')
