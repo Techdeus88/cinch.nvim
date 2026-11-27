@@ -213,10 +213,13 @@ local function dependents()
   return out
 end
 
---- The row's message: only when there is something to say.
+--- The row's message: only when there is something to say. A message in progress or just
+--- ended (an activity, a note) takes the row over: it is all the row says besides the
+--- light and the name. A standing state (failed, off, deleted) sits beside the rest.
 ---@param p cinch.Plugin
 ---@return string|{ [1]: string, [2]: string }[]|nil text, or chunks with their groups
 ---@return string? group
+---@return boolean? takes_over the row shows only its light, name and this message
 local function message(p)
   local sec = M.section_of(p)
   local ui = package.loaded['cinch.features.ui']
@@ -227,13 +230,13 @@ local function message(p)
     -- A build shows what it is printing now.
     local log = p.activity == 'building' and p.build_log or {}
     if #log > 0 then
-      return log[#log], 'CinchMuted'
+      return log[#log], 'CinchMuted', true
     end
-    return (p.activity or 'loading') .. '…', 'CinchActive'
+    return (p.activity or 'loading') .. '…', 'CinchActive', true
   elseif p.activity then
-    return p.activity .. '…', 'CinchActive'
+    return p.activity .. '…', 'CinchActive', true
   elseif note then
-    return note.chunks or note.text, note.hl
+    return note.chunks or note.text, note.hl, true
   elseif sec == 'disabled' then
     return M.off_reason(p), 'CinchMuted'
   elseif p.deleted then
@@ -279,6 +282,7 @@ end
 ---@field up? integer pending commits
 ---@field msg? string|{ [1]: string, [2]: string }[] text, or chunks with their groups
 ---@field msg_hl? string
+---@field only_msg? boolean the message takes the row: its light, name and message, nothing else
 ---@field marked? boolean selected for an action: the row gets a shade
 ---@field indent? boolean under a section title: two cells in, so the section stands out
 
@@ -296,6 +300,11 @@ local function add_row(c, p, r)
     { { lead[r.indent == true] .. r.mark, r.mark_hl } },
     { { p.name, off and 'CinchOffName' or p.dep_only and 'CinchDepName' or 'CinchName' } },
   }
+  if r.only_msg and r.msg then
+    items[#items + 1] = type(r.msg) == 'table' and r.msg or { { r.msg, r.msg_hl } }
+    c:add(canvas.clip(join(items), c.width - 1), { plugin = p.name, line_hl = r.marked and 'CinchMarked' or nil })
+    return
+  end
   if r.ms then
     items[#items + 1] = { { '(' .. canvas.ms(r.ms) .. ')', 'CinchMuted' } }
     items[#items + 1] = canvas.pill(r.ms, r.slowest, 6)

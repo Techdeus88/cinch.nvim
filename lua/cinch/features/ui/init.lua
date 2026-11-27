@@ -4,9 +4,10 @@
 -- Plugins view is two panes, 70/30 or 50/50 with `=`: the list, which has the cursor, and
 -- the detail pane, which follows it. Stats, Profile and Log use the whole width. At startup
 -- this file only declares `:Cinch open`; drawing code and subscriptions wait for the first open.
--- Every message cinch has shows here, never on the command line: one about a plugin's build
--- on its row, the rest in the middle of the header's second line. A warning or an error
--- opens the window; anything else waits in the header for the next open, and in the Log.
+-- Every message cinch has shows here, never on the command line: one about a plugin on its
+-- row, which it takes over until the message is done; a global one (an operation's progress,
+-- a message about no plugin) in the middle of the header's second line. A warning or an
+-- error opens the window; anything else waits for the next open, and in the Log.
 
 local events = require('cinch.events')
 local state = require('cinch.state')
@@ -1010,8 +1011,9 @@ end
 -- A warning or an error came while Neovim started: the window opens once it is up.
 local open_after_start = false
 
---- Show a Report: on its plugin's row when the Plugins view has one for it, else in
---- the header. A warning or an error opens the window.
+--- Show a Report: on its plugin's row when it is about a plugin (the row keeps it for when
+--- the Plugins view shows), else, being global, in the header. A warning or an error opens
+--- the window.
 ---@param d { msg: string, level: integer, plugin?: string, shown?: boolean }
 local function on_report(d)
   -- Shown already, on the command line: only the Log keeps it.
@@ -1024,7 +1026,7 @@ local function on_report(d)
   if op and op.message == d.msg then
     return
   end
-  local on_row = d.plugin and state.plugins[d.plugin] and ui.view == 'plugins' and not ui.help
+  local on_row = d.plugin and state.plugins[d.plugin]
   if not on_row then
     ui.ctx.notice = { text = first_line(d.msg), level = d.level }
   elseif not (M.notes[d.plugin] and M.notes[d.plugin].sticky) then

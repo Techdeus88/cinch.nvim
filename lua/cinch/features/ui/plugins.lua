@@ -244,6 +244,7 @@ local function install_rows(c, ctx)
       needed_by = needed[p.name] or {},
       msg = look[3],
       msg_hl = look[2],
+      only_msg = look[3] ~= nil,
       indent = true,
     })
   end
@@ -313,7 +314,7 @@ function M.list(width, ctx)
     end
     for _, p in ipairs(open and list or {}) do
       local m, m_hl = mark(p, ctx.tick)
-      local msg, msg_hl = message(p)
+      local msg, msg_hl, only_msg = message(p)
       if not asks(c, ctx, p.name, m, m_hl, titled) then
         add_row(c, p, {
           mark = m,
@@ -324,6 +325,7 @@ function M.list(width, ctx)
           up = pending(p),
           msg = msg,
           msg_hl = msg_hl,
+          only_msg = only_msg,
           marked = ctx.marked and ctx.marked[p.name],
           indent = titled,
         })

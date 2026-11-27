@@ -66,8 +66,8 @@ end
 
 --- The header's two lines, `width` cells. The first: when Neovim started and when its UI
 --- came up on the left, the name on a banner in the middle, the tabs on the right. The
---- second is for messages only: an install, check, update or delete in the middle, or
---- else cinch's latest message.
+--- second is for global messages only: an install, check, update or delete in the middle,
+--- or else a message that is about no plugin. A plugin's own messages are on its row.
 ---@param width integer
 ---@param s cinch.ui.Shape
 ---@return { [1]: string, [2]?: string }[][]
