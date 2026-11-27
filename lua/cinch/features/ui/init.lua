@@ -1,8 +1,9 @@
 -- The cinch window: four bordered windows over the editor, 75% of it, 95% of its height
 -- with `-`. The header holds startup times, the name and the tabs; the footer holds global
 -- messages; the keys are on the ? screen. Between them the Plugins view is two panes, 70/30
--- or 50/50 with `=`: the list, which has the cursor, and the detail pane, which follows it. Stats, Profile and Log use the whole width. At startup
--- this file only declares `:Cinch open`; drawing code and subscriptions wait for the first open.
+-- or 50/50 with `=`: the list, which has the cursor, and the detail pane, which follows it.
+-- Stats, Profile and Log use the whole width. At startup this file only declares
+-- `:Cinch open`; drawing code and subscriptions wait for the first open.
 -- Every message cinch has shows here, never on the command line: one about a plugin on its
 -- row, which it takes over until the message is done; a global one (an operation's progress,
 -- a message about no plugin) in the middle of the footer. A warning or an
