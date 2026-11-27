@@ -374,6 +374,28 @@ local function scroll_pane(down)
   end
 end
 
+--- While plugins install, the list shows them: the line for the cursor, at the top of
+--- the list, the first plugin still installing, or its section's title when folded. Once
+--- the last has landed, the first row, until the install's ending is over.
+---@param c cinch.ui.Canvas the Plugins list
+---@param op? cinch.ui.Op
+---@return integer? line nil: no install, so the cursor stays on what it was on
+local function install_focus(c, op)
+  if not (op and op.kind == 'install') then
+    return
+  end
+  local title, first
+  for l = 1, #c.lines do
+    local name = c.rows[l]
+    if name and op.status[name] == 'cloning' then
+      return l
+    end
+    title = title or (c.sections[l] == 'installing' and l) or nil
+    first = first or (name and l) or nil
+  end
+  return title or first
+end
+
 local function render()
   if not M.is_open() then
     return
@@ -433,7 +455,17 @@ local function render()
   end
   ui.canvas, ui.canvas_of = c, not ui.help and ui.view or nil
   paint(ui.list, c)
-  if field then
+  local pin = field == 'selected' and not ui.ctx.ask and install_focus(c, ui.ctx.op)
+  if pin then
+    api.nvim_win_set_cursor(ui.list, { pin, 0 })
+    api.nvim_win_call(ui.list, function()
+      vim.fn.winrestview({ topline = 1 })
+    end)
+    if ui.selected ~= c.rows[pin] then
+      ui.selected = c.rows[pin]
+      fetch_info()
+    end
+  elseif field then
     local first
     for l = 1, #c.lines do
       first = first or (c.rows[l] and l)

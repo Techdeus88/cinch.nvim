@@ -8,25 +8,41 @@ local state = require('cinch.state')
 
 local M = {}
 
--- Each phase git reports, and the share of a plugin's work it spans: the remote's
--- counting and compressing, the download, then the checkout.
-local phases = {
-  ['Counting objects'] = { 0, 5 },
-  ['Compressing objects'] = { 5, 15 },
-  ['Receiving objects'] = { 15, 80 },
-  ['Resolving deltas'] = { 80, 95 },
-  ['Updating files'] = { 95, 100 },
+-- Each phase git reports, and the share of a plugin's work it spans, by what git runs.
+-- vim.pack clones without the files (--filter=blob:none): its checkout downloads them,
+-- which git does not report, then writes them. So an install's clone fills the meter to
+-- 40%, its checkout starts at 45% and writing the files takes it the rest of the way.
+local scales = {
+  clone = {
+    ['Counting objects'] = { 0, 5 },
+    ['Compressing objects'] = { 5, 10 },
+    ['Receiving objects'] = { 10, 35 },
+    ['Resolving deltas'] = { 35, 40 },
+  },
+  -- After a clone, while it installs.
+  files = { ['Updating files'] = { 45, 100 } },
+  checkout = { ['Updating files'] = { 0, 100 } },
+  fetch = {
+    ['Counting objects'] = { 0, 10 },
+    ['Compressing objects'] = { 10, 20 },
+    ['Receiving objects'] = { 20, 85 },
+    ['Resolving deltas'] = { 85, 100 },
+  },
 }
+local files_start = 45
+
+---@alias cinch.progress.Scale 'clone'|'files'|'checkout'|'fetch'
 
 -- Disk work whose row shows how far it is.
 M.metered = { installing = true, checking = true, updating = true }
 
 --- One record git printed, as the share of the plugin's work it says is done.
 ---@param record string
+---@param scale cinch.progress.Scale what git runs
 ---@return integer? nil: not a phase it reports
-function M.percent(record)
+function M.percent(record, scale)
   local phase, n = (record:gsub('^remote: ', '')):match('^(%a[%a ]*): +(%d+)%%')
-  local span = phases[phase]
+  local span = scales[scale][phase]
   return span and math.floor(span[1] + (span[2] - span[1]) * tonumber(n) / 100)
 end
 
@@ -58,12 +74,13 @@ end
 --- A stderr handler for git run with --progress on `p`: moves its percent as git
 --- reports, and keeps everything else git said.
 ---@param p cinch.Plugin
+---@param scale cinch.progress.Scale what git runs
 ---@return fun(err?: string, data?: string) handler
 ---@return fun(): string said what is left of stderr, as --quiet would have printed it
-function M.reader(p)
+function M.reader(p, scale)
   local carry, kept = '', {}
   local function take(record)
-    local n = M.percent(record)
+    local n = M.percent(record, scale)
     if n then
       M.set(p, n)
     elseif not chatter(record) then
@@ -131,7 +148,12 @@ function M.watch()
     if not (p and args and on_exit) then
       return system(cmd, opts, on_exit)
     end
-    local handler, said = M.reader(p)
+    local scale = sub
+    if sub == 'checkout' and p.activity == 'installing' then
+      scale = 'files'
+      M.set(p, files_start)
+    end
+    local handler, said = M.reader(p, scale)
     local o = vim.tbl_extend('force', opts or {}, { stderr = handler })
     return system(args, o, function(out)
       out.stderr = said()

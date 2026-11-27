@@ -1,7 +1,8 @@
 -- The live first start in the window: it opens before vim.pack.add with a row in an
 -- installing section for each plugin cloning, each with how far it is, and the overall
 -- count and a graph in the header, no plugin's name; each row leaves the section for its
--- place in the list as its plugin lands, and never stops in working on the way;
+-- place in the list as its plugin lands, and never stops in working on the way; the
+-- list stays scrolled to the top, the cursor on a plugin still installing;
 -- the colorscheme applies as soon as its plugin lands; then the same window settles
 -- into the Plugins view.
 local H = dofile(vim.env.CINCH_ROOT .. '/tests/helpers.lua')
@@ -10,6 +11,8 @@ local cinch, events = require('cinch'), require('cinch.events')
 cinch.ui_coming = function()
   return true
 end
+-- Room for the whole list, as in a real editor: headless starts at 80x24.
+vim.o.columns, vim.o.lines = 160, 50
 
 local seen = { progress = {} }
 --- A line with its graph taken out, and whether it had one.
@@ -59,6 +62,7 @@ events.on('Progress', function(d)
     -- The window redraws on the next tick; look after it has.
     vim.schedule(function()
       local text = table.concat(list_lines(), '\n')
+      local list = require('cinch.features.ui').windows().list
       seen.progress[#seen.progress + 1] = {
         name = d.name,
         handled = d.handled,
@@ -69,6 +73,10 @@ events.on('Progress', function(d)
         working = text:find('▾ working', 1, true) ~= nil,
         -- Landed: its own row, the way the Plugins view draws it, not indented under a title.
         row = text:find('\n %S+ ' .. vim.pesc(d.name) .. ' ') ~= nil,
+        top = vim.api.nvim_win_call(list, function()
+          return vim.fn.line('w0')
+        end),
+        at = list_lines()[vim.api.nvim_win_get_cursor(list)[1]],
       }
     end)
   end
@@ -98,6 +106,11 @@ H.after_startup(function()
   H.eq(#seen.progress >= 3, true, 'progress arrives for each plugin')
   H.eq(seen.progress[1].handled, true, 'and the window takes it over from the command line')
   for _, pr in ipairs(seen.progress) do
+    H.eq(
+      { pr.top, pr.installing == nil or pr.at:find('^   %S+ [%w.-]+ %d+%% ') ~= nil },
+      { 1, true },
+      'the list stays at the top, the cursor on a plugin still installing: ' .. tostring(pr.at)
+    )
     H.eq(
       { cloning = pr.cloning, working = pr.working, row = pr.row },
       { cloning = false, working = false, row = true },
@@ -176,8 +189,20 @@ H.after_startup(function()
   H.eq(vim.b[vim.api.nvim_win_get_buf(vim.fn.win_getid(1))].dashy, true, 'that buffer opened in your editor')
   H.eq(vim.api.nvim_get_current_win(), w.list, 'and focus is back on the list')
   H.eq(H.plugin('colory').state, 'loaded', 'and the plugins started')
+  local view = vim.api.nvim_win_call(w.list, vim.fn.winsaveview)
+  H.eq(
+    { view.topline, list_lines()[view.lnum]:find('^ %S+ missing ') ~= nil },
+    { 1, true },
+    'once the install is over, the list from its top: the cursor on the first row, what failed'
+  )
+  for l, line in ipairs(list_lines()) do
+    if line:find('^ %S+ alpha%.nvim ') then
+      vim.api.nvim_win_set_cursor(w.list, { l, 0 })
+    end
+  end
+  vim.api.nvim_exec_autocmds('CursorMoved', { buffer = vim.api.nvim_win_get_buf(w.list) })
   H.wait(function()
     local pane = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(w.pane), 0, -1, false)
     return table.concat(pane, '\n'):find('\n branch +main') ~= nil
-  end, 'the pane reading vim.pack once the plugin it shows has installed')
+  end, 'the pane reading vim.pack for a plugin that installed')
 end)

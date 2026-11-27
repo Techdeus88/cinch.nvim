@@ -164,7 +164,11 @@ H.after_startup(function()
   require('cinch').opts.confirm = false
   go(' alpha%.nvim ')
   H.press('d')
-  H.eq({ shows('Delete alpha.nvim Yes (y) or No (n)'), on_disk('alpha.nvim') }, { true, true }, 'with confirm off, d still asks')
+  H.eq(
+    { shows('Delete alpha.nvim Yes (y) or No (n)'), on_disk('alpha.nvim') },
+    { true, true },
+    'with confirm off, d still asks'
+  )
   H.press('n')
   H.eq(on_disk('alpha.nvim'), true, 'and n keeps it')
   vim.cmd('Cinch del! alpha.nvim')

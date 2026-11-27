@@ -51,7 +51,7 @@ local function git(args, cwd, cb, timeout, p)
   local opts = { cwd = cwd, text = true, env = env, clear_env = true, timeout = timeout }
   local said
   if p then
-    opts.stderr, said = progress.reader(p)
+    opts.stderr, said = progress.reader(p, 'fetch')
   end
   vim.system(cmd, opts, function(r)
     if said then

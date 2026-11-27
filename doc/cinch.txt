@@ -557,11 +557,12 @@ opens keeps focus. The header has two lines. The first holds when Neovim
 started and when its UI came up on the left, such as
 `startup 42ms · ui 58ms`, the name in the middle and the five views on the
 right: plugins, triggers, stats, profile and log. The second is for global
-messages only. An install, a check, an update or a delete shows in the middle
-of it. A check and an update show their progress, like
-`Updating plugins (18/48) - yanky.nvim 37%` with a bar; an install shows none:
-each plugin that installs has its own row (see the Plugins view). Then comes a
-line that says how it ended, such as `Checked 61 plugins in 2.1s · 3 updates`,
+messages only. An install, a check or an update shows its overall progress in
+the middle of it, like `Installing plugins (18/48)` with a bar, and names no
+plugin: each plugin's row shows how far that plugin is, like `37%` with a
+meter, from what git reports (see the Plugins view). A delete shows only its
+ending. Then comes a line that says how it ended, such as
+`Checked 61 plugins in 2.1s · 3 updates`,
 for a moment. So does any message about no plugin in particular, for 4
 seconds, or 10 for a warning or an error. A message about one plugin goes on
 that plugin's row instead: the row drops everything but its light and name,
@@ -587,7 +588,11 @@ there are updates: each plugin with its name and how many commits it is
 behind, like `2 commits`, and `u` applies the one under the cursor. cinch
 itself gets its row here. A plugin on disk that no spec names is also listed,
 with `not in specs`, and `d` deletes it. A plugin that is working, failed or
-off stays in that section, with `↑n` on its row.
+off stays in that section, with `↑n` on its row. Plugins that are installing
+get a row in an "installing" section on top, with how far each is, and leave
+it for their place in the list as they land. While they install, the list
+stays at its top, the cursor on the first plugin still installing; once the
+install is over, the cursor goes to the first row.
 
 The rest of the list keeps a title only for "working", the plugins
 building or loading, on top. The filters count the other states,
@@ -595,9 +600,10 @@ so failed, loaded, waiting and disabled follow in that order with no titles.
 Rows under a title, which are Installing, Updates and working, sit two cells
 in, and a blank row parts the section from the rest
 of the list. When its work is done a plugin goes back to its place in the
-list, without the indent. A plugin being checked,
-updated or deleted stays in its section and says so on its row; a build moves it to working, and an install
-gives it a row in installing. A check never opens the window; an install and
+list, without the indent. A plugin being checked or updated stays in its
+section, its row showing how far it is, `37%` and a meter; one being deleted
+says so on its row. A build moves a plugin to working, and an install gives it
+a row in installing. A check never opens the window; an install and
 `:Cinch update!` do.
 
 Each row puts its parts one after the other: a status light (lit once
