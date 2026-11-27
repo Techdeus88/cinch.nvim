@@ -68,7 +68,7 @@ end
 
 ---@class cinch.Opts
 ---@field spec? string|(string|cinch.Spec|cinch.Spec[])[] module paths, directories or specs; default { 'plugins' }
----@field confirm? boolean ask before installing, updating or deleting; default true
+---@field confirm? boolean ask before installing or updating; default true. Deleting always asks
 ---@field budget? integer ms of `later` loading per event-loop tick; default 5
 ---@field defer? boolean when plugins are missing, install once the UI is up, not during init.lua; default true
 ---@field build_timeout? integer seconds an async function build may take before it fails; default 300
@@ -322,7 +322,8 @@ local function enabled(p)
   return true
 end
 
---- Whether cinch asks before it installs, updates or deletes: the `confirm` option.
+--- Whether cinch asks before it installs or updates: the `confirm` option. It never
+--- applies to deleting, which always asks.
 ---@return boolean
 function M.confirms()
   return (M.opts or defaults).confirm ~= false
@@ -742,7 +743,7 @@ function M.install(names, opts)
 end
 
 --- Bring the disk in line with your specs: install what is missing, delete what no
---- spec names, once you confirm when `confirm` is on, then check for updates. It never
+--- spec names, once you confirm, then check for updates. It never
 --- applies updates, and never deletes a plugin your specs list.
 function M.sync()
   M.install()
@@ -754,7 +755,7 @@ function M.sync()
   end
   -- The check waits for your answer.
   if #pack.orphans() > 0 and #spec.broken == 0 then
-    M.clean({ confirm = M.confirms(), done = check })
+    M.clean({ done = check })
   else
     check()
   end
@@ -899,11 +900,50 @@ function M.del(names, opts)
   return ok, err
 end
 
+--- Delete plugins once you say yes, on their rows in the window, or in Neovim's prompt
+--- without one. Every delete you ask for goes through here: neither the `confirm`
+--- option nor a `!` skips the question. `!` (`force`) only lets it delete a plugin your
+--- specs list.
+---@param names string|string[]
+---@param opts? { force?: boolean, done?: fun(deleted: boolean) }
+function M.confirm_del(names, opts)
+  opts = opts or {}
+  names = type(names) == 'table' and names or { names }
+  -- cinch itself is never deleted, so there is nothing to ask: del says why.
+  local selves = vim.tbl_filter(function(name)
+    return state.plugins[name] and state.plugins[name].self
+  end, names)
+  if #selves > 0 then
+    M.del(selves)
+    names = vim.tbl_filter(function(name)
+      return not vim.list_contains(selves, name)
+    end, names)
+  end
+  if #names == 0 then
+    return
+  end
+  M.ask({
+    verb = 'Delete',
+    names = names,
+    question = ('Delete %d plugin%s from disk? %s'):format(
+      #names,
+      #names == 1 and '' or 's',
+      table.concat(names, ', ')
+    ),
+    done = function(yes)
+      local ok = yes and M.del(names, { force = opts.force }) or false
+      if opts.done then
+        opts.done(ok)
+      end
+    end,
+  })
+end
+
 --- Delete every plugin on disk that no spec names. Not while a spec file has failed
 --- to load, since every plugin it names would look like one, unless `force`.
----@param opts? { confirm?: boolean, force?: boolean, done?: fun() } confirm: ask first, on their rows
----in the window; done: called once you answered
----@return string[] deleted none yet when the window asks: the answer comes later
+---@param opts? { force?: boolean, done?: fun() } done: called once you answered. It always
+---asks first, on their rows in the window: `confirm = false` does not apply to deleting.
+---@return string[] deleted none yet: the answer comes later
 function M.clean(opts)
   opts = opts or {}
   local names = vim.tbl_map(function(o)
@@ -916,13 +956,6 @@ function M.clean(opts)
   if #spec.broken > 0 and not opts.force then
     events.report('A spec file failed to load, so nothing was deleted', levels.WARN)
     return {}
-  end
-  if not opts.confirm then
-    local deleted = M.del(names) and names or {}
-    if opts.done then
-      opts.done()
-    end
-    return deleted
   end
   local deleted = {}
   M.ask({

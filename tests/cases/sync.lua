@@ -72,12 +72,14 @@ H.after_startup(function()
   idle()
   H.eq(on_disk('gamma'), true, 'and no keeps it')
 
-  -- With confirm off, s deletes without asking.
+  -- With confirm off, s still asks before deleting.
   cinch.opts.confirm = false
   order = {}
   H.press('s')
+  H.eq({ asks(), on_disk('gamma') }, { true, true }, 'with confirm off, s still asks before deleting')
+  H.press('y')
   idle()
-  H.eq({ asks(), on_disk('gamma') }, { false, false }, 'with confirm off, s deletes without asking')
+  H.eq({ asks(), on_disk('gamma') }, { false, false }, 'and y deletes it')
   H.eq(order, { 'Deleting', 'Checking' }, 'nothing to install, then delete, then check')
   H.eq(on_disk('alpha.nvim') and on_disk('beta.nvim'), true, 'what your specs list stays')
 end)

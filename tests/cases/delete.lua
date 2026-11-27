@@ -68,6 +68,9 @@ H.after_startup(function()
   -- In your specs: vim.pack keeps it unless forced, and cinch says why.
   local beta = H.plugin('beta.nvim')
   vim.cmd('Cinch del beta.nvim')
+  H.eq(shows('Delete beta.nvim Yes (y) or No (n)'), true, ':Cinch del asks first, on the row')
+  H.eq(on_disk('beta.nvim'), true, 'and waits for the answer')
+  H.press('y')
   H.eq(on_disk('beta.nvim'), true, 'a plugin in your specs stays without !')
   H.eq(H.noted('not deleted: beta%.nvim is in your specs'), true, 'and cinch says why')
   H.eq(beta.activity, nil, 'it is not left "deleting"')
@@ -157,10 +160,16 @@ H.after_startup(function()
   H.eq(H.noted('nothing to clean'), true, 'then there is nothing to clean')
   H.eq(on_disk('alpha.nvim'), true, 'what your specs list is left alone')
 
-  -- With confirm off, d deletes at once.
+  -- With confirm off, deleting still asks: only installing, updating and restoring skip it.
   require('cinch').opts.confirm = false
   go(' alpha%.nvim ')
   H.press('d')
-  H.eq({ shows('Yes (y)'), on_disk('alpha.nvim') }, { false, false }, 'with confirm off, d deletes without asking')
+  H.eq({ shows('Delete alpha.nvim Yes (y) or No (n)'), on_disk('alpha.nvim') }, { true, true }, 'with confirm off, d still asks')
+  H.press('n')
+  H.eq(on_disk('alpha.nvim'), true, 'and n keeps it')
+  vim.cmd('Cinch del! alpha.nvim')
+  H.eq({ shows('Delete alpha.nvim Yes (y) or No (n)'), on_disk('alpha.nvim') }, { true, true }, ':Cinch del! asks too')
+  H.press('y')
+  H.eq(on_disk('alpha.nvim'), false, 'and y deletes it')
   H.eq(prompts, 0, "Neovim's own prompt never showed")
 end)

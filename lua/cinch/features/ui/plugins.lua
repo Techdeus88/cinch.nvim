@@ -1,7 +1,8 @@
 -- The Plugins view: the list on the left and the detail pane on the right, which
--- follows the plugin under the cursor. While a first start installs, the same list
--- shows each plugin's install progress, then settles into its normal rows. This file
--- composes the list; rows.lua draws each row and details.lua the pane.
+-- follows the plugin under the cursor. While plugins install, each one has a row in an
+-- `installing` section above the list; as it lands, that row moves to its official
+-- place in the list, which every later message uses. This file composes the list;
+-- rows.lua draws each row and details.lua the pane.
 -- Nothing here changes state or calls vim.pack; the window hands in what it knows.
 
 local canvas = require('cinch.features.ui.canvas')
@@ -16,7 +17,7 @@ local M = {}
 ---@field total integer
 ---@field done integer
 ---@field current? string the plugin that last reported progress
----@field status table<string, 'queued'|'cloning'|'installed'|'failed'> each plugin's install status
+---@field status table<string, 'queued'|'cloning'|'installed'|'failed'> each plugin's install status; only the queued and cloning ones are in the installing section
 ---@field message? string how it ended, shown for a moment
 
 ---@class cinch.ui.Ctx
@@ -109,12 +110,13 @@ end
 --- fit, else `● 18`. Then a rule under them, as the pane has under its title.
 ---@param c cinch.ui.Canvas
 ---@param ctx cinch.ui.Ctx
-local function subheader(c, ctx)
+---@param skip? table<string, true> plugins still installing: not counted until they land
+local function subheader(c, ctx, skip)
   local chosen = ctx.show or 'all'
   local line
   for _, labels in ipairs({ true, false }) do
     line = { { ' ' } }
-    for i, f in ipairs(rows.filter_counts(ctx.show)) do
+    for i, f in ipairs(rows.filter_counts(ctx.show, skip)) do
       local text = labels and ('%s (%d) '):format(f.label, f.n) or ('%d '):format(f.n)
       if i > 1 then
         line[#line + 1] = { ' ' }
@@ -212,42 +214,60 @@ local function updates_section(c, list, orphans, ctx)
   return true
 end
 
--- Each install status: its mark (nil: the spinner), its color, the message.
+-- Each install status that has a row in the installing section: its mark (nil: the
+-- spinner), its color, the message. A plugin that landed or failed has left it.
 local install_look = {
   queued = { '·', 'CinchMuted', 'queued' },
   cloning = { nil, 'CinchActive', 'cloning…' },
-  installed = { '✓', 'CinchLoaded' },
-  failed = { '✗', 'CinchFailed', 'could not install' },
-  disabled = { '✕', 'CinchMuted' },
-  on_disk = { '✓', 'CinchMuted' },
 }
 
---- The list while a first start installs: every plugin with its install status,
---- in the same rows as the Plugins view, so they settle in place.
+--- The plugins of the install under way that have not landed yet, by name.
+---@param ctx cinch.ui.Ctx
+---@return table<string, true>
+local function installing_names(ctx)
+  local out = {}
+  local op = ctx.op
+  for name, status in pairs(op and op.kind == 'install' and op.status or {}) do
+    if install_look[status] and state.plugins[name] then
+      out[name] = true
+    end
+  end
+  return out
+end
+
+--- The installing section: a row for each plugin that is cloning, new to the list.
+--- Drawn only while there is one; the rest of the list has no row for it until it lands.
 ---@param c cinch.ui.Canvas
 ---@param ctx cinch.ui.Ctx
-local function install_rows(c, ctx)
+---@param list cinch.Plugin[] the installing plugins the filters show
+---@return boolean drawn
+local function install_section(c, ctx, list)
+  if #list == 0 then
+    return false
+  end
   local needed = dependents()
-  local list = visible(ctx)
-  -- Under a header like every other group of rows, and folds the same way.
   local open = not ctx.folded.installing
   c:add({
     { (open and ' ▾ ' or ' ▸ ') .. 'installing', 'CinchSection' },
     { ' ' .. #list, 'CinchMuted' },
   }, { section = 'installing' })
   for _, p in ipairs(open and list or {}) do
-    local look = install_look[ctx.op.status[p.name] or (p.state == 'disabled' and 'disabled' or 'on_disk')]
-    add_row(c, p, {
-      mark = look[1] or canvas.spinner[ctx.tick % #canvas.spinner + 1],
-      mark_hl = look[2],
-      slowest = 0,
-      needed_by = needed[p.name] or {},
-      msg = look[3],
-      msg_hl = look[2],
-      only_msg = look[3] ~= nil,
-      indent = true,
-    })
+    local look = install_look[ctx.op.status[p.name]]
+    local m, m_hl = look[1] or canvas.spinner[ctx.tick % #canvas.spinner + 1], look[2]
+    if not asks(c, ctx, p.name, m, m_hl, true) then
+      add_row(c, p, {
+        mark = m,
+        mark_hl = m_hl,
+        slowest = 0,
+        needed_by = needed[p.name] or {},
+        msg = look[3],
+        msg_hl = look[2],
+        only_msg = true,
+        indent = true,
+      })
+    end
   end
+  return true
 end
 
 --- The list, `width` cells wide.
@@ -256,11 +276,10 @@ end
 ---@return cinch.ui.Canvas
 function M.list(width, ctx)
   local c = canvas.new(width)
-  local plugins = visible(ctx)
-  -- A question is asked on the normal rows, even while an install's ending is on show.
-  if ctx.op and ctx.op.kind == 'install' and not ctx.ask then
-    install_rows(c, ctx)
-    return c
+  local installing_now = installing_names(ctx)
+  local plugins, installing = {}, {}
+  for _, p in ipairs(visible(ctx)) do
+    table.insert(installing_now[p.name] and installing or plugins, p)
   end
   local slowest = 0
   for _, p in ipairs(plugins) do
@@ -285,7 +304,7 @@ function M.list(width, ctx)
   if grouping then
     sections = regroup(by, grouping)
   end
-  subheader(c, ctx)
+  subheader(c, ctx, installing_now)
   if ctx.filter then
     c:add({ { ' / ' .. ctx.filter, 'CinchKey' }, { ('  %d of %d'):format(#plugins, #state.yours()), 'CinchMuted' } })
   end
@@ -293,8 +312,13 @@ function M.list(width, ctx)
   local orphans = vim.tbl_filter(function(o)
     return not ctx.show and (not ctx.filter or o.name:lower():find(ctx.filter:lower(), 1, true) ~= nil)
   end, ctx.orphans or {})
+  -- Plugins that are installing come first, so they are in view while they clone.
+  local cloning = install_section(c, ctx, installing)
+  if cloning and #updating + #orphans > 0 then
+    c:add({})
+  end
   -- A titled section's rows sit two cells in, and a blank row parts it from what follows.
-  local gap = updates_section(c, updating, orphans, ctx)
+  local gap = updates_section(c, updating, orphans, ctx) or cloning
   -- One list in section order. The filters above count the states, so only work under
   -- way, such as a build, keeps its title.
   for _, s in ipairs(sections) do
@@ -332,7 +356,7 @@ function M.list(width, ctx)
       end
     end
   end
-  if #plugins + #orphans + #updating == 0 then
+  if #plugins + #orphans + #updating + #installing == 0 then
     c:add({ { (' No %splugins'):format(ctx.show and ctx.show .. ' ' or ''), 'CinchMuted' } })
   end
   return c

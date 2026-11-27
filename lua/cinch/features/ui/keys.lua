@@ -166,11 +166,12 @@ function M.make(w)
   end
 
   --- Run `fn` on `names` from your editor window: once you say yes on their rows when
-  --- `confirm` is on, else now.
+  --- `confirm` is on, else now. With `always`, whatever `confirm` says.
   ---@param verb string
   ---@param names string[]
   ---@param fn fun(names: string[])
-  local function confirmed(verb, names, fn)
+  ---@param always? boolean
+  local function confirmed(verb, names, fn, always)
     local function run()
       w.in_editor(function()
         fn(names)
@@ -178,7 +179,7 @@ function M.make(w)
     end
     if #names == 0 then
       return
-    elseif not require('cinch').confirms() then
+    elseif not always and not require('cinch').confirms() then
       return run()
     end
     w.ask({
@@ -261,7 +262,7 @@ function M.make(w)
     end, 'deleted')
     confirmed('Delete', names, function(these)
       require('cinch').del(these, { force = #in_specs(these) > 0 })
-    end)
+    end, true)
   end
 
   --- Apply the pending updates of `names`, once you confirm.
@@ -437,7 +438,7 @@ function M.make(w)
       end,
       'check for updates in the background: the selected plugins, or all',
     },
-    { { 'd' }, delete, 'delete the plugin, or the ones selected, from disk, once you confirm' },
+    { { 'd' }, delete, 'delete the plugin, or the ones selected, from disk, once you confirm: always asks' },
     {
       { 'y' },
       function()

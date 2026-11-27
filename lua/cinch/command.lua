@@ -71,7 +71,8 @@ M.commands = {
     end,
     complete = names,
   },
-  -- With !, also plugins your specs list; they install again on the next start.
+  -- Asks first, always. With !, also plugins your specs list; they install again on the
+  -- next start.
   del = {
     run = function(args, bang)
       if #args == 0 then
@@ -84,7 +85,7 @@ M.commands = {
         )
         return
       end
-      cinch.del(args, { force = bang })
+      cinch.confirm_del(args, { force = bang })
     end,
     complete = function()
       return vim.list_extend(
@@ -101,11 +102,10 @@ M.commands = {
       cinch.sync()
     end,
   },
-  -- With !, without asking, and even when a spec file failed to load. With `confirm`
-  -- off, without asking.
+  -- Asks first, always. With !, even when a spec file failed to load.
   clean = {
     run = function(_, bang)
-      cinch.clean({ confirm = not bang and cinch.confirms(), force = bang })
+      cinch.clean({ force = bang })
     end,
   },
 }

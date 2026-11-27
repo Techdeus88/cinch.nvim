@@ -379,7 +379,7 @@ The defaults: >lua
     require('cinch').setup({
       -- module paths, folders, or specs; default lua/plugins/
       spec = { 'plugins' },
-      -- ask before installing, updating or deleting, on the plugin's row
+      -- ask before installing or updating, on the plugin's row. Deleting always asks
       confirm = true,
       -- ms of `later` loading per event-loop tick
       budget = 5,
@@ -521,18 +521,20 @@ The Lua API, `User Cinch*` events and highlight groups keep their names.
 
 :Cinch del {names}                                                *:Cinch-del*
 :Cinch del! {names}
-    Delete plugins from disk. One your specs list is in use, so it needs
-    [!], and it installs again on the next start.
+    Delete plugins from disk, once you confirm: it always asks, whatever
+    `confirm` says. One your specs list is in use, so it needs [!], and it
+    installs again on the next start.
 
 :Cinch clean                                                    *:Cinch-clean*
 :Cinch clean!
-    Delete every plugin on disk that no spec names, once you confirm. Not
-    while a spec file has failed to load, since its plugins would look like
-    strays. With [!] it skips both. With `confirm = false` it does not ask.
+    Delete every plugin on disk that no spec names, once you confirm: it
+    always asks, whatever `confirm` says. Not while a spec file has failed to
+    load, since its plugins would look like strays. [!] skips that check, not
+    the question.
 
 :Cinch sync                                                      *:Cinch-sync*
-    Install what is missing, offer to delete what no spec names (without
-    asking when `confirm = false`), then check for updates. It never applies
+    Install what is missing, offer to delete what no spec names (it always
+    asks), then check for updates. It never applies
     an update, and never deletes a plugin your specs list.
 
 :Cinch stats                                                    *:Cinch-stats*
@@ -556,7 +558,9 @@ started and when its UI came up on the left, such as
 `startup 42ms · ui 58ms`, the name in the middle and the five views on the
 right: plugins, triggers, stats, profile and log. The second is for global
 messages only. An install, a check, an update or a delete shows in the middle
-of it, like `Installing plugins (18/48) - yanky.nvim 37%` with a bar, then a
+of it. A check and an update show their progress, like
+`Updating plugins (18/48) - yanky.nvim 37%` with a bar; an install shows none:
+each plugin that installs has its own row (see the Plugins view). Then comes a
 line that says how it ended, such as `Checked 61 plugins in 2.1s · 3 updates`,
 for a moment. So does any message about no plugin in particular, for 4
 seconds, or 10 for a warning or an error. A message about one plugin goes on
@@ -586,14 +590,14 @@ with `not in specs`, and `d` deletes it. A plugin that is working, failed or
 off stays in that section, with `↑n` on its row.
 
 The rest of the list keeps a title only for "working", the plugins
-installing, building or loading, on top. The filters count the other states,
+building or loading, on top. The filters count the other states,
 so failed, loaded, waiting and disabled follow in that order with no titles.
-Rows under a title, which are Updates, working and the first start's
-installing, sit two cells in, and a blank row parts the section from the rest
+Rows under a title, which are Installing, Updates and working, sit two cells
+in, and a blank row parts the section from the rest
 of the list. When its work is done a plugin goes back to its place in the
 list, without the indent. A plugin being checked,
-updated or deleted stays in its section and says so on its row; an install or
-a build moves it to working. A check never opens the window; an install and
+updated or deleted stays in its section and says so on its row; a build moves it to working, and an install
+gives it a row in installing. A check never opens the window; an install and
 `:Cinch update!` do.
 
 Each row puts its parts one after the other: a status light (lit once
@@ -725,9 +729,11 @@ QUESTIONS                                                    *cinch-questions*
 cinch asks every yes or no itself, on the row of the plugin it is about:
 `Delete real-icons.nvim Yes (y) or No (n)`. `y` goes ahead and `n`, `q` or
 `<Esc>` does not; until you answer, other keys do nothing. With
-`confirm = true`, the default, installing, updating, deleting, cleaning and
-restoring all ask this way, and a command that asks opens the window to do
-it. With `confirm = false` none of them asks: the key or command goes ahead.
+`confirm = true`, the default, installing, updating and restoring all ask
+this way, and a command that asks opens the window to do it. With
+`confirm = false` none of them asks: the key or command goes ahead. Deleting
+and cleaning always ask, whatever `confirm` says, and neither `!` nor an
+option skips the question.
 A key with nothing to do says so on the row instead: `already installed`,
 `already loaded`, `already up to date` or `already deleted`. A deleted plugin
 your specs still list keeps its row, which says `deleted`.
@@ -979,8 +985,9 @@ cinch.del({names}, {opts})                                       *cinch.del()*
     takes `force`, to delete a plugin your specs list.
 
 cinch.clean({opts})                                            *cinch.clean()*
-    Delete every plugin on disk that no spec names. {opts} takes `confirm`,
-    and `force`, which ignores a spec file that failed to load.
+    Delete every plugin on disk that no spec names, once you confirm: it always
+    asks. {opts} takes `force`, which ignores a spec file that failed to load,
+    and `done`, called once you answered.
 
 cinch.sync()                                                    *cinch.sync()*
     Install what is missing, offer to clean, check for updates.
@@ -998,8 +1005,8 @@ cinch.ask({req})                                                 *cinch.ask()*
     |cinch-questions|.
 
 cinch.confirms()                                            *cinch.confirms()*
-    Whether `confirm` is on, so cinch asks before it installs, updates or
-    deletes.
+    Whether `confirm` is on, so cinch asks before it installs or updates.
+    Deleting always asks.
 
 cinch.now({fn})                                                  *cinch.now()*
 cinch.later({fn})                                              *cinch.later()*

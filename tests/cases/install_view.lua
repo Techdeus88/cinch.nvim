@@ -1,5 +1,6 @@
--- The live first start in the window: it opens on Installing, before vim.pack.add,
--- in its install phase; each plugin's row turns installed as its progress arrives;
+-- The live first start in the window: it opens before vim.pack.add with a row in an
+-- installing section for each plugin cloning, and no overall count or percent in the
+-- header; each row leaves the section for its place in the list as its plugin lands;
 -- the colorscheme applies as soon as its plugin lands; then the same window settles
 -- into the Plugins view.
 local H = dofile(vim.env.CINCH_ROOT .. '/tests/helpers.lua')
@@ -36,9 +37,29 @@ events.on('Installing', function()
   seen.first_lines = list_lines()
   seen.first_header = H.header()[2] or ''
 end, { priority = 90 })
+---@return integer? count the installing section says it holds; nil without one
+local function installing_count()
+  for _, l in ipairs(list_lines()) do
+    local n = l:match('^ ▾ installing (%d+)$')
+    if n then
+      return tonumber(n)
+    end
+  end
+end
 events.on('Progress', function(d)
   if d.name then
-    seen.progress[#seen.progress + 1] = { name = d.name, handled = d.handled }
+    -- The window redraws on the next tick; look after it has.
+    vim.schedule(function()
+      local text = table.concat(list_lines(), '\n')
+      seen.progress[#seen.progress + 1] = {
+        name = d.name,
+        handled = d.handled,
+        header = H.header()[2] or '',
+        installing = installing_count(),
+        -- Still cloning: its row is in the installing section.
+        cloning = text:find(vim.pesc(d.name) .. ' +cloning…') ~= nil,
+      }
+    end)
   end
 end, { priority = 90 })
 events.on('Installed', function()
@@ -55,23 +76,39 @@ H.after_startup(function()
   end, 'the install')
 
   H.eq(seen.open_at_installing, true, 'the window is open before vim.pack.add starts')
-  H.eq(seen.first_header:find('Installing plugins (0/5)', 1, true) ~= nil, true, 'in its install phase')
-  H.eq(seen.first_header:find('0% ', 1, true) ~= nil, true, 'with how far along it is')
-  H.eq(seen.first_header:find('━', 1, true) ~= nil, true, 'and the graph, on the same line of the header')
-  H.eq(seen.first_lines[1], ' ▾ installing 5', 'the rows at the top of the list')
-  H.eq(table.concat(seen.first_lines, '\n'):find('cloning…', 1, true) ~= nil, true, 'every row cloning')
-  H.eq(vim.list_contains(seen.first_lines, ' ▾ installing 5'), true, 'the rows under their section header')
+  H.eq(
+    { seen.first_header:find('Installing', 1, true), seen.first_header:find('%', 1, true), seen.first_header:find('━', 1, true) },
+    {},
+    'no overall count, percent or graph in the header: ' .. seen.first_header
+  )
+  H.eq(vim.list_contains(seen.first_lines, ' ▾ installing 5'), true, 'a row for each plugin, under its section')
+  H.eq(select(2, table.concat(seen.first_lines, '\n'):gsub('cloning…', '')), 5, 'every row cloning')
   H.eq(#seen.progress >= 3, true, 'progress arrives for each plugin')
   H.eq(seen.progress[1].handled, true, 'and the window takes it over from the command line')
+  for _, pr in ipairs(seen.progress) do
+    H.eq(pr.cloning, false, pr.name .. ' has left the installing section once it lands')
+    H.eq(
+      { pr.header:find('Installing', 1, true), pr.header:find('%', 1, true) },
+      {},
+      'and the header still shows no count or percent'
+    )
+  end
+  local counts = vim.tbl_map(function(pr)
+    return pr.installing or 0
+  end, seen.progress)
+  H.eq(counts[1] < 5, true, 'the section holds fewer rows once one has landed: ' .. vim.inspect(counts))
   H.eq(seen.colors_at_installed, 'colory', 'the colorscheme applied before the batch ended')
   local done = table.concat(seen.done_lines, '\n')
   H.eq(seen.done_header:find('Installed 4 of 5 plugins', 1, true) ~= nil, true, 'the outcome, when it ends')
-  H.eq(done:find('could not install', 1, true) ~= nil, true, 'and which one failed')
+  H.eq(done:find('not installed', 1, true) ~= nil, true, 'and which one failed, on its official row')
+  H.eq(done:find('▾ installing', 1, true), nil, 'with no installing section left')
 
   H.wait(function()
     local text = table.concat(list_lines(), '\n')
-    return text:find('▾ installing', 1, true) == nil and text:find(' alpha%.nvim ') ~= nil
-  end, 'the Plugins view')
+    return text:find('▾ installing', 1, true) == nil
+      and text:find(' alpha%.nvim ') ~= nil
+      and (H.header()[2] or ''):find('Install', 1, true) == nil
+  end, 'the Plugins view, once the ending has had its moment')
   H.eq(H.header()[2]:find('Install', 1, true), nil, 'the same window, now the Plugins view')
 
   local ops = require('cinch.features.ui.ops')
@@ -82,12 +119,17 @@ H.after_startup(function()
       return c[1]
     end, ops.line(op, room)))
   end
-  local running = op_line({ kind = 'install', total = 48, done = 18, status = {}, current = 'yanky.nvim' }, 60)
-  H.eq(running:find('^Installing plugins %(18/48%) %- yanky%.nvim 37%% ━') ~= nil, true, running)
+  H.eq(
+    op_line({ kind = 'install', total = 48, done = 18, status = {}, current = 'yanky.nvim' }, 60),
+    '',
+    'an install that is running puts nothing in the header'
+  )
+  local running = op_line({ kind = 'update', total = 48, done = 18, status = {}, current = 'yanky.nvim' }, 60)
+  H.eq(running:find('^Updating plugins %(18/48%) %- yanky%.nvim 37%% ━') ~= nil, true, running)
   H.eq(vim.fn.strdisplaywidth(running), 60, 'the graph takes the rest of the room')
-  local wide = op_line({ kind = 'install', total = 48, done = 18, status = {}, current = 'yanky.nvim' }, 120)
+  local wide = op_line({ kind = 'update', total = 48, done = 18, status = {}, current = 'yanky.nvim' }, 120)
   H.eq(vim.endswith(wide, ' 37% ' .. ('━'):rep(20)), true, 'up to 20 cells: ' .. wide)
-  local op = { kind = 'install', total = 48, done = 18, status = {}, current = 'a-very-long-plugin-name.nvim' }
+  local op = { kind = 'update', total = 48, done = 18, status = {}, current = 'a-very-long-plugin-name.nvim' }
   local narrow = op_line(op, 35)
   H.eq(
     { narrow:find(' 37%% ━━━━━━$') ~= nil, vim.fn.strdisplaywidth(narrow) },

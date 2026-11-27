@@ -67,13 +67,16 @@ M.filters = {
 
 --- The filters on show, each with how many plugins it shows.
 ---@param show? string the one chosen, kept even when it shows none
+---@param skip? table<string, true> plugins not counted: those still installing
 ---@return { key: string, label: string, mark: string, hl: string, n: integer }[]
-function M.filter_counts(show)
-  local yours = state.yours()
-  local n = { all = #yours }
-  for _, p in ipairs(yours) do
-    local k = M.state_of(p)
-    n[k] = (n[k] or 0) + 1
+function M.filter_counts(show, skip)
+  local n = { all = 0 }
+  for _, p in ipairs(state.yours()) do
+    if not (skip and skip[p.name]) then
+      local k = M.state_of(p)
+      n.all = n.all + 1
+      n[k] = (n[k] or 0) + 1
+    end
   end
   local out = {}
   for _, f in ipairs(M.filters) do

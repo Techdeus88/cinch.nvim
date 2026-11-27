@@ -1,7 +1,8 @@
--- Install, check, update and delete in the window, all the same way: the progress in
--- the middle of the header, rows that change in place, then a line that says how it ended.
--- An install also opens the window and lists every plugin with its install status;
--- an update opens it too. A check never opens it, and a delete only gets the ending.
+-- Install, check, update and delete in the window: rows that change in place, then a line
+-- in the header that says how it ended. While they run, a check and an update show their
+-- progress in the middle of the header. An install shows none: each plugin that clones gets a row in the
+-- installing section, which moves to its place in the list as it lands. An install and
+-- an update open the window; a check never does, and a delete only gets the ending.
 -- ui/init.lua listens for the events and loads this file the first time one fires.
 
 local canvas = require('cinch.features.ui.canvas')
@@ -11,11 +12,13 @@ local summary = require('cinch.ops').summary
 local M = {}
 
 -- What the progress line says for each operation; a delete only shows its ending.
-local doing = { install = 'Installing plugins', check = 'Checking plugins', update = 'Updating plugins' }
+-- An install has none: no overall count or percent, its rows say how it goes.
+local doing = { check = 'Checking plugins', update = 'Updating plugins' }
 local graph_min, graph_max = 6, 20
 
---- The operation in at most `room` cells: `Installing plugins (18/48) - yanky.nvim 37% ━━━━`,
---- or how it ended; and whether its words had to be cut to fit.
+--- The operation in at most `room` cells: `Updating plugins (18/48) - yanky.nvim 37% ━━━━`,
+--- or how it ended; and whether its words had to be cut to fit. Nothing for an install
+--- that is running.
 ---@param op cinch.ui.Op
 ---@param room integer
 ---@return { [1]: string, [2]?: string }[] line, boolean cut
