@@ -73,8 +73,15 @@ local allowed = {
 ---@return cinch.Plugin[]
 function M.yours()
   return vim.tbl_filter(function(p)
-    return not p.self
+    return not M.is_cinch(p)
   end, M.list)
+end
+
+--- cinch itself or one of its extensions: cinch keeps them, they are not your plugins.
+---@param p cinch.Plugin
+---@return boolean
+function M.is_cinch(p)
+  return p.self == true or p.extension ~= nil
 end
 
 --- Add a record to the registry. spec.lua dedupes first, so a name seen twice is a bug.

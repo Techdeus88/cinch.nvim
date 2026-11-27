@@ -60,8 +60,7 @@ function M.load(name, opts, cinch_opts)
     if not src then
       return fail(name, 'not found, and cinch knows no repo to install it from')
     end
-    -- You named it in `extensions`, which is the yes vim.pack would ask for.
-    local ok, err = pcall(vim.pack.add, { src }, { confirm = false })
+    local ok, err = require('cinch.pack').add_extension(src)
     if not ok or not find(name) then
       return fail(name, ('could not install it from %s: %s'):format(src, tostring(err or 'it has no module')))
     end

@@ -1,5 +1,5 @@
 -- How an install, check, update or delete ends, in words: the same line in the window's
--- header and in your messages.
+-- footer and in your messages.
 
 local M = {}
 

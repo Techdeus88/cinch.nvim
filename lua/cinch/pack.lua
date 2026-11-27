@@ -574,6 +574,15 @@ end
 
 -- vim.pack calls -----------------------------------------------------------
 
+--- Install an extension cinch knows the repo of, before any spec is read. Through cinch,
+--- so what vim.pack says is cinch's to show, and without vim.pack's prompt: naming it in
+--- `extensions` is the yes.
+---@param src string
+---@return boolean ok, any err
+function M.add_extension(src)
+  return call('add', { vim.fs.basename(src) }, vim.pack.add, { src }, { confirm = false })
+end
+
 --- Add plugins to vim.pack, installing the missing ones in one parallel batch.
 --- Records `path` for each plugin on disk; cinch does the loading itself.
 ---@param plugins cinch.Plugin[]

@@ -261,7 +261,7 @@ H.after_startup(function()
   vim.wait(50)
   H.eq({ ui.is_open(), said == table.concat(echoed, '\n') }, { false, true }, 'information waits, silently')
   ui.open()
-  H.eq(H.header()[2]:find('a note for later', 1, true) ~= nil, true, 'in the header of the next open')
+  H.eq(H.footer():find('a note for later', 1, true) ~= nil, true, 'in the footer of the next open')
 
   -- As if Neovim quit while alpha built: the next start builds it again.
   local f = assert(io.open(H.plugin('alpha.nvim').path .. '/.git/cinch-build', 'w'))

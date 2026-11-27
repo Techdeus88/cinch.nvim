@@ -256,20 +256,14 @@ function M.define_colors(rounded)
   set(0, 'CinchOffName', { fg = color('Comment', 'fg'), ctermfg = color('Comment', 'ctermfg') })
   -- The trigger that loaded a plugin, among the others it waits on.
   set(0, 'CinchFired', { fg = color('Normal', 'fg'), bold = true, underline = true })
-  -- The name in the header and the keys in the footer: filled, so they stand out.
+  -- The name in the header and the banners in the footer: filled, so they stand out.
   local title = pick(roles.title)
   if vim.o.termguicolors and title and base then
     set(0, 'CinchBanner', { fg = base, bg = title, bold = true })
     set(0, 'CinchBannerCap', { fg = title })
-    -- A footer key: the banner color on a dark inset of it, beside what it does.
-    local inset = blend(title, base, 0.25)
-    set(0, 'CinchFooterKey', { fg = title, bg = inset, bold = true })
-    set(0, 'CinchFooterKeyCap', { fg = inset })
   else
     set(0, 'CinchBanner', { link = 'IncSearch' })
     set(0, 'CinchBannerCap', { link = 'IncSearch' })
-    set(0, 'CinchFooterKey', { link = 'PmenuSel' })
-    set(0, 'CinchFooterKeyCap', { link = 'PmenuSel' })
   end
   if not M.colored then
     for kind, link in pairs(kind_links) do

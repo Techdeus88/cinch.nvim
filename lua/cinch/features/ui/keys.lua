@@ -32,47 +32,6 @@ local M = {}
 ---@field [3] string what they do, in words, for ? and the mapping's desc
 ---@field asked? 'answer'|'no' while a row asks: `answer` still runs, `no` answers no; any other key waits
 
---- A key and what it does, for the footer; text alone when it is no key.
----@alias cinch.ui.Hint { [1]: string, [2]?: string }
-
---- The keys of each view, for the footer.
----@type table<string, cinch.ui.Hint[]>
-M.hints = {
-  plugins = {
-    { '/', 'filter' },
-    { 'l', 'load' },
-    { 'i', 'install' },
-    { 'b', 'build' },
-    { 'u', 'update' },
-    { 'd', 'delete' },
-    { 's', 'sync' },
-    { '<Space>', 'select' },
-    { '?', 'keys' },
-    { 'q', 'close' },
-  },
-  triggers = {
-    { '<CR>', 'fold' },
-    { 'l', 'load what waits' },
-    { '<C-d> <C-u>', 'details' },
-    { '<Tab>', 'next view' },
-    { '?', 'keys' },
-    { 'q', 'close' },
-  },
-  stats = { { '<Tab>', 'next view' }, { '-', 'size' }, { '?', 'keys' }, { 'q', 'close' } },
-  profile = {
-    { '<CR>', 'fold' },
-    { '<C-s>', 'sort' },
-    { '<C-f>', 'hide under ms' },
-    { '/', 'filter' },
-    { '<Tab>', 'next view' },
-    { '?', 'keys' },
-    { 'q', 'close' },
-  },
-  log = { { '/', 'filter' }, { 'G', 'newest' }, { '<Tab>', 'next view' }, { '?', 'keys' }, { 'q', 'close' } },
-  help = { { '?', 'goes back' }, { 'q', 'close' } },
-  install = { { 'q', 'hides this' } },
-}
-
 ---@return table?
 local function updates()
   return package.loaded['cinch.features.updates']
@@ -198,7 +157,7 @@ function M.make(w)
     local line = api.nvim_win_get_cursor(ui.list)[1]
     local name = ui.view == 'plugins' and ui.canvas and ui.canvas.rows[line]
     local p = name and state.plugins[name]
-    if not name or (p and p.self) then
+    if not name or (p and state.is_cinch(p)) then
       return
     end
     ui.ctx.marked = ui.ctx.marked or {}
@@ -254,7 +213,7 @@ function M.make(w)
         end)
     end, targets())
     local p = state.plugins[names[1]]
-    if #names == 1 and p and p.self then
+    if #names == 1 and p and state.is_cinch(p) then
       return require('cinch').del(names)
     end
     names = todo(names, function(name)

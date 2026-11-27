@@ -75,12 +75,13 @@ H.after_startup(function()
   local pane_cfg, foot_cfg = api.nvim_win_get_config(w.pane), api.nvim_win_get_config(w.footer)
   H.eq(
     { list_cfg.row, pane_cfg.row, foot_cfg.row, head_cfg.height, foot_cfg.height },
-    { head_cfg.row + 4, list_cfg.row + list_cfg.height + 2, pane_cfg.row + pane_cfg.height + 2, 2, 1 },
-    'the header on top, two lines, then the list, the pane under it, and the footer, one line'
+    { head_cfg.row + 3, list_cfg.row + list_cfg.height + 2, pane_cfg.row + pane_cfg.height + 2, 1, 1 },
+    'the header on top, one line, then the list, the pane under it, and the footer, one line'
   )
   H.eq(api.nvim_get_current_win(), w.list, 'the cursor is in the list')
   H.eq(api.nvim_win_get_config(w.pane).hide, false, 'the pane shows')
   H.eq(pane_cfg.col, list_cfg.col, 'the pane under the list, in an 80-column editor')
+  H.eq(#lines(w.header), 1, 'the header is one line')
   local title = lines(w.header)[1]
   H.eq(
     title:find('^ startup [%d.]+m?s ') ~= nil and title:find('plugins  triggers  stats  profile  log $') ~= nil,
@@ -89,30 +90,31 @@ H.after_startup(function()
   )
   H.eq(vim.fn.strdisplaywidth(title), head_cfg.width, 'all of it in view, in an 80-column editor')
   local layout_ = require('cinch.features.ui.layout')
-  --- The header's second line, `width` cells, with `op` under way.
-  local function row2(width, op)
-    local chunks = layout_.header(width, { views = ui.views, view = 'plugins', op = op })[2]
+  --- The footer's line, `width` cells, with `op` under way.
+  local function foot_text(width, op)
+    local chunks = layout_.footer(width, { views = ui.views, view = 'plugins', op = op, marked = 0 })
     return table.concat(vim.tbl_map(function(c)
       return c[1]
     end, chunks))
   end
-  H.eq(vim.trim(row2(148)), '', 'the second line is for messages only: no counts')
-  H.eq(lines(w.header)[2]:find('Checking plugins', 1, true) ~= nil, true, 'then the check that opening started')
+  H.eq(vim.trim(foot_text(148)), '', 'the footer is for messages only: no keys')
+  H.eq(lines(w.footer)[1]:find('Checking plugins', 1, true) ~= nil, true, 'then the check that opening started')
   local check = { kind = 'check', total = 6, done = 0, status = {} }
-  local r = row2(148, check)
-  local at = r:find('Checking', 1, true)
-  H.eq(at ~= nil and at > 40, true, 'what is under way, in the middle: ' .. r)
-  H.eq(row2(40, check):find('Checking', 1, true) ~= nil, true, 'and still there in a narrow header')
+  local r = foot_text(148, check)
+  local at, len = r:find('Checking', 1, true), vim.fn.strdisplaywidth(vim.trim(r))
+  local pad = vim.fn.strdisplaywidth(r:match('^ *'))
+  H.eq(at ~= nil and math.abs(pad - (148 - pad - len)) <= 1, true, 'what is under way, in the middle: ' .. r)
+  H.eq(foot_text(40, check):find('Checking', 1, true) ~= nil, true, 'and still there in a narrow footer')
   local stats = require('cinch.features.stats')
   local was_ui = stats.marks.uienter
   stats.marks.uienter = (stats.marks.vimenter or 0) + 16
   local both = table.concat(vim.tbl_map(function(c)
     return c[1]
-  end, layout_.header(148, { views = ui.views, view = 'plugins' })[1]))
+  end, layout_.header(148, { views = ui.views, view = 'plugins' })))
   H.eq(both:find('^ startup [%d.]+m?s · ui [%d.]+m?s ') ~= nil, true, 'and the ui time after it: ' .. both)
   local tight = table.concat(vim.tbl_map(function(c)
     return c[1]
-  end, layout_.header(60, { views = ui.views, view = 'plugins' })[1]))
+  end, layout_.header(60, { views = ui.views, view = 'plugins' })))
   H.eq(
     { tight:find(' ui ', 1, true) == nil, tight:find('log $') ~= nil },
     { true, true },
@@ -120,11 +122,10 @@ H.after_startup(function()
   )
   stats.marks.uienter = was_ui
 
-  -- In a wide header the name sits in the middle, on a banner, and the keys sit on a
-  -- banner in the middle of the footer.
+  -- In a wide header the name sits in the middle, on a banner.
   local layout = require('cinch.features.ui.layout')
   local shape = { opts = ui.opts, view = 'plugins', views = ui.views, help = false, split = true }
-  local head = layout.header(148, shape)[1]
+  local head = layout.header(148, shape)
   local before, banner_at, total = 0, nil, 0
   for i, c in ipairs(head) do
     if c[2] == 'CinchBanner' and vim.trim(c[1]) == 'cinch' then
@@ -146,34 +147,18 @@ H.after_startup(function()
   end
   H.eq(total, 148, 'the header line fills its window')
   H.eq(math.abs(before - (total - before - name_w)) <= 1, true, 'with the name in the middle')
-  local foot = layout.footer(148, { { '/', 'filter' }, { 'q', 'close' } })
-  local function parts(group)
-    return vim.tbl_map(
+  local sel = layout.footer(148, vim.tbl_extend('force', shape, { marked = 2 }))
+  H.eq(
+    vim.tbl_map(
       function(c)
         return vim.trim(c[1])
       end,
       vim.tbl_filter(function(c)
-        return c[2] == group
-      end, foot)
-    )
-  end
-  H.eq(parts('CinchFooterKey'), { '/', 'q' }, 'each key on its own inset')
-  H.eq(parts('CinchBanner'), { 'filter', 'close' }, 'with what it does beside it, on the banner')
-  local pad = vim.fn.strdisplaywidth(foot[1][1])
-  local keys_w = 0
-  for i = 2, #foot do
-    keys_w = keys_w + vim.fn.strdisplaywidth(foot[i][1])
-  end
-  H.eq(math.abs(pad - (148 - pad - keys_w)) <= 1, true, 'in the middle of the footer')
-  local narrow = layout.footer(40, require('cinch.features.ui.keys').hints.plugins)
-  local narrow_text = table.concat(vim.tbl_map(function(c)
-    return c[1]
-  end, narrow))
-  H.eq(vim.fn.strdisplaywidth(narrow_text) <= 40, true, 'a narrow footer fits')
-  H.eq(
-    { narrow_text:find(' ? ', 1, true) ~= nil, narrow_text:find(' close ', 1, true) ~= nil },
-    { true, true },
-    'and keeps ? and q'
+        return c[2] == 'CinchBanner'
+      end, sel)
+    ),
+    { '2 selected' },
+    'with nothing under way, the footer counts the selection, on a banner'
   )
 
   local u = require('cinch.features.updates')
@@ -374,14 +359,14 @@ H.after_startup(function()
   go(w.list, ' floaty ')
   H.press('u')
   H.eq(line_of(w.list, ' floaty .*already up to date') ~= nil, true, 'u with no update says so on the row')
-  H.eq(table.concat(H.header(), '\n'):find('already', 1, true), nil, 'not in the header')
+  H.eq(H.footer():find('already', 1, true), nil, 'not in the footer')
   H.eq(groups(assert(line_of(w.list, ' floaty '))).CinchUpToDate, true, 'in a color of its own')
   go(w.list, ' alpha%.nvim ')
   H.press('l')
   H.eq(line_of(w.list, ' alpha%.nvim .*already loaded') ~= nil, true, 'l on a loaded plugin says so on the row')
   H.press('i')
   H.eq(line_of(w.list, ' alpha%.nvim .*already installed') ~= nil, true, 'i on one on disk says so too')
-  H.eq(table.concat(H.header(), '\n'):find('already', 1, true), nil, 'neither in the header')
+  H.eq(H.footer():find('already', 1, true), nil, 'neither in the footer')
   local function fg(group)
     return api.nvim_get_hl(0, { name = group, link = false }).fg
   end

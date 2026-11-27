@@ -58,7 +58,7 @@ end
 local function scan()
   local res = {}
   for _, p in ipairs(state.list) do
-    if not p.self then
+    if not state.is_cinch(p) then
       for _, top in ipairs(tops_of(p)) do
         res[top] = res[top] or {}
         table.insert(res[top], p)

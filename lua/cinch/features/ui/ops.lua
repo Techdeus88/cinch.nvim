@@ -1,6 +1,6 @@
 -- Install, check, update and delete in the window: rows that change in place, then a line
--- in the header that says how it ended. While an install, a check or an update runs, the
--- middle of the header has its overall progress, `Installing plugins (18/48) ━━━━`, and
+-- in the footer that says how it ended. While an install, a check or an update runs, the
+-- middle of the footer has its overall progress, `Installing plugins (18/48) ━━━━`, and
 -- each plugin's row how far it is. A plugin that installs has a row in the installing
 -- section, which moves to its place in the list as it lands. An install and an update
 -- open the window; a check never does, and a delete only gets the ending.
@@ -95,7 +95,7 @@ function M.start(w, kind, d)
   if kind == 'delete' or (kind == 'install' and vim.v.vim_did_enter == 0) then
     return
   end
-  -- A check in the background never takes the header from one still running.
+  -- A check in the background never takes the footer from one still running.
   local running = w.ui.ctx.op
   if kind == 'check' and running and not running.message then
     return

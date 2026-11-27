@@ -158,7 +158,7 @@ local function asks(c, ctx, name, m, m_hl, indent)
 end
 
 --- Plugins with pending updates, taken from the section they would be in, with cinch
---- itself, which has a row only here. One that is working, failed or off stays there.
+--- itself and its extensions, which have a row only here. One that is working, failed or off stays there.
 ---@param plugins cinch.Plugin[]
 ---@param ctx cinch.ui.Ctx
 ---@return cinch.Plugin[]
@@ -166,7 +166,7 @@ local function with_updates(plugins, ctx)
   local out = {}
   for _, p in ipairs(state.list) do
     local key = M.section_of(p)
-    local shown = p.self
+    local shown = state.is_cinch(p)
         and shows_state(p, ctx)
         and (not ctx.filter or p.name:lower():find(ctx.filter:lower(), 1, true))
       or vim.list_contains(plugins, p)

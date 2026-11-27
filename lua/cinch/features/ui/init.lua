@@ -1,12 +1,11 @@
 -- The cinch window: four bordered windows over the editor, 75% of it, 95% of its height
--- with `-`. The header's two lines hold startup times, the name and the tabs, then messages;
--- the footer holds the keys. Between them the
--- Plugins view is two panes, 70/30 or 50/50 with `=`: the list, which has the cursor, and
--- the detail pane, which follows it. Stats, Profile and Log use the whole width. At startup
+-- with `-`. The header holds startup times, the name and the tabs; the footer holds global
+-- messages; the keys are on the ? screen. Between them the Plugins view is two panes, 70/30
+-- or 50/50 with `=`: the list, which has the cursor, and the detail pane, which follows it. Stats, Profile and Log use the whole width. At startup
 -- this file only declares `:Cinch open`; drawing code and subscriptions wait for the first open.
 -- Every message cinch has shows here, never on the command line: one about a plugin on its
 -- row, which it takes over until the message is done; a global one (an operation's progress,
--- a message about no plugin) in the middle of the header's second line. A warning or an
+-- a message about no plugin) in the middle of the footer. A warning or an
 -- error opens the window; anything else waits for the next open, and in the Log.
 
 local events = require('cinch.events')
@@ -44,7 +43,6 @@ local paned = { plugins = 'selected', triggers = 'trigger' }
 ---@class cinch.ui.View
 ---@field list fun(width: integer, ctx: cinch.ui.Ctx): cinch.ui.Canvas the list; a row's `plugin` meta is its id
 ---@field pane? fun(id: string?, width: integer, ctx: cinch.ui.Ctx): cinch.ui.Canvas details of the row at the cursor
----@field hints? cinch.ui.Hint[] its keys, for the footer
 
 ---@class cinch.ui.ExtKey
 ---@field lhs string[]
@@ -62,8 +60,6 @@ M.ext = {
   views = {},
   ---@type cinch.ui.ExtKey[]
   keys = {},
-  ---@type table<string, (fun(ctx: cinch.ui.Ctx): cinch.ui.Hint?)[]> view -> footer hints, before `?`
-  hints = {},
   ---@type (fun(p: cinch.Plugin): cinch.ui.Item?)[] a chip after how a plugin loads, on its row
   chips = {},
   ---@type (fun(p: cinch.Plugin, kv: fun(key: string, chunks: { [1]: string, [2]?: string }[])))[] pane lines
@@ -93,14 +89,6 @@ end
 ---@param key cinch.ui.ExtKey
 function M.add_key(key)
   table.insert(M.ext.keys, key)
-end
-
---- Add a footer hint to a view; `fn` returns it, or nil to show none.
----@param view string
----@param fn fun(ctx: cinch.ui.Ctx): cinch.ui.Hint?
-function M.add_hint(view, fn)
-  M.ext.hints[view] = M.ext.hints[view] or {}
-  table.insert(M.ext.hints[view], fn)
 end
 
 ---@param fn fun(p: cinch.Plugin): cinch.ui.Item?
@@ -159,14 +147,14 @@ local ns = api.nvim_create_namespace('cinch_ui')
 ---@field hl string
 ---@field chunks? { [1]: string, [2]: string }[] text with more than one color, in place of `text`
 ---@field sticky? boolean stays until the next build: a failure
----@field warn? boolean stays as long as a warning in the header
+---@field warn? boolean stays as long as a warning in the footer
 
 --- A note on a plugin's row: how its last build went, or a message about the plugin.
 --- A `sticky` one stays until the next build; the rest go after a moment.
 ---@type table<string, cinch.ui.Note>
 M.notes = {}
 
--- How long a message stays in the header once on screen, in ms, by whether it is a
+-- How long a message stays in the footer once on screen, in ms, by whether it is a
 -- warning or an error.
 local notice_ms = { [false] = 4000, [true] = 10000 }
 
@@ -228,45 +216,6 @@ end
 
 -- Layout ------------------------------------------------------------------------
 
---- The footer: the keys of the view, what the selection can do, or the text being typed.
----@return string|cinch.ui.Hint[]
-local function footer_text()
-  if ui.input then
-    return ' ' .. ui.input .. ' '
-  end
-  local marked = vim.tbl_count(ui.ctx.marked or {})
-  if ui.view == 'plugins' and marked > 0 and not ui.help then
-    return {
-      { ('%d selected'):format(marked) },
-      { 'l', 'load' },
-      { 'b', 'build' },
-      { 'u', 'update' },
-      { 'c', 'check' },
-      { 'd', 'delete' },
-      { '<Esc>', 'lets go' },
-    }
-  end
-  local holding = ui.ctx.op and ui.ctx.op.kind ~= 'check' and ui.ctx.op.kind ~= 'delete'
-  local which = holding and 'install' or ui.help and 'help' or ui.view
-  local base = M.ext.views[which] and M.ext.views[which].hints or part('keys').hints[which] or {}
-  local extra = {}
-  for _, fn in ipairs(M.ext.hints[which] or {}) do
-    extra[#extra + 1] = fn(ui.ctx)
-  end
-  if #extra == 0 then
-    return base
-  end
-  local out = {}
-  for _, h in ipairs(base) do
-    if h[1] == '?' then
-      vim.list_extend(out, extra)
-      extra = {}
-    end
-    out[#out + 1] = h
-  end
-  return vim.list_extend(out, extra)
-end
-
 --- The window's configs for what it shows now.
 ---@return cinch.ui.Shape
 local function shape()
@@ -280,6 +229,8 @@ local function shape()
     help = ui.help,
     op = ui.ctx.op,
     notice = ui.ctx.notice,
+    input = ui.input and ' ' .. ui.input .. ' ',
+    marked = ui.view == 'plugins' and not ui.help and vim.tbl_count(ui.ctx.marked or {}) or 0,
   }
 end
 
@@ -423,10 +374,10 @@ local function render()
     keep_plain(ui[k])
   end
   paint_bar(ui.header, function(width)
-    return layout.header(width, s)
+    return { layout.header(width, s) }
   end)
   paint_bar(ui.footer, function(width)
-    return { layout.footer(width, footer_text()) }
+    return { layout.footer(width, s) }
   end)
   local width = api.nvim_win_get_width(ui.list)
   local c
@@ -1044,7 +995,7 @@ end
 local open_after_start = false
 
 --- Show a Report: on its plugin's row when it is about a plugin (the row keeps it for when
---- the Plugins view shows), else, being global, in the header. A warning or an error opens
+--- the Plugins view shows), else, being global, in the footer. A warning or an error opens
 --- the window.
 ---@param d { msg: string, level: integer, plugin?: string, shown?: boolean }
 local function on_report(d)

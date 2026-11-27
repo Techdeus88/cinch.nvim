@@ -1,6 +1,6 @@
 -- The live first start in the window: it opens before vim.pack.add with a row in an
 -- installing section for each plugin cloning, each with how far it is, and the overall
--- count and a graph in the header, no plugin's name; each row leaves the section for its
+-- count and a graph in the footer, no plugin's name; each row leaves the section for its
 -- place in the list as its plugin lands, and never stops in working on the way; the
 -- list stays scrolled to the top, the cursor on a plugin still installing;
 -- the colorscheme applies as soon as its plugin lands; then the same window settles
@@ -46,7 +46,7 @@ cinch.setup({
 events.on('Installing', function()
   seen.open_at_installing = require('cinch.features.ui').is_open()
   seen.first_lines = list_lines()
-  seen.first_header = H.header()[2] or ''
+  seen.first_footer = H.footer()
 end, { priority = 90 })
 ---@return integer? count the installing section says it holds; nil without one
 local function installing_count()
@@ -66,7 +66,7 @@ events.on('Progress', function(d)
       seen.progress[#seen.progress + 1] = {
         name = d.name,
         handled = d.handled,
-        header = H.header()[2] or '',
+        footer = H.footer(),
         installing = installing_count(),
         -- Still cloning: its row is in the installing section, with how far it is.
         cloning = text:find(vim.pesc(d.name) .. ' %d+%% ━') ~= nil,
@@ -84,7 +84,7 @@ end, { priority = 90 })
 events.on('Installed', function()
   seen.colors_at_installed = vim.g.colors_name
   seen.done_lines = list_lines()
-  seen.done_header = H.header()[2] or ''
+  seen.done_footer = H.footer()
 end, { priority = 90 })
 
 H.after_startup(function()
@@ -96,9 +96,9 @@ H.after_startup(function()
 
   H.eq(seen.open_at_installing, true, 'the window is open before vim.pack.add starts')
   H.eq(
-    { words(seen.first_header) },
+    { words(seen.first_footer) },
     { 'Installing plugins (0/5)', true },
-    'the overall count and the graph in the header, nothing else: ' .. seen.first_header
+    'the overall count and the graph in the footer, nothing else: ' .. seen.first_footer
   )
   H.eq(vim.list_contains(seen.first_lines, ' ▾ installing 5'), true, 'a row for each plugin, under its section')
   local first = table.concat(seen.first_lines, '\n')
@@ -117,9 +117,9 @@ H.after_startup(function()
       pr.name .. ' goes from the installing section straight to its own row'
     )
     H.eq(
-      { words(pr.header):find('^Installing plugins %(%d/5%)$') ~= nil, select(2, words(pr.header)) },
+      { words(pr.footer):find('^Installing plugins %(%d/5%)$') ~= nil, select(2, words(pr.footer)) },
       { true, true },
-      'and the header names no plugin: ' .. pr.header
+      'and the footer names no plugin: ' .. pr.footer
     )
   end
   H.eq(
@@ -133,7 +133,7 @@ H.after_startup(function()
   H.eq(counts[1] < 5, true, 'the section holds fewer rows once one has landed: ' .. vim.inspect(counts))
   H.eq(seen.colors_at_installed, 'colory', 'the colorscheme applied before the batch ended')
   local done = table.concat(seen.done_lines, '\n')
-  H.eq(seen.done_header:find('Installed 4 of 5 plugins', 1, true) ~= nil, true, 'the outcome, when it ends')
+  H.eq(seen.done_footer:find('Installed 4 of 5 plugins', 1, true) ~= nil, true, 'the outcome, when it ends')
   H.eq(done:find('not installed', 1, true) ~= nil, true, 'and which one failed, on its official row')
   H.eq(done:find('▾ installing', 1, true), nil, 'with no installing section left')
 
@@ -141,9 +141,9 @@ H.after_startup(function()
     local text = table.concat(list_lines(), '\n')
     return text:find('▾ installing', 1, true) == nil
       and text:find(' alpha%.nvim ') ~= nil
-      and (H.header()[2] or ''):find('Install', 1, true) == nil
+      and H.footer():find('Install', 1, true) == nil
   end, 'the Plugins view, once the ending has had its moment')
-  H.eq(H.header()[2]:find('Install', 1, true), nil, 'the same window, now the Plugins view')
+  H.eq(H.footer():find('Install', 1, true), nil, 'the same window, now the Plugins view')
 
   local ops = require('cinch.features.ui.ops')
   ---@param op table

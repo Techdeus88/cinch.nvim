@@ -1,4 +1,4 @@
--- An update check in the window: it never opens it; while it is open the header shows
+-- An update check in the window: it never opens it; while it is open the footer shows
 -- the progress, rows stay in their section saying they are checking, and a line says
 -- how it ended, then goes. Messages get the same line only when you asked for the check.
 local H = dofile(vim.env.CINCH_ROOT .. '/tests/helpers.lua')
@@ -55,16 +55,16 @@ H.after_startup(function()
   H.wait(function()
     return text():find('%d+%% ━') ~= nil
   end, 'rows to show how far their check is')
-  H.eq(H.header()[2]:find(' Checking plugins %(%d/3%)') ~= nil, true, 'the header: ' .. H.header()[2])
+  H.eq(H.footer():find(' Checking plugins %(%d/3%)') ~= nil, true, 'the footer: ' .. H.footer())
   H.eq(names(), before, 'rows stay where they were')
 
   idle()
   vim.wait(50)
   local ended = 'Checked 3 plugins in [%d.]+m?s · 1 update · 1 failed'
-  H.eq(H.header()[2]:find(' ' .. ended) ~= nil, true, 'how it ended: ' .. H.header()[2])
+  H.eq(H.footer():find(' ' .. ended) ~= nil, true, 'how it ended: ' .. H.footer())
   H.eq(H.noted(ended), true, 'the same line in your messages')
   H.eq(text():find('%d+%% ━'), nil, 'the rows are done')
   vim.wait(1300)
-  H.eq(H.header()[2]:find('Checked', 1, true), nil, 'the ending goes after a moment')
+  H.eq(H.footer():find('Checked', 1, true), nil, 'the ending goes after a moment')
   H.eq(lines()[3], ' ▾ Updates (1)', 'and the list starts, under its filters, with what it found')
 end)

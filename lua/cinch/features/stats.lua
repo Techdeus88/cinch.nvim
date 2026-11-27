@@ -762,7 +762,7 @@ local function record()
   events.on('Later', window)
   events.on('State', function(d)
     local p = d.plugin
-    if d.to == 'loading' and not p.self then
+    if d.to == 'loading' and not state.is_cinch(p) then
       local span = { kind = 'plugin', name = p.name, start = M.now(), reason = d.reason }
       if keep(span) then
         loading[p], busy = span, busy + 1
@@ -903,8 +903,8 @@ function M.setup(opts)
     M.phases[d.name] = (M.phases[d.name] or 0) + d.ms
   end)
   events.on('Load', function(d)
-    -- cinch itself is in no count: it was running before anything loaded.
-    if d.plugin.self then
+    -- cinch and its extensions are in no count: they were running before anything loaded.
+    if state.is_cinch(d.plugin) then
       return
     end
     M.plugins[d.plugin.name] = {

@@ -717,7 +717,7 @@ end
 ---@return cinch.Plugin[] missing what it tried to install
 function M.install(names, opts)
   local missing = vim.tbl_filter(function(p)
-    return not p.self and p.state ~= 'disabled' and not vim.uv.fs_stat(vim.fs.joinpath(pack.dir, p.name))
+    return not state.is_cinch(p) and p.state ~= 'disabled' and not vim.uv.fs_stat(vim.fs.joinpath(pack.dir, p.name))
   end, names and resolve(names) or state.list)
   if #missing == 0 then
     events.report(names and 'already installed' or 'nothing to install: every plugin is on disk')
@@ -873,11 +873,14 @@ end
 ---@return boolean ok, any err
 function M.del(names, opts)
   names = type(names) == 'table' and names or { names }
-  -- Not cinch itself: the code doing the deleting.
+  -- Not cinch itself, the code doing the deleting, nor one of its extensions.
   names = vim.tbl_filter(function(name)
     local p = state.plugins[name]
     if p and p.self then
       events.report(('not deleted: `%s` is cinch itself'):format(name), levels.WARN)
+      return false
+    elseif p and p.extension then
+      events.report(('not deleted: `%s` is a cinch extension'):format(name), levels.WARN)
       return false
     end
     return true

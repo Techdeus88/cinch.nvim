@@ -1,4 +1,4 @@
--- The window's geometry: four bordered windows over the editor, the two-line header on
+-- The window's geometry: four bordered windows over the editor, the one-line header on
 -- top, the list and the pane beside it (or under it when narrow) in the middle, the footer
 -- at the bottom, and the backdrop. Given what the window shows, it returns the config of
 -- each window and the lines of the header and the footer; it reads no window state.
@@ -16,7 +16,9 @@ local M = {}
 ---@field even boolean the list and the pane share the width evenly, after `=`
 ---@field split boolean the pane is on show, beside or under the list
 ---@field op? cinch.ui.Op an install, check, update or delete under way, or just ended
----@field notice? { text: string, level: integer } a message for the header, when no operation has it
+---@field notice? { text: string, level: integer } a message for the footer, when no operation has it
+---@field input? string the prompt and the text being typed
+---@field marked integer how many plugins are selected
 
 --- The border style: yours, else winborder, else rounded.
 ---@param opts cinch.ui.Opts
@@ -64,13 +66,11 @@ local function spread(width, left, middle, right)
   return vim.list_extend(out, right)
 end
 
---- The header's two lines, `width` cells. The first: when Neovim started and when its UI
---- came up on the left, the name on a banner in the middle, the tabs on the right. The
---- second is for global messages only: an install, check, update or delete in the middle,
---- or else a message that is about no plugin. A plugin's own messages are on its row.
+--- The header's line, `width` cells: when Neovim started and when its UI came up on the
+--- left, the name on a banner in the middle, the tabs on the right.
 ---@param width integer
 ---@param s cinch.ui.Shape
----@return { [1]: string, [2]?: string }[][]
+---@return { [1]: string, [2]?: string }[]
 function M.header(width, s)
   local stats = package.loaded['cinch.features.stats']
   local marks = stats and stats.marks or {}
@@ -98,67 +98,38 @@ function M.header(width, s)
   if cells(left) + cells(name) + cells(tabs) + 2 > width then
     name = {}
   end
+  return spread(width, left, name, tabs)
+end
 
-  local line = s.op and require('cinch.features.ui.ops').line
-  if not line and s.notice then
+--- The global message, at most `room` cells: an install, check, update or delete in the
+--- middle, or else a message that is about no plugin. A plugin's own messages are on its row.
+---@param s cinch.ui.Shape
+---@param room integer
+---@return { [1]: string, [2]?: string }[]?
+local function message(s, room)
+  if s.op then
+    return (require('cinch.features.ui.ops').line(s.op, room))
+  end
+  if s.notice then
     local levels = vim.log.levels
     local hl = s.notice.level >= levels.ERROR and 'CinchFailed'
       or s.notice.level >= levels.WARN and 'CinchWarn'
       or 'CinchTitle'
-    line = function(_, room)
-      return canvas.clip({ { s.notice.text, hl } }, room), canvas.cells(s.notice.text) > room
-    end
+    return canvas.clip({ { s.notice.text, hl } }, room)
   end
-  local message = line and line(s.op, math.max(0, width - 2)) or {}
-  return { spread(width, left, name, tabs), spread(width, {}, message, {}) }
 end
 
---- A key and what it does as one pill: the key on a dark inset, what it does on the
---- banner color. Text that is no key is all banner.
----@param hint cinch.ui.Hint
----@return { [1]: string, [2]: string }[]
-local function pill(hint)
-  local key, does = hint[2] and hint[1], hint[2] or hint[1]
-  local out = {}
-  if canvas.rounded then
-    out[1] = { canvas.caps[1], key and 'CinchFooterKeyCap' or 'CinchBannerCap' }
-  end
-  if key then
-    out[#out + 1] = { ' ' .. key .. ' ', 'CinchFooterKey' }
-  end
-  out[#out + 1] = { ' ' .. does .. ' ', 'CinchBanner' }
-  if canvas.rounded then
-    out[#out + 1] = { canvas.caps[2], 'CinchBannerCap' }
-  end
-  return out
-end
-
---- The footer's line, `width` cells, in the middle: a pill per key, or `text` on a banner.
---- Short of room, the keys before the last two (`?` and `q`) go first, from the end.
+--- The footer's line, `width` cells, centered: the text being typed on a banner, else
+--- the global message, else how many plugins are selected. The keys are on the ? screen.
 ---@param width integer
----@param what string|cinch.ui.Hint[]
+---@param s cinch.ui.Shape
 ---@return { [1]: string, [2]?: string }[]
-function M.footer(width, what)
-  local line
-  if type(what) == 'string' then
-    line = banner(vim.trim(what), width)
-  else
-    local hints = vim.list_slice(what)
-    while true do
-      line = {}
-      for i, hint in ipairs(hints) do
-        if i > 1 then
-          line[#line + 1] = { ' ' }
-        end
-        vim.list_extend(line, pill(hint))
-      end
-      if cells(line) <= width or #hints <= 2 then
-        break
-      end
-      table.remove(hints, #hints - 2)
-    end
-    line = canvas.clip(line, width)
+function M.footer(width, s)
+  local line = s.input and banner(vim.trim(s.input), width) or message(s, math.max(0, width - 2))
+  if not line and s.marked > 0 then
+    line = banner(('%d selected'):format(s.marked), width)
   end
+  line = line or {}
   return vim.list_extend({ { (' '):rep(math.max(0, math.floor((width - cells(line)) / 2))) } }, line)
 end
 
@@ -183,8 +154,8 @@ function M.configs(s)
     return vim.tbl_extend('force', cfg, extra or {})
   end
 
-  -- The header keeps two lines and the footer one; the list and the pane get the rest.
-  local head, bar = 2 + edge, 1 + edge
+  -- The header and the footer keep a line each; the list and the pane get the rest.
+  local head, bar = 1 + edge, 1 + edge
   local top, middle = row + head, h - head - bar
   local list, pane
   if not s.split then

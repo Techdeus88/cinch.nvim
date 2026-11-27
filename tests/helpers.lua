@@ -96,12 +96,24 @@ function H.plugin(name)
   return require('cinch.state').plugins[name]
 end
 
---- The cinch window's header, both its lines, while it is open.
+---@param which 'header'|'footer'
+---@return string[]
+local function bar(which)
+  local w = require('cinch.features.ui').windows()
+  local ok, buf = pcall(vim.api.nvim_win_get_buf, w[which] or -1)
+  return ok and vim.api.nvim_buf_get_lines(buf, 0, -1, false) or {}
+end
+
+--- The cinch window's header, its one line, while it is open.
 ---@return string[]
 function H.header()
-  local w = require('cinch.features.ui').windows()
-  local ok, buf = pcall(vim.api.nvim_win_get_buf, w.header or -1)
-  return ok and vim.api.nvim_buf_get_lines(buf, 0, -1, false) or {}
+  return bar('header')
+end
+
+--- The cinch window's footer line, with the global messages, while it is open; '' when closed.
+---@return string
+function H.footer()
+  return bar('footer')[1] or ''
 end
 
 --- Wait until `cond` holds, or fail after `ms`.

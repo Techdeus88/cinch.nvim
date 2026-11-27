@@ -1,4 +1,4 @@
--- Updates in the window: applying shows the progress in the header, then a line that
+-- Updates in the window: applying shows the progress in the footer, then a line that
 -- says how it ended, here and in messages, with a restart only when a loaded plugin
 -- moved. `:Cinch update!` opens the window; a restore from the lockfile is not framed.
 local H = dofile(vim.env.CINCH_ROOT .. '/tests/helpers.lua')
@@ -25,7 +25,7 @@ H.after_startup(function()
   end
   local seen = {}
   events.on('Updating', function()
-    seen.updating = ui.is_open() and H.header()[2]
+    seen.updating = ui.is_open() and H.footer()
   end, { priority = 90 })
 
   local rows = require('cinch.features.ui.rows')
@@ -47,13 +47,13 @@ H.after_startup(function()
 
   -- U: everything pending, a loaded plugin among them.
   vim.api.nvim_feedkeys('U', 'x', false)
-  H.eq(seen.updating:find(' Updating plugins %(0/2%)') ~= nil, true, 'the header: ' .. tostring(seen.updating))
+  H.eq(seen.updating:find(' Updating plugins %(0/2%)') ~= nil, true, 'the footer: ' .. tostring(seen.updating))
   vim.wait(50)
   local ended = 'Updated 2 of 2 plugins in [%d.]+m?s · restart to use them'
-  H.eq(H.header()[2]:find(' ' .. ended) ~= nil, true, 'how it ended: ' .. H.header()[2])
+  H.eq(H.footer():find(' ' .. ended) ~= nil, true, 'how it ended: ' .. H.footer())
   H.eq(H.noted(ended), true, 'and in messages')
   vim.wait(1300)
-  H.eq(H.header()[2]:find('Updated', 1, true), nil, 'the ending goes after a moment')
+  H.eq(H.footer():find('Updated', 1, true), nil, 'the ending goes after a moment')
   H.eq(table.concat(lines(), '\n'):find('Updated', 1, true), nil, 'and was never in the list')
 
   -- u on a plugin that is not loaded: no restart.
@@ -88,5 +88,5 @@ H.after_startup(function()
   -- A restore from the lockfile is not framed.
   seen.updating = 'none'
   require('cinch').update({ 'gamma' }, { force = true, target = 'lockfile' })
-  H.eq(seen.updating, 'none', 'no header for a restore')
+  H.eq(seen.updating, 'none', 'no footer message for a restore')
 end)

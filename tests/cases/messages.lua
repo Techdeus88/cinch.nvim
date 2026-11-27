@@ -36,8 +36,8 @@ H.after_startup(function()
   )
   H.eq(after:find('not installed', 1, true), nil, 'the install error never reaches the command line')
   H.wait(function()
-    return (H.header()[2] or ''):find('not installed: missing', 1, true) ~= nil
-  end, 'the install error in the header of the window it opened')
+    return H.footer():find('not installed: missing', 1, true) ~= nil
+  end, 'the install error in the footer of the window it opened')
   H.eq({ vim.api.nvim_echo == my_echo, vim.notify == my_notify }, { true, true }, 'both are released after')
 
   local err

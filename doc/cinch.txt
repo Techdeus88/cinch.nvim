@@ -553,12 +553,12 @@ Four bordered windows at 75% of the editor, over a dark backdrop that dims
 the editor behind it: a header, the list and the details pane beside it, and
 a footer. The cursor stays in the window: moving to an editor window, with a
 click or `<C-w>`, comes back to the list, while a prompt or picker a plugin
-opens keeps focus. The header has two lines. The first holds when Neovim
-started and when its UI came up on the left, such as
-`startup 42ms · ui 58ms`, the name in the middle and the five views on the
-right: plugins, triggers, stats, profile and log. The second is for global
-messages only. An install, a check or an update shows its overall progress in
-the middle of it, like `Installing plugins (18/48)` with a bar, and names no
+opens keeps focus. The header is one line: when Neovim started and when its
+UI came up on the left, such as `startup 42ms · ui 58ms`, the name in the
+middle and the five views on the right: plugins, triggers, stats, profile and
+log. When it is short of room, the ui time goes first, then startup, then the
+name. The footer is for global messages only, centered. An install, a check
+or an update shows its overall progress in it, like `Installing plugins (18/48)` with a bar, and names no
 plugin: each plugin's row shows how far that plugin is, like `37%` with a
 meter, from what git reports (see the Plugins view). A delete shows only its
 ending. Then comes a line that says how it ended, such as
@@ -569,11 +569,9 @@ that plugin's row instead: the row drops everything but its light and name,
 shows the message while it is in progress and for a moment after, then returns
 with its updated details. The Log keeps every message. cinch never writes to
 the command line: a warning or an error opens the window to show it, and
-anything else waits for the next time you open it. When the first line is short of
-room, the ui time goes first, then startup, then the name. The footer
-holds the keys for the view you're in, centered, each on a pill: the key on
-a dark inset, what it does beside it. When room is short, the keys before
-`?` and `q` go first, from the end.
+anything else waits for the next time you open it. The footer also shows
+what you type at a prompt, and how many plugins are selected. The keys are on
+the `?` screen.
 
 PLUGINS                                                 *cinch-window-plugins*
 
@@ -816,9 +814,8 @@ What an extension can hook into:
 - Triggers: |cinch.trigger()|, with `seen` and `replay` from `cinch.handler`
   (see |cinch-triggers|).
 - The window, through `require('cinch.features.ui')`:
-  - `add_view(name, { list, pane?, hints? }, { before? })`: a tab of its own.
+  - `add_view(name, { list, pane? }, { before? })`: a tab of its own.
   - `add_key({ lhs, view, run, desc })`: a key in one view.
-  - `add_hint(view, fn)`: a footer hint.
   - `add_chip(fn)`: a chip on each Plugins row.
   - `add_pane_lines(fn)`: lines in the Plugins pane.
   - `add_filter(prefix, fn)`: a `/<prefix>:<value>` filter.
